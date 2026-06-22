@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: #070a0c;
+  color: #c8d3d8;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  /* Layered atmosphere: a faint grid and two low signal glows. */
+  background-color: #070a0c;
+  background-image:
+    radial-gradient(900px 500px at 88% -8%, rgba(35, 230, 196, 0.08), transparent 60%),
+    radial-gradient(700px 600px at 4% 102%, rgba(22, 168, 146, 0.06), transparent 60%),
+    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+  background-attachment: fixed;
+}
+
+::selection {
+  background: rgba(35, 230, 196, 0.28);
+  color: #eef3f4;
+}
+
+/* Slim, technical scrollbar that fits the control-room frame. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #27343b transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #27343b;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #2a3a42;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .panel {
+    @apply rounded-lg border border-edge/70 bg-ink-700/70 backdrop-blur-sm;
+  }
+  .hairline {
+    @apply border-edge/60;
+  }
+  .signal-line {
+    background: linear-gradient(90deg, transparent, rgba(35, 230, 196, 0.5), transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
