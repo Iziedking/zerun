@@ -1,0 +1,32 @@
+# Secrets and local environment. Never commit these.
+.env
+.env.*
+!.env.example
+
+# Internal planning notes. Not for the public repo.
+0g.md
+
+# Node
+node_modules/
+.pnpm-store/
+dist/
+build/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Next.js
+.next/
+out/
+.vercel/
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/forge-std/
+
+# Misc
+.DS_Store
+coverage/
+*.tsbuildinfo
