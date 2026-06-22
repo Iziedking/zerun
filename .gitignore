@@ -24,7 +24,9 @@ out/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
-contracts/lib/forge-std/
+# Vendored dependencies. Restore on a fresh clone with:
+#   cd contracts && forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts@v5.1.0
+contracts/lib/
 
 # Misc
 .DS_Store
