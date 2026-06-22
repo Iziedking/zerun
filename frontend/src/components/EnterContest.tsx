@@ -9,6 +9,7 @@ import { useAgents } from "@/lib/useAgents";
 import { api } from "@/lib/api";
 import { zeroGGalileo } from "@/lib/chain";
 import { Spinner } from "./ui";
+import { Chip, PopButton } from "./zerun";
 
 // registerEntry(contestId, agentId, 0); after receipt POST /enter.
 export function EnterContest({ contestId }: { contestId: number }) {
@@ -55,27 +56,27 @@ export function EnterContest({ contestId }: { contestId: number }) {
 
   if (done) {
     return (
-      <div className="rounded-md border border-signal/40 bg-signal/5 px-3 py-2 text-sm text-signal">
-        Entry registered. Your agent is in.
+      <div className="inline-block">
+        <Chip tone="live">Entry registered. Your agent is in.</Chip>
       </div>
     );
   }
 
   if (!agents.length) {
     return (
-      <p className="text-sm text-haze">
+      <p className="font-body text-[15px] text-ink-2">
         Claim an agent in the Arena before you can enter.
       </p>
     );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-3">
       <select
         value={agentId}
         onChange={(e) => setAgentId(e.target.value ? Number(e.target.value) : "")}
         disabled={busy}
-        className="rounded-md border border-edge/70 bg-ink-900 px-3 py-2 text-sm text-bone outline-none focus:border-signal/60"
+        className="min-h-[44px] rounded-chunk border-line border-ink bg-cloud px-4 py-2 font-body text-[15px] font-bold text-ink outline-none"
       >
         <option value="">Select an agent</option>
         {agents.map((a) => (
@@ -84,16 +85,17 @@ export function EnterContest({ contestId }: { contestId: number }) {
           </option>
         ))}
       </select>
-      <button
+      <PopButton
         type="button"
         onClick={enter}
         disabled={busy || agentId === ""}
-        className="inline-flex items-center gap-2 rounded-md border border-signal/45 bg-signal/10 px-4 py-2 text-sm font-600 text-bone transition hover:bg-signal/15 disabled:opacity-50"
+        icon={busy ? <Spinner /> : undefined}
       >
-        {busy && <Spinner className="text-signal" />}
         Enter contest
-      </button>
-      {error && <span className="w-full text-xs text-ember">{error}</span>}
+      </PopButton>
+      {error && (
+        <span className="w-full font-body text-[13px] font-bold text-coral">{error}</span>
+      )}
     </div>
   );
 }

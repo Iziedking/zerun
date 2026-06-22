@@ -115,20 +115,37 @@ export const prizeEscrowAbi = parseAbi([
 
 export const publicClient = createPublicClient({ chain: ogGalileo, transport: http(config.chain.rpcUrl) });
 
+let _account: ReturnType<typeof privateKeyToAccount> | null = null;
+// The coordinator's local signing account. Passing this object (not just the
+// address) to writeContract makes viem sign locally and send a raw transaction,
+// which is what the 0G node expects (it does not expose eth_sendTransaction).
+export function coordinatorAccount() {
+  if (_account) return _account;
+  if (!config.signerKey) throw new Error("DEPLOYER_PRIVATE_KEY not set; coordinator cannot sign");
+  const key = config.signerKey.startsWith("0x") ? config.signerKey : `0x${config.signerKey}`;
+  _account = privateKeyToAccount(key as `0x${string}`);
+  return _account;
+}
+
 let _walletClient: ReturnType<typeof createWalletClient> | null = null;
 export function coordinatorWallet() {
   if (_walletClient) return _walletClient;
-  if (!config.signerKey) throw new Error("DEPLOYER_PRIVATE_KEY not set; coordinator cannot sign");
-  const key = config.signerKey.startsWith("0x") ? config.signerKey : `0x${config.signerKey}`;
-  const account = privateKeyToAccount(key as `0x${string}`);
-  _walletClient = createWalletClient({ account, chain: ogGalileo, transport: http(config.chain.rpcUrl) });
+  _walletClient = createWalletClient({
+    account: coordinatorAccount(),
+    chain: ogGalileo,
+    transport: http(config.chain.rpcUrl),
+  });
   return _walletClient;
 }
 
 export function coordinatorAddress(): `0x${string}` {
-  const key = config.signerKey.startsWith("0x") ? config.signerKey : `0x${config.signerKey}`;
-  return privateKeyToAccount(key as `0x${string}`).address;
+  return coordinatorAccount().address;
 }
 
 // ContestType enum order from the contracts: SCOUT=0, ANALYST=1, SOLVER=2.
 export const CONTEST_TYPE = { SCOUT: 0, ANALYST: 1, SOLVER: 2 } as const;
+
+// 0G keeps a base fee near zero but enforces a minimum gas price around 2 gwei,
+// which breaks the usual EIP-1559 fee estimate. Send every write as a legacy
+// transaction with a flat price above that floor.
+export const GAS_PRICE = 3_000_000_000n;

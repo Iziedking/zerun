@@ -4,8 +4,11 @@ import type { ReactNode } from "react";
 import { useAccount, useChainId } from "wagmi";
 import { zeroGGalileo } from "@/lib/chain";
 import { ConnectButton } from "./ConnectButton";
+import { StickerCard } from "./zerun/StickerCard";
+import { Agent } from "./zerun/Agent";
 
-// Renders children only when connected on 0G Galileo; otherwise a graceful prompt.
+// Renders children only when connected on 0G Galileo; otherwise a friendly prompt
+// with a bobbing agent.
 export function ConnectGate({
   children,
   title = "Connect to continue",
@@ -22,18 +25,21 @@ export function ConnectGate({
   if (isConnected && !wrongChain) return <>{children}</>;
 
   return (
-    <div className="mx-auto mt-20 max-w-md text-center">
-      <div className="panel p-8">
-        <h2 className="text-lg font-600 text-bone">{title}</h2>
-        <p className="mt-2 text-sm leading-relaxed text-haze">
+    <div className="mx-auto mt-16 max-w-md">
+      <StickerCard className="p-8 text-center">
+        <div className="flex justify-center">
+          <Agent variant="cyan" mood="idle" size={120} />
+        </div>
+        <h2 className="mt-4 font-display text-2xl text-ink">{title}</h2>
+        <p className="mt-2 font-body text-[15px] leading-relaxed text-ink-2">
           {wrongChain
             ? "Your wallet is on the wrong network. Switch to 0G Galileo to continue."
             : subtitle}
         </p>
-        <div className="mt-5 flex justify-center">
+        <div className="mt-6 flex justify-center">
           <ConnectButton />
         </div>
-      </div>
+      </StickerCard>
     </div>
   );
 }

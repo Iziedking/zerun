@@ -14,6 +14,7 @@ import { zeroGGalileo, FAUCET_URL } from "@/lib/chain";
 import { ensureGalileo } from "@/lib/network";
 import { shortAddr } from "@/lib/format";
 import { Spinner } from "./ui";
+import { PopButton } from "./zerun/PopButton";
 
 // "Connect to Zerun". Connects the injected wallet, then ensures chain 16602.
 export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boolean }) {
@@ -75,30 +76,28 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
 
   if (!isConnected) {
     return (
-      <button
+      <PopButton
         type="button"
         onClick={handleConnect}
         disabled={busy || isPending}
-        className="group relative inline-flex items-center gap-2 overflow-hidden rounded-md border border-signal/45 bg-signal/10 px-4 py-2 text-sm font-600 text-bone transition hover:border-signal/80 hover:bg-signal/15 disabled:opacity-60"
+        icon={(busy || isPending) ? <Spinner /> : undefined}
       >
-        <span className="absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-signal/10 blur-md transition group-hover:translate-x-[400%] duration-700" aria-hidden />
-        {(busy || isPending) && <Spinner className="text-signal" />}
         Connect to Zerun
-      </button>
+      </PopButton>
     );
   }
 
   if (wrongChain) {
     return (
-      <button
+      <PopButton
         type="button"
+        variant="secondary"
         onClick={handleSwitch}
         disabled={busy}
-        className="inline-flex items-center gap-2 rounded-md border border-amber/50 bg-amber/10 px-4 py-2 text-sm font-600 text-amber transition hover:bg-amber/15 disabled:opacity-60"
+        icon={busy ? <Spinner /> : undefined}
       >
-        {busy && <Spinner />}
         Switch to 0G Galileo
-      </button>
+      </PopButton>
     );
   }
 
@@ -122,18 +121,18 @@ function ConnectedChip({
           href={FAUCET_URL}
           target="_blank"
           rel="noreferrer"
-          className="hidden rounded-md border border-amber/40 bg-amber/5 px-2.5 py-1 text-[11px] font-500 text-amber transition hover:bg-amber/10 sm:inline-block"
+          className="hidden rounded-pill border-line border-ink bg-amber px-3 py-1.5 text-[12px] font-extrabold text-ink shadow-pop-press transition hover:-translate-y-px sm:inline-block"
         >
-          0G balance is 0 · faucet
+          0G balance is 0, get some
         </a>
       )}
-      <div className="flex items-center gap-2 rounded-md border border-edge/70 bg-ink-700/80 px-3 py-1.5">
-        <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden />
-        <span className="font-mono text-[12px] text-chalk">{shortAddr(address)}</span>
+      <div className="flex items-center gap-2 rounded-pill border-line border-ink bg-cloud px-3 py-1.5 shadow-pop-press">
+        <span className="h-2.5 w-2.5 rounded-full bg-mint" aria-hidden />
+        <span className="font-mono text-[12px] text-ink">{shortAddr(address)}</span>
         <button
           type="button"
           onClick={onDisconnect}
-          className="text-[11px] uppercase tracking-[0.14em] text-haze transition hover:text-ember"
+          className="rounded-pill px-1 font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2 transition hover:text-coral"
         >
           exit
         </button>

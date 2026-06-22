@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
 import { Spinner } from "@/components/ui";
+import { PopButton, StickerCard } from "@/components/zerun";
 
 export default function DemoPage() {
   const [prizePool, setPrizePool] = useState("100");
@@ -58,73 +59,62 @@ export default function DemoPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 pt-10">
       <header>
-        <h1 className="text-2xl font-700 tracking-[-0.01em] text-bone">Demo controls</h1>
-        <p className="mt-1 text-sm text-haze">
-          Open a contest and start its run. Progress streams to the contest page over the
-          live feed.
+        <h1 className="font-display text-4xl text-ink -rotate-1">Demo controls</h1>
+        <p className="mt-2 font-body text-[16px] text-ink-2">
+          Open a contest and start its run. Progress streams to the contest page over
+          the live feed.
         </p>
       </header>
 
       {/* Open */}
-      <section className="panel p-5">
-        <h2 className="text-sm font-600 uppercase tracking-[0.16em] text-haze">
-          Open a contest
-        </h2>
+      <StickerCard className="p-6">
+        <h2 className="font-display text-xl text-ink">Open a contest</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <Field label="Prize pool (tUSDC)" value={prizePool} onChange={setPrizePool} />
           <Field label="Duration (seconds)" value={duration} onChange={setDuration} type="number" />
           <Field label="Top N" value={topN} onChange={setTopN} type="number" />
-          <Field
-            label="Puzzle count"
-            value={puzzleCount}
-            onChange={setPuzzleCount}
-            type="number"
-          />
+          <Field label="Puzzle count" value={puzzleCount} onChange={setPuzzleCount} type="number" />
         </div>
-        <button
+        <PopButton
           type="button"
           onClick={open}
           disabled={opening}
-          className="mt-4 inline-flex items-center gap-2 rounded-md border border-signal/45 bg-signal/10 px-4 py-2 text-sm font-600 text-bone transition hover:bg-signal/15 disabled:opacity-50"
+          icon={opening ? <Spinner /> : undefined}
+          className="mt-5"
         >
-          {opening && <Spinner className="text-signal" />}
           Open contest
-        </button>
-      </section>
+        </PopButton>
+      </StickerCard>
 
       {/* Run */}
-      <section className="panel p-5">
-        <h2 className="text-sm font-600 uppercase tracking-[0.16em] text-haze">
-          Start a run
-        </h2>
+      <StickerCard className="p-6">
+        <h2 className="font-display text-xl text-ink">Start a run</h2>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <Field label="Contest id" value={runId} onChange={setRunId} type="number" />
-          <button
+          <PopButton
             type="button"
+            variant="secondary"
             onClick={run}
             disabled={running}
-            className="inline-flex items-center gap-2 rounded-md border border-edge/70 px-4 py-2 text-sm font-600 text-chalk transition hover:border-signal/50 hover:text-bone disabled:opacity-50"
+            icon={running ? <Spinner /> : undefined}
           >
-            {running && <Spinner />}
             Start run
-          </button>
+          </PopButton>
           {lastId !== null && (
             <Link
               href={`/contest/${lastId}`}
-              className="text-sm text-signal underline-offset-4 hover:underline"
+              className="font-body text-[14px] font-extrabold text-violet underline-offset-4 hover:underline"
             >
               open contest #{lastId} →
             </Link>
           )}
         </div>
-      </section>
+      </StickerCard>
 
       {msg && (
         <p
-          className={`rounded-md border px-3 py-2 text-sm ${
-            msg.tone === "ok"
-              ? "border-signal/40 bg-signal/5 text-signal"
-              : "border-ember/40 bg-ember/5 text-ember"
+          className={`rounded-chunk border-line border-ink px-4 py-3 font-body text-[14px] font-bold text-ink ${
+            msg.tone === "ok" ? "bg-mint/25" : "bg-coral/20"
           }`}
         >
           {msg.text}
@@ -147,12 +137,14 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-[10px] uppercase tracking-[0.18em] text-haze">{label}</span>
+      <span className="font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
+        {label}
+      </span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-edge/70 bg-ink-900 px-3 py-2 text-sm text-bone outline-none focus:border-signal/60"
+        className="mt-1.5 min-h-[44px] w-full rounded-chunk border-line border-ink bg-cloud-2 px-4 py-2 font-body text-[15px] font-bold text-ink outline-none"
       />
     </label>
   );

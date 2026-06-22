@@ -1,5 +1,7 @@
 import type { Config } from "tailwindcss";
 
+// Zerun cosmic-candy theme. Bright sticker surfaces, deep-indigo ink outlines and
+// hard offset (pop) shadows, candy accents with cosmic violet as the brand.
 const config: Config = {
   content: [
     "./src/app/**/*.{ts,tsx}",
@@ -8,66 +10,69 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Control-room palette: deep ink base, one confident signal accent.
-        ink: {
-          900: "#070a0c",
-          800: "#0b1013",
-          700: "#10171b",
-          600: "#161f24",
-          500: "#1d282e",
-          400: "#27343b",
-        },
-        edge: "#2a3a42",
-        haze: "#5d6e76",
-        chalk: "#c8d3d8",
-        bone: "#eef3f4",
-        // The signal: a precise electric teal that reads as "0G live".
-        signal: {
-          DEFAULT: "#23e6c4",
-          dim: "#16a892",
-          glow: "#5cf3da",
-        },
-        amber: {
-          DEFAULT: "#f0a93b",
-          dim: "#b97c1e",
-        },
-        ember: "#ff5d57",
+        sky: { DEFAULT: "#EAEDFF", 2: "#DDE2FF" },
+        cloud: { DEFAULT: "#FFFFFF", 2: "#F6F7FF" },
+        ink: { DEFAULT: "#171449", 2: "#4A477E", 3: "#8A88B8" },
+        violet: { DEFAULT: "#6C4CF1", deep: "#5436D6" },
+        amber: { DEFAULT: "#FFB13C" },
+        mint: { DEFAULT: "#1FD6A6" },
+        cyan: { DEFAULT: "#36C5FF" },
+        coral: { DEFAULT: "#FF6B5C" },
       },
       fontFamily: {
-        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        display: ["var(--font-display)", "system-ui", "sans-serif"],
+        body: ["var(--font-body)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
-      letterSpacing: {
-        wordmark: "0.32em",
+      borderWidth: {
+        line: "3px",
+      },
+      borderRadius: {
+        chunk: "18px",
+        "chunk-lg": "28px",
+        pill: "999px",
+      },
+      boxShadow: {
+        pop: "4px 4px 0 var(--ink)",
+        "pop-lg": "6px 6px 0 var(--ink)",
+        "pop-press": "1px 1px 0 var(--ink)",
+      },
+      transitionTimingFunction: {
+        spring: "cubic-bezier(0.34,1.56,0.64,1)",
       },
       keyframes: {
-        "feed-in": {
-          "0%": { opacity: "0", transform: "translateY(-8px)" },
-          "100%": { opacity: "1", transform: "translateY(0)" },
+        "pop-in": {
+          "0%": { opacity: "0", transform: "scale(0.96)" },
+          "60%": { opacity: "1", transform: "scale(1.02)" },
+          "100%": { transform: "scale(1)" },
         },
-        "flare": {
-          "0%": { boxShadow: "0 0 0 0 rgba(35,230,196,0.35)" },
-          "100%": { boxShadow: "0 0 0 14px rgba(35,230,196,0)" },
+        "drop-in": {
+          "0%": { opacity: "0", transform: "translateY(-14px) scale(0.98)" },
+          "70%": { opacity: "1", transform: "translateY(2px) scale(1.01)" },
+          "100%": { transform: "translateY(0) scale(1)" },
         },
-        "pulse-dot": {
-          "0%, 100%": { opacity: "1" },
-          "50%": { opacity: "0.35" },
+        bob: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-6px)" },
         },
-        "sweep": {
-          "0%": { transform: "translateX(-100%)" },
-          "100%": { transform: "translateX(100%)" },
+        hop: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "30%": { transform: "translateY(-12px)" },
+          "55%": { transform: "translateY(0)" },
+          "70%": { transform: "translateY(-5px)" },
         },
-        "rise": {
-          "0%": { opacity: "0", transform: "translateY(14px)" },
-          "100%": { opacity: "1", transform: "translateY(0)" },
+        wiggle: {
+          "0%, 100%": { transform: "rotate(0deg)" },
+          "25%": { transform: "rotate(-5deg)" },
+          "75%": { transform: "rotate(5deg)" },
         },
       },
       animation: {
-        "feed-in": "feed-in 0.45s cubic-bezier(0.16,1,0.3,1)",
-        "flare": "flare 0.9s ease-out",
-        "pulse-dot": "pulse-dot 1.6s ease-in-out infinite",
-        "sweep": "sweep 2.2s linear infinite",
-        "rise": "rise 0.6s cubic-bezier(0.16,1,0.3,1) both",
+        "pop-in": "pop-in 0.30s cubic-bezier(0.34,1.56,0.64,1) both",
+        "drop-in": "drop-in 0.36s cubic-bezier(0.34,1.56,0.64,1) both",
+        bob: "bob 3s ease-in-out infinite",
+        hop: "hop 0.9s cubic-bezier(0.34,1.56,0.64,1)",
+        wiggle: "wiggle 0.4s ease-in-out",
       },
     },
   },

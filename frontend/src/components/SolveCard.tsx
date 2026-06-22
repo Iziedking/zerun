@@ -1,8 +1,10 @@
 import type { Verdict } from "@/lib/types";
 import { ProvenanceBadge } from "./ProvenanceBadge";
+import { Agent, agentVariant, Chip, StickerCard, ThoughtBubble, type AgentMood } from "./zerun";
 
 export interface SolveRow {
   key: string;
+  agentId?: number;
   agentName: string;
   puzzleIdx: number;
   prompt: string;
@@ -17,39 +19,57 @@ export interface SolveRow {
   fresh?: boolean;
 }
 
-const VERDICT: Record<Verdict, { label: string; cls: string }> = {
-  correct: { label: "correct", cls: "border-signal/50 bg-signal/10 text-signal" },
-  wrong: { label: "wrong", cls: "border-ember/45 bg-ember/10 text-ember" },
-  error: { label: "error", cls: "border-amber/45 bg-amber/10 text-amber" },
+const VERDICT: Record<Verdict, { label: string; tone: "live" | "hot" | "won"; mood: AgentMood }> = {
+  correct: { label: "correct", tone: "live", mood: "happy" },
+  wrong: { label: "wrong", tone: "hot", mood: "lose" },
+  error: { label: "error", tone: "won", mood: "lose" },
 };
 
-// One solve in the live feed. The provenance block is the dominant element.
+// One solve in the live feed, reframed as the agent character with its current
+// ThoughtBubble showing the answer, and the 0G provenance prominently below.
 export function SolveCard({ row }: { row: SolveRow }) {
   const v = VERDICT[row.verdict] ?? VERDICT.error;
+  const variant = agentVariant(row.agentId ?? row.agentName);
 
   return (
-    <article
-      className={`panel p-4 ${row.fresh ? "animate-feed-in" : ""}`}
+    <StickerCard
+      className={`p-5 ${row.fresh ? "motion-safe:animate-drop-in" : ""}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-600 text-bone">{row.agentName}</span>
-            <span className="font-mono text-[11px] text-haze">puzzle {row.puzzleIdx + 1}</span>
+      <div className="flex items-start gap-4">
+        {/* The character */}
+        <div className="shrink-0">
+          <Agent variant={variant} mood={v.mood} size={84} name={row.agentName} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-display text-lg text-ink">{row.agentName}</span>
+              <span className="font-mono text-[11px] text-ink-3">
+                puzzle {row.puzzleIdx + 1}
+              </span>
+            </div>
+            <Chip tone={v.tone}>{v.label}</Chip>
+          </div>
+
+          {/* The thought bubble shows the answer it produced on 0G. */}
+          <div className="mt-2">
+            <ThoughtBubble tone="cloud" tail="left">
+              <span className="font-mono text-[13px]">{row.answer || "·"}</span>
+            </ThoughtBubble>
           </div>
         </div>
-        <span
-          className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-600 uppercase tracking-[0.1em] ${v.cls}`}
-        >
-          {v.label}
+      </div>
+
+      {/* Puzzle line */}
+      <p className="mt-4 font-body text-[14px] leading-relaxed text-ink-2">
+        <span className="font-extrabold uppercase tracking-[0.02em] text-ink-3">
+          puzzle ·{" "}
         </span>
-      </div>
+        {row.prompt || "·"}
+      </p>
 
-      <div className="mt-3 grid gap-2">
-        <Line label="puzzle" text={row.prompt} />
-        <Line label="answer" text={row.answer} mono accent={row.verdict === "correct"} />
-      </div>
-
+      {/* The 0G provenance, prominent. */}
       <div className="mt-3">
         <ProvenanceBadge
           provider={row.provider}
@@ -60,31 +80,6 @@ export function SolveCard({ row }: { row: SolveRow }) {
           source={row.source}
         />
       </div>
-    </article>
-  );
-}
-
-function Line({
-  label,
-  text,
-  mono = false,
-  accent = false,
-}: {
-  label: string;
-  text: string;
-  mono?: boolean;
-  accent?: boolean;
-}) {
-  return (
-    <div className="grid grid-cols-[64px_1fr] items-start gap-3">
-      <span className="pt-0.5 text-[10px] uppercase tracking-[0.16em] text-haze">{label}</span>
-      <p
-        className={`text-sm leading-relaxed ${
-          mono ? "font-mono text-[13px]" : ""
-        } ${accent ? "text-signal" : "text-chalk"}`}
-      >
-        {text || "—"}
-      </p>
-    </div>
+    </StickerCard>
   );
 }

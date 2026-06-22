@@ -4,6 +4,7 @@ import { config } from "../config/index.js";
 import { query } from "../db/pool.js";
 import { computeMode, computeConfigured } from "../compute/client.js";
 import { deploymentReady, loadDeployment } from "../chain/contracts.js";
+import { storageConfigured } from "../storage/zgStorage.js";
 import { openContest } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
 
@@ -25,6 +26,8 @@ app.get("/api/health", (c) => c.json({ ok: true }));
 app.get("/api/compute/status", (c) =>
   c.json({ mode: computeMode(), configured: computeConfigured() }),
 );
+
+app.get("/api/storage/status", (c) => c.json({ enabled: storageConfigured() }));
 
 app.get("/api/deployment", (c) => {
   if (!deploymentReady()) return c.json({ ready: false });

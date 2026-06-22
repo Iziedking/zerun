@@ -30,6 +30,8 @@ export interface ContestSummary {
   final_root: string | null;
   created_at: string | number | null;
   settled_at: string | number | null;
+  audit_root: string | null;
+  audit_tx: string | null;
 }
 
 export interface Standing {

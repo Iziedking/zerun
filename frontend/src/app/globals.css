@@ -1,69 +1,209 @@
+@import "../styles/tokens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html,
 body {
-  background: #070a0c;
-  color: #c8d3d8;
+  background: var(--sky);
+  color: var(--ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 body {
-  font-family: var(--font-sans), system-ui, sans-serif;
-  /* Layered atmosphere: a faint grid and two low signal glows. */
-  background-color: #070a0c;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-weight: 600;
+  /* A pale cosmic sky with a few low-contrast candy glows, no grid lines. */
+  background-color: var(--sky);
   background-image:
-    radial-gradient(900px 500px at 88% -8%, rgba(35, 230, 196, 0.08), transparent 60%),
-    radial-gradient(700px 600px at 4% 102%, rgba(22, 168, 146, 0.06), transparent 60%),
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+    radial-gradient(620px 420px at 88% -6%, rgba(108, 76, 241, 0.10), transparent 62%),
+    radial-gradient(560px 460px at 4% 104%, rgba(54, 197, 255, 0.10), transparent 62%);
   background-attachment: fixed;
 }
 
 ::selection {
-  background: rgba(35, 230, 196, 0.28);
-  color: #eef3f4;
+  background: rgba(108, 76, 241, 0.22);
+  color: var(--ink);
 }
 
-/* Slim, technical scrollbar that fits the control-room frame. */
+/* Chunky, friendly scrollbar. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #27343b transparent;
+  scrollbar-color: var(--ink-3) transparent;
 }
 *::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #27343b;
+  background: var(--ink-3);
   border-radius: 999px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #2a3a42;
+  background: var(--ink-2);
+}
+
+/* Visible violet focus ring on every interactive element. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--violet);
+  outline-offset: 2px;
+  border-radius: 12px;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display), system-ui, sans-serif;
+    font-weight: 800;
+    color: var(--ink);
+  }
 }
 
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
-  .panel {
-    @apply rounded-lg border border-edge/70 bg-ink-700/70 backdrop-blur-sm;
+  .font-display {
+    font-family: var(--font-display), system-ui, sans-serif;
   }
-  .hairline {
-    @apply border-edge/60;
+  .font-body {
+    font-family: var(--font-body), system-ui, sans-serif;
   }
-  .signal-line {
-    background: linear-gradient(90deg, transparent, rgba(35, 230, 196, 0.5), transparent);
+  .font-mono {
+    font-family: var(--font-mono), ui-monospace, monospace;
   }
 }
 
+/* ---- Springy motion keyframes (the brand is bounce) ---- */
+@keyframes zr-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes zr-drop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.98);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.01);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes zr-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes zr-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95%,
+  98% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes zr-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-12px);
+  }
+  55% {
+    transform: translateY(0);
+  }
+  70% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes zr-dots {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.5);
+    opacity: 0.35;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes zr-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-5deg);
+  }
+  75% {
+    transform: rotate(5deg);
+  }
+}
+
+@keyframes zr-goo {
+  0% {
+    transform: scaleX(0.97);
+  }
+  60% {
+    transform: scaleX(1.01);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes zr-confetti {
+  0% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(8px) rotate(40deg);
+    opacity: 0.4;
+  }
+}
+
+/* Reduced motion: kill every loop and overshoot, keep a plain fade and a static
+   layout. The agents stop bobbing and blinking. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -71,5 +211,6 @@ body {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

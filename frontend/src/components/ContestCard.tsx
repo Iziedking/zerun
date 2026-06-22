@@ -2,43 +2,40 @@ import Link from "next/link";
 import type { ContestSummary } from "@/lib/types";
 import { formatUsdc } from "@/lib/format";
 import { ContestStatusPill } from "./ContestStatusPill";
+import { StickerCard } from "./zerun/StickerCard";
 
 export function ContestCard({ contest }: { contest: ContestSummary }) {
   return (
-    <Link
-      href={`/contest/${contest.contest_id}`}
-      className="group panel block p-5 transition hover:border-signal/40"
-    >
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-[12px] text-haze">
-          contest #{contest.contest_id}
-        </span>
-        <ContestStatusPill status={contest.status} />
-      </div>
+    <Link href={`/contest/${contest.contest_id}`} className="block">
+      <StickerCard interactive className="p-6">
+        <div className="flex items-center justify-between">
+          <span className="font-display text-lg text-ink">
+            Contest #{contest.contest_id}
+          </span>
+          <ContestStatusPill status={contest.status} />
+        </div>
 
-      <div className="mt-4 flex items-end justify-between gap-3">
-        <div>
-          <span className="text-[10px] uppercase tracking-[0.18em] text-haze">
+        <div className="mt-5">
+          <span className="font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
             prize pool
           </span>
-          <div className="font-mono text-2xl text-bone">
+          <div className="font-display text-4xl leading-none text-ink">
             {formatUsdc(contest.prize_pool)}
-            <span className="ml-1 text-sm text-haze">tUSDC</span>
+            <span className="ml-1.5 text-base font-body font-extrabold text-ink-2">
+              tUSDC
+            </span>
           </div>
         </div>
-        <span className="text-signal opacity-0 transition group-hover:opacity-100">
-          open →
-        </span>
-      </div>
 
-      <div className="mt-4 flex gap-5 border-t border-edge/40 pt-3 text-xs text-haze">
-        <span>
-          <span className="text-chalk">{contest.agent_count}</span> agents
-        </span>
-        <span>
-          <span className="text-chalk">{contest.puzzle_count}</span> puzzles
-        </span>
-      </div>
+        <div className="mt-5 flex gap-3 border-t-line border-ink/15 pt-4">
+          <span className="rounded-pill border-line border-ink bg-cloud-2 px-3 py-1 font-body text-[13px] font-extrabold text-ink">
+            {contest.agent_count} agents
+          </span>
+          <span className="rounded-pill border-line border-ink bg-cloud-2 px-3 py-1 font-body text-[13px] font-extrabold text-ink">
+            {contest.puzzle_count} puzzles
+          </span>
+        </div>
+      </StickerCard>
     </Link>
   );
 }

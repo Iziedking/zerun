@@ -6,6 +6,7 @@ import { useAccount } from "wagmi";
 import { Wordmark } from "./Wordmark";
 import { ConnectButton } from "./ConnectButton";
 import { ComputeBadge } from "./ComputeBadge";
+import { cx } from "./zerun/cx";
 
 const NAV = [
   { href: "/arena", label: "Arena" },
@@ -17,23 +18,24 @@ export function SiteHeader() {
   const { isConnected } = useAccount();
 
   return (
-    <header className="sticky top-0 z-40 border-b border-edge/50 bg-ink-900/80 backdrop-blur-md">
+    <header className="sticky top-0 z-40 border-b-line border-ink bg-sky/85 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-3 sm:px-8">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-5">
           <Wordmark />
           {isConnected && (
-            <nav className="hidden items-center gap-1 sm:flex">
+            <nav className="hidden items-center gap-2 sm:flex">
               {NAV.map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`rounded-md px-3 py-1.5 text-sm transition ${
+                    className={cx(
+                      "rounded-pill border-line px-3.5 py-1.5 font-body text-sm font-extrabold transition",
                       active
-                        ? "bg-ink-600 text-bone"
-                        : "text-haze hover:bg-ink-700 hover:text-chalk"
-                    }`}
+                        ? "border-ink bg-violet text-white shadow-pop-press"
+                        : "border-transparent text-ink-2 hover:border-ink hover:bg-cloud hover:text-ink",
+                    )}
                   >
                     {item.label}
                   </Link>

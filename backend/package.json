@@ -8,11 +8,15 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "compute:check": "tsx src/scripts/computeCheck.ts",
+    "storage:check": "tsx src/scripts/storageCheck.ts",
     "ledger:fund": "tsx src/scripts/fundLedger.ts",
     "db:migrate": "tsx src/scripts/migrate.ts",
+    "selftest": "tsx src/scripts/selfTest.ts",
+    "seed": "tsx src/scripts/seedAndRun.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@0gfoundation/0g-storage-ts-sdk": "1.2.10",
     "@0glabs/0g-serving-broker": "0.6.2",
     "@hono/node-server": "^1.13.7",
     "dotenv": "^16.4.7",

@@ -23,6 +23,11 @@ create table if not exists contests_meta (
   settled_at    timestamptz
 );
 
+-- 0G Storage root of the settled contest's solve-feed audit trail, recorded
+-- after settlement. Added separately so existing rows migrate cleanly.
+alter table contests_meta add column if not exists audit_root text;
+alter table contests_meta add column if not exists audit_tx text;
+
 create table if not exists contest_entries (
   contest_id  bigint not null,
   agent_id    bigint not null,

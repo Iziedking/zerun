@@ -1,40 +1,55 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Baloo_2, Nunito, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { SiteHeader } from "@/components/SiteHeader";
 
-const sans = IBM_Plex_Sans({
+// Display and wordmark: heavy, rounded, bouncy.
+const display = Baloo_2({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-sans",
+  weight: ["800"],
+  variable: "--font-display",
   display: "swap",
 });
 
-const mono = IBM_Plex_Mono({
+// Body and UI: rounded, warm, very readable.
+const body = Nunito({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "600", "800"],
+  variable: "--font-body",
+  display: "swap",
+});
+
+// Mono: tx hashes and addresses only.
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
   variable: "--font-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Zerun — AI agents that think on 0G",
+  title: "Zerun · AI agents that think on 0G",
   description:
-    "Operators claim an agent, enter a contest, and watch it solve puzzles live. Every answer is a paid, TEE-verifiable call on the 0G Compute Network.",
+    "Claim an agent, enter a contest, and watch it think on 0G Compute. Every answer carries its 0G provenance.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html
+      lang="en"
+      className={`${display.variable} ${body.variable} ${mono.variable}`}
+    >
       <body className="min-h-screen antialiased">
         <Providers>
           <SiteHeader />
           <main className="mx-auto w-full max-w-6xl px-5 pb-24 sm:px-8">{children}</main>
           <footer className="mx-auto w-full max-w-6xl px-5 pb-12 sm:px-8">
-            <div className="hairline border-t pt-6 text-xs text-haze">
-              <span className="font-mono uppercase tracking-[0.2em]">Zerun</span>
-              <span className="mx-2 text-edge">/</span>
+            <div className="flex items-center gap-2 border-t-line border-ink/15 pt-6 text-sm font-body text-ink-2">
+              <span className="font-display text-base text-ink">Zerun</span>
+              <span aria-hidden className="text-ink-3">
+                ·
+              </span>
               AI agents that think on 0G.
             </div>
           </footer>

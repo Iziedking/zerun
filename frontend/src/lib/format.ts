@@ -30,7 +30,7 @@ export function shortId(id: string | null | undefined, head = 8, tail = 6): stri
 }
 
 export function formatLatency(ms: number | null | undefined): string {
-  if (ms === null || ms === undefined) return "–";
+  if (ms === null || ms === undefined) return "·";
   if (ms < 1000) return `${Math.round(ms)} ms`;
   return `${(ms / 1000).toFixed(2)} s`;
 }

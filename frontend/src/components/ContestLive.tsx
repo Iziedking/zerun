@@ -13,13 +13,14 @@ import type {
 import { SolveCard, type SolveRow } from "./SolveCard";
 import { StandingsTable } from "./StandingsTable";
 import { SettledBanner } from "./SettledBanner";
-import { StatusDot } from "./ui";
+import { Chip, StickerCard } from "./zerun";
 
 const MAX_ROWS = 60;
 
 function feedItemToRow(f: FeedItem): SolveRow {
   return {
     key: `feed-${f.id}`,
+    agentId: f.agent_id,
     agentName: f.agentName || `Agent #${f.agent_id}`,
     puzzleIdx: f.puzzle_idx,
     prompt: f.prompt,
@@ -73,6 +74,7 @@ export function ContestLive({
       seqRef.current += 1;
       const row: SolveRow = {
         key: `ws-${seqRef.current}-${p.agentId}-${p.puzzleIdx}`,
+        agentId: p.agentId,
         agentName: p.agentName || `Agent #${p.agentId}`,
         puzzleIdx: p.puzzleIdx,
         prompt: p.prompt,
@@ -113,27 +115,25 @@ export function ContestLive({
       {/* Live solve feed */}
       <section>
         <FeedHeader socketState={socketState} status={status} count={rows.length} />
-        <div className="mt-3 space-y-3">
+        <div className="mt-4 space-y-4">
           {rows.length ? (
             rows.map((row) => <SolveCard key={row.key} row={row} />)
           ) : (
-            <div className="panel p-10 text-center">
-              <p className="text-sm text-haze">
-                Waiting for the first solve. Each answer arrives here with its 0G
+            <StickerCard className="p-10 text-center">
+              <p className="font-body text-[15px] text-ink-2">
+                Waiting for the first solve. Each answer lands here with its 0G
                 Compute provenance the moment the run begins.
               </p>
-            </div>
+            </StickerCard>
           )}
         </div>
       </section>
 
       {/* Right rail: standings and settlement */}
-      <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+      <aside className="space-y-5 lg:sticky lg:top-24 lg:self-start">
         {settled && <SettledBanner data={settled} />}
         <div>
-          <h3 className="mb-2 text-sm font-600 uppercase tracking-[0.16em] text-haze">
-            Standings
-          </h3>
+          <h3 className="mb-3 font-display text-xl text-ink">Standings</h3>
           <StandingsTable standings={standings} highlight={highlight} />
         </div>
       </aside>
@@ -158,15 +158,11 @@ function FeedHeader({
   }, [socketState, status]);
 
   return (
-    <div className="flex items-center justify-between">
-      <h2 className="text-sm font-600 uppercase tracking-[0.16em] text-haze">
-        Live solve feed
-      </h2>
-      <span className="inline-flex items-center gap-2 rounded-full border border-edge/70 bg-ink-700/70 px-3 py-1 text-[11px] font-500 text-chalk">
-        <StatusDot live={live} />
-        {label}
-        <span className="text-haze">· {count}</span>
-      </span>
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="font-display text-2xl text-ink">Live solve feed</h2>
+      <Chip tone={live ? "live" : "neutral"} pulse={live}>
+        {label} · {count}
+      </Chip>
     </div>
   );
 }

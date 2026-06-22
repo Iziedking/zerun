@@ -1,5 +1,6 @@
 import type { Standing } from "@/lib/types";
 import { shortAddr, formatLatency } from "@/lib/format";
+import { Agent, agentVariant, Chip, StickerCard } from "./zerun";
 
 export function StandingsTable({
   standings,
@@ -10,67 +11,58 @@ export function StandingsTable({
 }) {
   if (!standings.length) {
     return (
-      <div className="panel p-6 text-center text-sm text-haze">
-        No standings yet. Rows appear as agents solve.
-      </div>
+      <StickerCard className="p-6 text-center">
+        <p className="font-body text-[15px] text-ink-2">
+          No standings yet. Rows appear as agents solve.
+        </p>
+      </StickerCard>
     );
   }
 
   const sorted = [...standings].sort((a, b) => a.rank - b.rank);
 
   return (
-    <div className="panel overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-edge/60 text-[10px] uppercase tracking-[0.16em] text-haze">
-            <th className="px-4 py-2.5 text-left font-500">#</th>
-            <th className="px-4 py-2.5 text-left font-500">Agent</th>
-            <th className="px-4 py-2.5 text-left font-500">Operator</th>
-            <th className="px-4 py-2.5 text-right font-500">Correct</th>
-            <th className="px-4 py-2.5 text-right font-500">Latency</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((s) => {
-            const me = highlight && s.operator?.toLowerCase() === highlight.toLowerCase();
-            return (
-              <tr
-                key={`${s.agentId}-${s.operator}`}
-                className={`border-b border-edge/30 last:border-0 transition-colors ${
-                  me ? "bg-signal/5" : "hover:bg-ink-600/40"
-                }`}
-              >
-                <td className="px-4 py-2.5">
-                  <span
-                    className={`font-mono text-[13px] ${
-                      s.rank === 1 ? "text-signal" : "text-chalk"
-                    }`}
-                  >
-                    {s.rank}
+    <StickerCard className="overflow-hidden p-0">
+      <ul>
+        {sorted.map((s, i) => {
+          const me = highlight && s.operator?.toLowerCase() === highlight.toLowerCase();
+          return (
+            <li
+              key={`${s.agentId}-${s.operator}`}
+              className={`flex items-center gap-3 border-ink/15 px-4 py-3 ${
+                i > 0 ? "border-t-line" : ""
+              } ${me ? "bg-violet/10" : i % 2 ? "bg-cloud-2" : "bg-cloud"}`}
+            >
+              <span className="w-7 shrink-0 text-center font-display text-xl text-ink">
+                {s.rank}
+              </span>
+              <Agent
+                variant={agentVariant(s.agentId)}
+                mood="idle"
+                size={28}
+                name={s.agentName}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate font-display text-[15px] text-ink">
+                    {s.agentName}
                   </span>
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className="font-500 text-bone">{s.agentName}</span>
-                  {me && (
-                    <span className="ml-2 rounded-full border border-signal/40 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.14em] text-signal">
-                      you
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-2.5 font-mono text-[12px] text-haze">
+                  {me && <Chip tone="info">you</Chip>}
+                </div>
+                <span className="font-mono text-[11px] text-ink-3">
                   {shortAddr(s.operator)}
-                </td>
-                <td className="px-4 py-2.5 text-right font-mono text-[13px] text-chalk">
-                  {s.correct}
-                </td>
-                <td className="px-4 py-2.5 text-right font-mono text-[12px] text-haze">
+                </span>
+              </div>
+              <div className="shrink-0 text-right">
+                <div className="font-display text-lg text-ink">{s.correct}</div>
+                <div className="font-mono text-[11px] text-ink-3">
                   {formatLatency(s.totalLatencyMs)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </StickerCard>
   );
 }

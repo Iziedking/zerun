@@ -2,7 +2,9 @@ import { keccak256, toHex } from "viem";
 import { query } from "../db/pool.js";
 import {
   CONTEST_TYPE,
+  GAS_PRICE,
   contestEngineAbi,
+  coordinatorAccount,
   coordinatorAddress,
   coordinatorWallet,
   loadDeployment,
@@ -28,6 +30,7 @@ const PUZZLE_METRIC = keccak256(toHex("PUZZLE"));
 export async function openContest(params: OpenContestParams): Promise<number> {
   const dep = loadDeployment();
   const wallet = coordinatorWallet();
+  const signer = coordinatorAccount();
   const account = coordinatorAddress();
 
   const prizePool = BigInt(Math.round(params.prizePoolUsdc * 1_000_000));
@@ -38,8 +41,9 @@ export async function openContest(params: OpenContestParams): Promise<number> {
     abi: testUsdcAbi,
     functionName: "mint",
     args: [account, prizePool],
-    account,
+    account: signer,
     chain: undefined,
+    gasPrice: GAS_PRICE,
   });
   await publicClient.waitForTransactionReceipt({ hash: mintHash });
 
@@ -48,8 +52,9 @@ export async function openContest(params: OpenContestParams): Promise<number> {
     abi: testUsdcAbi,
     functionName: "approve",
     args: [dep.prizeEscrow, prizePool],
-    account,
+    account: signer,
     chain: undefined,
+    gasPrice: GAS_PRICE,
   });
   await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
@@ -75,8 +80,9 @@ export async function openContest(params: OpenContestParams): Promise<number> {
       0, // minTier
       4, // maxTier
     ],
-    account,
+    account: signer,
     chain: undefined,
+    gasPrice: GAS_PRICE,
   });
   await publicClient.waitForTransactionReceipt({ hash: listHash });
 

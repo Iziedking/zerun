@@ -5,10 +5,12 @@ import { solvePuzzle } from "../runners/solver.js";
 import { rankAgents, computePayouts, type AgentScore } from "../runners/scoring.js";
 import { payoutLeaf, merkleRoot, merkleProof } from "./merkle.js";
 import { broadcast, type StandingRow } from "./ws.js";
+import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
 import {
+  GAS_PRICE,
   contestEngineAbi,
   coordinatorWallet,
-  coordinatorAddress,
+  coordinatorAccount,
   loadDeployment,
   publicClient,
 } from "../chain/contracts.js";
@@ -202,7 +204,7 @@ export async function runContest(contestId: number): Promise<RunResult> {
   }
 
   const wallet = coordinatorWallet();
-  const account = coordinatorAddress();
+  const account = coordinatorAccount();
 
   broadcast({ type: "status", contestId, payload: { status: "posting-root" } });
   const postHash = await wallet.writeContract({
@@ -212,6 +214,7 @@ export async function runContest(contestId: number): Promise<RunResult> {
     args: [BigInt(contestId), root],
     account,
     chain: undefined,
+    gasPrice: GAS_PRICE,
   });
   await publicClient.waitForTransactionReceipt({ hash: postHash });
 
@@ -223,6 +226,7 @@ export async function runContest(contestId: number): Promise<RunResult> {
     args: [BigInt(contestId)],
     account,
     chain: undefined,
+    gasPrice: GAS_PRICE,
   });
   await publicClient.waitForTransactionReceipt({ hash: settleHash });
 
@@ -238,6 +242,10 @@ export async function runContest(contestId: number): Promise<RunResult> {
       payouts: payouts.map((p) => ({ operator: p.operator, amount: p.amount.toString(), rank: p.rank })),
     },
   });
+
+  // Store the audit trail on 0G Storage. Best effort: a failure here is logged
+  // and never affects the settled contest or anyone's claim.
+  await storeAuditTrail(contestId, root);
 
   return {
     contestId,
@@ -264,4 +272,38 @@ function broadcastStandings(
     rank: r.rank,
   }));
   broadcast({ type: "standings", contestId, payload: rows });
+}
+
+// Build the audit payload from the persisted solve feed and put it on 0G
+// Storage, then record the root hash on the contest. Never throws.
+async function storeAuditTrail(contestId: number, root: Hex): Promise<void> {
+  if (!storageConfigured()) return;
+  try {
+    const { rows: feed } = await query(
+      `select agent_id, operator, puzzle_idx, prompt, expected, answer, verdict,
+              source, provider, model, chat_id, verified, latency_ms
+         from solve_runs where contest_id = $1 order by agent_id, puzzle_idx`,
+      [contestId],
+    );
+    const payload = {
+      contestId,
+      scoreRoot: root,
+      storedAt: new Date().toISOString(),
+      solves: feed,
+    };
+    const { rootHash, txHash } = await uploadJson(payload);
+    await query("update contests_meta set audit_root = $2, audit_tx = $3 where contest_id = $1", [
+      contestId,
+      rootHash,
+      txHash,
+    ]);
+    broadcast({
+      type: "status",
+      contestId,
+      payload: { status: "audit-stored", detail: rootHash },
+    });
+    console.log(`contest ${contestId} audit trail stored on 0G Storage: ${rootHash}`);
+  } catch (err) {
+    console.error(`contest ${contestId} audit storage failed (non-fatal):`, (err as Error).message);
+  }
 }

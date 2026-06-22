@@ -1,4 +1,5 @@
 import { shortAddr, shortId, formatLatency } from "@/lib/format";
+import { Chip } from "./zerun/Chip";
 
 interface Props {
   provider: string;
@@ -9,8 +10,9 @@ interface Props {
   source?: string;
 }
 
-// The signature block of the product: makes 0G Compute provenance visible per
-// answer. Provider, model, request id, latency, and the verification badge.
+// The 0G provenance for one answer, reframed for the cartoon look: a small inset
+// panel that names the compute provider, model, request id, and latency, with a
+// "Verified on 0G" chip. Rendered inside an agent's card under its ThoughtBubble.
 export function ProvenanceBadge({
   provider,
   model,
@@ -22,32 +24,24 @@ export function ProvenanceBadge({
   const isVerified = verified === true;
 
   return (
-    <div className="relative overflow-hidden rounded-md border border-signal/25 bg-ink-800/80 p-3">
-      {/* signal edge */}
-      <span
-        className="absolute inset-x-0 top-0 h-px signal-line"
-        aria-hidden
-      />
+    <div className="rounded-chunk border-line border-ink bg-cloud-2 p-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="inline-flex items-center gap-1.5 text-[10px] font-600 uppercase tracking-[0.2em] text-signal">
-          <span className="h-1.5 w-1.5 rounded-full bg-signal" aria-hidden />
-          thought on 0G
+        <span className="font-body text-[11px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
+          thought on 0G Compute
         </span>
         <VerificationBadge verified={verified} />
       </div>
 
       <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
         <Field label="provider" value={shortAddr(provider, 6, 4)} title={provider} />
-        <Field label="model" value={model || "–"} title={model} />
+        <Field label="model" value={model || "·"} title={model} />
         <Field label="request id" value={shortId(chatId, 7, 5)} title={chatId} />
         <Field label="latency" value={formatLatency(latencyMs)} />
       </dl>
 
       {source && (
-        <div className="mt-2 border-t border-edge/40 pt-1.5">
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-haze">
-            source · {source}
-          </span>
+        <div className="mt-2 border-t-line border-ink/15 pt-2">
+          <span className="font-mono text-[11px] text-ink-3">source · {source}</span>
         </div>
       )}
 
@@ -71,8 +65,10 @@ function Field({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[9px] uppercase tracking-[0.18em] text-haze">{label}</dt>
-      <dd className="truncate font-mono text-[12px] text-chalk" title={title}>
+      <dt className="font-body text-[10px] font-extrabold uppercase tracking-[0.02em] text-ink-3">
+        {label}
+      </dt>
+      <dd className="truncate font-mono text-[12px] text-ink" title={title}>
         {value}
       </dd>
     </div>
@@ -82,18 +78,14 @@ function Field({
 export function VerificationBadge({ verified }: { verified: boolean | null }) {
   if (verified === true) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-signal/50 bg-signal/10 px-2.5 py-0.5 text-[11px] font-600 text-signal">
-        <CheckIcon />
-        Verified on 0G
-      </span>
+      <Chip tone="live">
+        <span className="inline-flex items-center gap-1">
+          <CheckIcon /> Verified on 0G
+        </span>
+      </Chip>
     );
   }
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber/45 bg-amber/10 px-2.5 py-0.5 text-[11px] font-600 text-amber">
-      <DotIcon />
-      Unverified
-    </span>
-  );
+  return <Chip tone="neutral">Unverified</Chip>;
 }
 
 function CheckIcon() {
@@ -102,18 +94,10 @@ function CheckIcon() {
       <path
         d="M2 6.5L4.5 9L10 3"
         stroke="currentColor"
-        strokeWidth="1.6"
+        strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-function DotIcon() {
-  return (
-    <svg width="9" height="9" viewBox="0 0 9 9" fill="none" aria-hidden>
-      <circle cx="4.5" cy="4.5" r="3" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   );
 }

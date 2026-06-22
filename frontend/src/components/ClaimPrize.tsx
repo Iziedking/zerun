@@ -10,6 +10,7 @@ import { formatUsdc } from "@/lib/format";
 import { zeroGGalileo } from "@/lib/chain";
 import type { ClaimInfo } from "@/lib/types";
 import { Spinner } from "./ui";
+import { Chip, PopButton, StickerCard } from "./zerun";
 
 // Checks claim eligibility, then claimPrize(contestId, amount, proof) and POST /claimed.
 export function ClaimPrize({ contestId }: { contestId: number }) {
@@ -72,33 +73,34 @@ export function ClaimPrize({ contestId }: { contestId: number }) {
   if (!info || !info.eligible) return null;
 
   return (
-    <div className="panel border-signal/40 p-4">
+    <StickerCard className="p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <span className="text-[10px] uppercase tracking-[0.18em] text-signal">
+          <span className="font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
             you placed #{info.rank}
           </span>
-          <div className="mt-0.5 font-mono text-lg text-bone">
-            {formatUsdc(info.amount)} tUSDC
+          <div className="mt-0.5 font-display text-2xl text-ink">
+            {formatUsdc(info.amount)}{" "}
+            <span className="font-body text-base font-extrabold text-ink-2">tUSDC</span>
           </div>
         </div>
         {claimed ? (
-          <span className="rounded-md border border-signal/40 bg-signal/5 px-3 py-2 text-sm font-600 text-signal">
-            Claimed
-          </span>
+          <Chip tone="won">Claimed</Chip>
         ) : (
-          <button
+          <PopButton
             type="button"
+            variant="secondary"
             onClick={claim}
             disabled={busy}
-            className="inline-flex items-center gap-2 rounded-md border border-signal/50 bg-signal/15 px-4 py-2 text-sm font-600 text-bone transition hover:bg-signal/20 disabled:opacity-50"
+            icon={busy ? <Spinner /> : undefined}
           >
-            {busy && <Spinner className="text-signal" />}
             Claim {formatUsdc(info.amount)} tUSDC
-          </button>
+          </PopButton>
         )}
       </div>
-      {error && <p className="mt-2 text-xs text-ember">{error}</p>}
-    </div>
+      {error && (
+        <p className="mt-2 font-body text-[13px] font-bold text-coral">{error}</p>
+      )}
+    </StickerCard>
   );
 }

@@ -1,17 +1,17 @@
-import { Pill } from "./ui";
+import { Chip, type ChipTone } from "./zerun/Chip";
 
-// Maps backend status strings to a tone. Unknown statuses fall back to neutral.
+// Maps backend status strings to a Chip tone. Live runs pulse mint, settled is
+// amber (won), anything pending is neutral.
 export function ContestStatusPill({ status }: { status: string }) {
   const s = (status || "").toLowerCase();
   const live = s === "running" || s === "open" || s === "active";
   const settled = s === "settled" || s === "closed" || s === "complete";
 
+  const tone: ChipTone = live ? "live" : settled ? "won" : "neutral";
+
   return (
-    <Pill tone={live ? "signal" : settled ? "neutral" : "amber"}>
-      {live && (
-        <span className="inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-signal" />
-      )}
+    <Chip tone={tone} pulse={live}>
       {status || "unknown"}
-    </Pill>
+    </Chip>
   );
 }

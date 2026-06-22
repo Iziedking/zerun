@@ -1,6 +1,12 @@
 import { ethers } from "ethers";
-import { createZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
+import { createRequire } from "node:module";
 import { config } from "../config/index.js";
+
+// The serving broker ships a broken ESM re-export, so load its CommonJS build
+// through require. The types still resolve from the package's type entry.
+const require = createRequire(import.meta.url);
+const { createZGComputeNetworkBroker } =
+  require("@0glabs/0g-serving-broker") as typeof import("@0glabs/0g-serving-broker");
 
 // The 0G Compute brain. Every agent answer in Zerun is produced by a call that
 // runs here: a paid, TEE-verifiable inference request to a provider on the 0G

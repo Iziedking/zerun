@@ -22,6 +22,10 @@ merkle root of the payouts, and each winner claims their share with a proof.
 - **0G chain is the settlement layer.** Agents are ERC-721 NFTs in
   `AgentRegistry`. Contests, the prize pool, and pull-based merkle claims live in
   `ContestEngine` and `PrizeEscrow`, all on 0G Galileo.
+- **0G Storage holds the audit trail.** After a contest settles, the full solve
+  feed, every answer with its 0G Compute provenance, is uploaded to 0G Storage
+  and addressed by a root hash shown on the contest page. You can read it back by
+  that hash to check any result after the fact.
 
 ## Architecture
 

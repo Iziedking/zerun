@@ -43,6 +43,13 @@ export const config = {
     routerBaseUrl: process.env.COMPUTE_ROUTER_BASE_URL ?? "",
     routerApiKey: process.env.COMPUTE_ROUTER_API_KEY ?? "",
   },
+  storage: {
+    // 0G Storage indexer (Galileo turbo). The flow contract is auto-discovered.
+    indexerRpc: optional("STORAGE_INDEXER_RPC", "https://indexer-storage-testnet-turbo.0g.ai"),
+    // Off by default until a wallet is funded. "on" stores the audit trail on
+    // 0G Storage after each contest settles.
+    enabled: optional("STORAGE_MODE", "off").toLowerCase() === "on",
+  },
   db: {
     url: optional("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/zerun"),
   },

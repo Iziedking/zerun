@@ -10,7 +10,9 @@ import { ContestStatusPill } from "@/components/ContestStatusPill";
 import { ContestLive } from "@/components/ContestLive";
 import { EnterContest } from "@/components/EnterContest";
 import { ClaimPrize } from "@/components/ClaimPrize";
+import { AuditTrail } from "@/components/AuditTrail";
 import { StatChip } from "@/components/ui";
+import { StickerCard } from "@/components/zerun";
 
 export default function ContestPage() {
   const params = useParams<{ id: string }>();
@@ -25,13 +27,16 @@ export default function ContestPage() {
   });
 
   if (!Number.isFinite(id)) {
-    return <p className="pt-16 text-sm text-ember">Invalid contest id.</p>;
+    return <p className="pt-16 font-body text-[15px] font-bold text-coral">Invalid contest id.</p>;
   }
 
   if (detailQ.isLoading) {
     return (
       <div className="pt-10">
-        <div className="panel h-28 animate-pulse bg-ink-700/40" aria-hidden />
+        <div
+          className="h-32 animate-pulse rounded-chunk-lg border-line border-ink bg-cloud-2"
+          aria-hidden
+        />
       </div>
     );
   }
@@ -39,10 +44,12 @@ export default function ContestPage() {
   if (detailQ.isError || !detailQ.data) {
     return (
       <div className="pt-16">
-        <div className="panel p-6 text-sm text-ember">
-          Could not load this contest. It may not exist, or the backend is unreachable.
-        </div>
-        <Link href="/arena" className="mt-4 inline-block text-sm text-signal">
+        <StickerCard className="p-6">
+          <p className="font-body text-[15px] font-bold text-ink">
+            Could not load this contest. It may not exist, or the backend is unreachable.
+          </p>
+        </StickerCard>
+        <Link href="/arena" className="mt-4 inline-block font-body text-[14px] font-extrabold text-violet">
           ← back to the arena
         </Link>
       </div>
@@ -55,29 +62,33 @@ export default function ContestPage() {
     <div className="space-y-8 pt-8">
       <Link
         href="/arena"
-        className="inline-flex items-center gap-1 text-xs text-haze transition hover:text-chalk"
+        className="inline-flex items-center gap-1 font-body text-[13px] font-extrabold uppercase tracking-[0.02em] text-ink-2 transition hover:text-ink"
       >
         ← arena
       </Link>
 
       {/* Header */}
-      <header className="panel p-6">
+      <StickerCard className="p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <span className="font-mono text-sm text-haze">contest #{contest.contest_id}</span>
+              <span className="font-display text-lg text-ink">
+                Contest #{contest.contest_id}
+              </span>
               <ContestStatusPill status={contest.status} />
             </div>
-            <div className="mt-3 font-mono text-4xl text-bone">
+            <div className="mt-3 font-display text-5xl leading-none text-ink">
               {formatUsdc(contest.prize_pool)}
-              <span className="ml-2 text-base text-haze">tUSDC prize pool</span>
+              <span className="ml-2 font-body text-lg font-extrabold text-ink-2">
+                tUSDC prize pool
+              </span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-x-8 gap-y-3">
             <StatChip label="puzzles" value={contest.puzzle_count} mono />
             <StatChip label="agents" value={contest.agent_count} mono />
-            <StatChip label="metric" value={contest.metric || "—"} mono />
+            <StatChip label="metric" value={contest.metric || "·"} mono />
             <StatChip
               label="root"
               value={contest.final_root ? `${contest.final_root.slice(0, 10)}…` : "pending"}
@@ -86,19 +97,19 @@ export default function ContestPage() {
           </div>
         </div>
 
-        <div className="mt-5 border-t border-edge/40 pt-4">
+        <div className="mt-5 border-t-line border-ink/15 pt-5">
           {address ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <EnterContest contestId={id} />
               <ClaimPrize contestId={id} />
             </div>
           ) : (
-            <p className="text-sm text-haze">
+            <p className="font-body text-[15px] text-ink-2">
               Connect your wallet to enter this contest with an agent.
             </p>
           )}
         </div>
-      </header>
+      </StickerCard>
 
       {/* Live */}
       <ContestLive
@@ -106,6 +117,8 @@ export default function ContestPage() {
         initialStandings={standings}
         highlight={address ?? undefined}
       />
+
+      {contest.audit_root && <AuditTrail root={contest.audit_root} tx={contest.audit_tx} />}
     </div>
   );
 }

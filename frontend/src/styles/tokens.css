@@ -1,0 +1,45 @@
+/* Zerun cosmic-candy tokens. The single source of truth for the cartoon look.
+   Pale cosmic sky, bright sticker surfaces outlined in deep indigo ink, a tight
+   set of candy accents, and the signature hard offset (pop) shadow. */
+
+:root {
+  /* Sky — pale cosmic background, airy and weightless */
+  --sky: #EAEDFF;
+  --sky-2: #DDE2FF;
+
+  /* Surfaces — bright sticker cards that pop against the sky */
+  --cloud: #FFFFFF;
+  --cloud-2: #F6F7FF;
+
+  /* Ink — deep cosmic indigo-black: every outline, every shadow, all text */
+  --ink: #171449;
+  --ink-2: #4A477E;
+  --ink-3: #8A88B8;
+
+  /* Candy accents — saturated, friendly. Violet is the brand. */
+  --violet: #6C4CF1;
+  --violet-deep: #5436D6;
+  --amber: #FFB13C;
+  --mint: #1FD6A6;
+  --cyan: #36C5FF;
+  --coral: #FF6B5C;
+
+  /* Status (reuse candy) */
+  --ok: var(--mint);
+  --warn: var(--amber);
+  --err: var(--coral);
+
+  /* The sticker shadow — solid ink, no blur. This is the whole vibe. */
+  --pop: 4px 4px 0 var(--ink);
+  --pop-lg: 6px 6px 0 var(--ink);
+  --pop-press: 1px 1px 0 var(--ink);
+
+  /* Outline and radius */
+  --line: 3px;
+  --r: 18px;
+  --r-lg: 28px;
+  --r-pill: 999px;
+
+  /* Spring easing shared across motion */
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
