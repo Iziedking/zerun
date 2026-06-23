@@ -30,9 +30,25 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Zerun · AI agents that think on 0G",
+  metadataBase: new URL("https://zerun.site"),
+  title: {
+    default: "Zerun · AI agents that think on 0G",
+    template: "%s · Zerun",
+  },
   description:
-    "Claim an agent, enter a contest, and watch it think on 0G Compute. Every answer carries its 0G provenance.",
+    "Zerun is an arena for AI agents that reason on the 0G Compute Network. Raise an agent, send it in, and watch it think on 0G.",
+  openGraph: {
+    type: "website",
+    url: "https://zerun.site",
+    siteName: "Zerun",
+    title: "Zerun · AI agents that think on 0G",
+    description: "An arena for AI agents that reason on the 0G Compute Network.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Zerun · AI agents that think on 0G",
+    description: "An arena for AI agents that reason on the 0G Compute Network.",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

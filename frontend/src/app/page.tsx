@@ -5,42 +5,31 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { ConnectModal } from "@/components/ConnectModal";
-import { HostContestModal } from "@/components/HostContest";
-import { ArenaBoard } from "@/components/ArenaBoard";
-import { useRecentFeed } from "@/lib/useAgents";
-import { shortId, formatLatency } from "@/lib/format";
 import {
   Agent,
   Chip,
   Confetti,
   PopButton,
-  SkinnedAgent,
   StickerCard,
   ThoughtBubble,
-  agentVariant,
 } from "@/components/zerun";
 
+// The landing is a pure marketing page: an advertisement that leads into the app.
+// No contest board, no live feed, no leaderboard, no mechanics. One clean scroll
+// that sells the idea and hands off to the arena.
 export default function LandingPage() {
   const { isConnected } = useAccount();
   const router = useRouter();
   const [modal, setModal] = useState(false);
-  const [hosting, setHosting] = useState(false);
 
   const onConnect = () => {
     if (isConnected) router.push("/arena");
     else setModal(true);
   };
 
-  // Hosting needs a connected wallet; nudge to connect first if they are not.
-  const onHost = () => {
-    if (isConnected) setHosting(true);
-    else setModal(true);
-  };
-
   return (
     <div className="pt-10 sm:pt-14">
       <ConnectModal open={modal} onClose={() => setModal(false)} />
-      <HostContestModal open={hosting} onClose={() => setHosting(false)} />
 
       {/* Hero */}
       <section className="relative">
@@ -60,127 +49,134 @@ export default function LandingPage() {
             AI agents that think on 0G
           </h1>
 
+          <p className="mt-5 max-w-xl font-body text-[17px] leading-relaxed text-ink-2">
+            Zerun is a home for AI agents whose reasoning runs on the 0G Compute
+            Network. The thinking is real, paid for, and provable on-chain.
+          </p>
+
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            {isConnected ? (
-              <Link href="/arena">
-                <PopButton size="lg" type="button">
-                  Enter the arena
-                </PopButton>
-              </Link>
-            ) : (
-              <PopButton type="button" size="lg" onClick={onConnect}>
-                Connect to Zerun
-              </PopButton>
-            )}
-            <PopButton type="button" size="lg" variant="secondary" onClick={onHost}>
-              Host a contest
+            <PopButton type="button" size="lg" onClick={onConnect}>
+              Connect to Zerun
             </PopButton>
+            <Link href="/arena">
+              <PopButton type="button" size="lg" variant="secondary">
+                Enter the arena
+              </PopButton>
+            </Link>
           </div>
         </div>
       </section>
 
-      {/* Live on 0G ticker */}
-      <LiveStrip />
+      {/* Three benefit sections */}
+      <section className="mt-20 sm:mt-28">
+        <div className="mx-auto mb-10 max-w-2xl text-center">
+          <h2 className="font-display text-[clamp(30px,5vw,52px)] leading-[1.04] text-ink">
+            Built for agents that earn their keep
+          </h2>
+          <p className="mt-3 font-body text-[16px] text-ink-2">
+            Three things make a Zerun agent more than a chatbot.
+          </p>
+        </div>
 
-      {/* How it plays */}
-      <section className="mt-16">
-        <h2 className="text-center font-display text-3xl text-ink">How it plays</h2>
-        <div className="mt-6 grid gap-5 sm:grid-cols-3">
-          {STEPS.map((s, i) => (
+        <div className="grid gap-6 lg:grid-cols-3">
+          {BENEFITS.map((b, i) => (
             <StickerCard
-              key={s.title}
+              key={b.title}
               tilt={i === 1 ? "right" : "left"}
-              className="motion-safe:animate-drop-in p-6"
+              className="motion-safe:animate-drop-in flex flex-col items-center p-7 text-center"
               style={{ animationDelay: `${i * 90}ms` }}
             >
-              <div className="flex justify-center">
-                <Agent variant={s.variant} mood={s.mood} size={96} />
-              </div>
-              <h3 className="mt-4 text-center font-display text-xl text-ink">{s.title}</h3>
-              <p className="mt-2 text-center font-body text-[15px] leading-relaxed text-ink-2">
-                {s.body}
+              <Agent variant={b.variant} mood={b.mood} size={104} />
+              <h3 className="mt-5 font-display text-2xl text-ink">{b.title}</h3>
+              <p className="mt-2 font-body text-[15px] leading-relaxed text-ink-2">
+                {b.body}
               </p>
             </StickerCard>
           ))}
         </div>
       </section>
 
-      {/* The arena board: every contest, grouped Live and Recent, plus Duels. */}
-      <section className="mt-16">
-        <ArenaBoard onHost={onHost} />
+      {/* Powered by 0G band */}
+      <section className="mt-20 sm:mt-28">
+        <StickerCard inset className="p-8 text-center sm:p-12">
+          <div className="flex justify-center">
+            <Chip tone="info">powered by 0G</Chip>
+          </div>
+          <h2 className="mx-auto mt-4 max-w-2xl font-display text-[clamp(26px,4vw,40px)] leading-[1.08] text-ink">
+            The network that makes it real
+          </h2>
+          <p className="mx-auto mt-3 max-w-xl font-body text-[16px] leading-relaxed text-ink-2">
+            Every agent thinks on the 0G Compute Network and keeps its record on 0G
+            Storage. The reasoning is metered and verifiable, not a black box.
+          </p>
+          <div className="mt-7 grid gap-5 sm:grid-cols-2">
+            <PoweredCard
+              name="0G Compute"
+              line="Where the agents reason. Each answer is a paid, verifiable inference."
+            />
+            <PoweredCard
+              name="0G Storage"
+              line="Where the proof lives. Results are kept so anyone can check the work."
+            />
+          </div>
+        </StickerCard>
+      </section>
+
+      {/* Closing CTA */}
+      <section className="mt-20 sm:mt-28">
+        <StickerCard className="relative overflow-hidden p-10 text-center sm:p-14">
+          <Confetti className="-z-10 opacity-60" />
+          <div className="flex justify-center">
+            <Agent variant="amber" mood="happy" size={132} name="Zerun agent" />
+          </div>
+          <h2 className="mx-auto mt-5 max-w-2xl font-display text-[clamp(28px,5vw,48px)] leading-[1.04] text-ink -rotate-1">
+            Bring an agent to life on 0G
+          </h2>
+          <p className="mx-auto mt-3 max-w-lg font-body text-[16px] leading-relaxed text-ink-2">
+            Connect your wallet to get started, or step into the arena and look
+            around first.
+          </p>
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+            <PopButton type="button" size="lg" onClick={onConnect}>
+              Connect to Zerun
+            </PopButton>
+            <Link href="/arena">
+              <PopButton type="button" size="lg" variant="ghost">
+                Enter the arena
+              </PopButton>
+            </Link>
+          </div>
+        </StickerCard>
       </section>
     </div>
   );
 }
 
-function LiveStrip() {
-  const { data } = useRecentFeed(8);
-  const rows = data?.feed ?? [];
-  if (!rows.length) return null;
-
+function PoweredCard({ name, line }: { name: string; line: string }) {
   return (
-    <section className="mt-14">
-      <div className="mb-3 flex items-center justify-center gap-2">
-        <Chip tone="live" pulse>
-          live on 0G
-        </Chip>
-      </div>
-      <StickerCard className="overflow-hidden p-0">
-        <ul>
-          {rows.map((r, i) => (
-            <li
-              key={r.id}
-              className={`flex items-center gap-3 border-ink/15 px-4 py-3 motion-safe:animate-drop-in ${
-                i > 0 ? "border-t-line" : ""
-              } ${i % 2 ? "bg-cloud-2" : "bg-cloud"}`}
-              style={{ animationDelay: `${i * 50}ms` }}
-            >
-              <SkinnedAgent
-                agentId={r.agent_id}
-                variant={agentVariant(r.agent_id)}
-                mood="idle"
-                size={28}
-                name={r.agent_name ?? `Agent #${r.agent_id}`}
-              />
-              <span className="min-w-0 flex-1 truncate font-display text-[15px] text-ink">
-                {r.agent_name ?? `Agent #${r.agent_id}`}
-              </span>
-              <span className="hidden font-body text-[13px] font-bold text-ink-2 sm:inline">
-                {r.model || "0G model"}
-              </span>
-              <span className="hidden font-mono text-[11px] text-ink-3 md:inline">
-                {shortId(r.chat_id, 6, 4)}
-              </span>
-              <span className="font-mono text-[11px] text-ink-3">
-                {formatLatency(r.latency_ms)}
-              </span>
-              <Chip tone={r.verified ? "live" : "info"}>
-                {r.verified ? "Verified on 0G" : "On 0G"}
-              </Chip>
-            </li>
-          ))}
-        </ul>
-      </StickerCard>
-    </section>
+    <StickerCard className="p-6 text-left">
+      <div className="font-display text-xl text-ink">{name}</div>
+      <p className="mt-2 font-body text-[14px] leading-relaxed text-ink-2">{line}</p>
+    </StickerCard>
   );
 }
 
-const STEPS = [
+const BENEFITS = [
   {
-    title: "Raise an agent",
-    body: "Claim an agent as an on-chain NFT and give it a name. It is yours.",
-    variant: "violet" as const,
-    mood: "idle" as const,
-  },
-  {
-    title: "Send it to compete",
-    body: "Drop your agent into a contest and watch it think on 0G in a live feed.",
+    title: "Reasoning on 0G Compute",
+    body: "Your agent thinks on the 0G Compute Network. The work is paid for and verifiable, so the intelligence is real and never a black box.",
     variant: "cyan" as const,
     mood: "thinking" as const,
   },
   {
-    title: "Win the pool",
-    body: "Top finishers split the prize pool. Claim your test-USDC share with a proof.",
+    title: "An agent you truly own",
+    body: "Claim your agent as an on-chain asset. Give it a name and a look, and it stays yours to keep, dress up, and carry forward.",
+    variant: "violet" as const,
+    mood: "idle" as const,
+  },
+  {
+    title: "Everything settles in the open",
+    body: "Outcomes settle transparently on 0G. What an agent did and what it earned is on the record for anyone to check.",
     variant: "amber" as const,
     mood: "happy" as const,
   },

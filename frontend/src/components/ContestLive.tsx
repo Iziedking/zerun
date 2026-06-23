@@ -15,9 +15,11 @@ import { kindMeta } from "@/lib/kind";
 import { SolveCard, type SolveRow } from "./SolveCard";
 import { StandingsTable } from "./StandingsTable";
 import { SettledBanner } from "./SettledBanner";
-import { Chip, StickerCard } from "./zerun";
+import { Chip, LoadMore, StickerCard } from "./zerun";
 
 const MAX_ROWS = 60;
+// Show the freshest answers; older ones tuck behind "load more".
+const FEED_PAGE = 8;
 
 function feedItemToRow(f: FeedItem): SolveRow {
   return {
@@ -49,6 +51,7 @@ export function ContestLive({
   kind?: ContestKind;
 }) {
   const [rows, setRows] = useState<SolveRow[]>([]);
+  const [visible, setVisible] = useState(FEED_PAGE);
   const [standings, setStandings] = useState<Standing[]>(initialStandings);
   const [status, setStatus] = useState<WsStatusPayload | null>(null);
   const [settled, setSettled] = useState<WsSettledPayload | null>(null);
@@ -121,7 +124,16 @@ export function ContestLive({
         <FeedHeader socketState={socketState} status={status} count={rows.length} kind={kind} />
         <div className="mt-4 space-y-4">
           {rows.length ? (
-            rows.map((row) => <SolveCard key={row.key} row={row} kind={kind} />)
+            <>
+              {rows.slice(0, visible).map((row) => (
+                <SolveCard key={row.key} row={row} kind={kind} />
+              ))}
+              <LoadMore
+                remaining={rows.length - Math.min(visible, rows.length)}
+                label="Show older"
+                onMore={() => setVisible((n) => n + FEED_PAGE)}
+              />
+            </>
           ) : (
             <StickerCard className="p-10 text-center">
               <p className="font-body text-[15px] text-ink-2">

@@ -2,19 +2,29 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 import { useAccount } from "wagmi";
-import { useOperator } from "@/lib/useAgents";
+import { useAgents, useOperator } from "@/lib/useAgents";
+import { useUsdcBalance } from "@/lib/useChainData";
 import { kindMeta } from "@/lib/kind";
 import { formatUsdc, shortAddr } from "@/lib/format";
 import type { OperatorProfile } from "@/lib/types";
 import { SkinUpload } from "@/components/SkinUpload";
+import { DashboardAgentCard } from "@/components/DashboardAgentCard";
 import {
   agentVariant,
   Chip,
   CoinStat,
+  LoadMore,
+  PopButton,
   SkinnedAgent,
   StickerCard,
 } from "@/components/zerun";
+
+// At most two agents per operator (the contract caps it there).
+const MAX_AGENTS = 2;
+// How many match-history cards to show before "load more".
+const HISTORY_PAGE = 6;
 
 export default function ProfilePage() {
   const params = useParams<{ address: string }>();
@@ -62,6 +72,9 @@ function ProfileBody({
   const winRate = played > 0 ? Math.round((wins / played) * 100) : 0;
   const primary = agents[0];
 
+  const [historyShown, setHistoryShown] = useState(HISTORY_PAGE);
+  const visibleMatches = matches.slice(0, historyShown);
+
   return (
     <div className="space-y-10 pt-10">
       {/* Hero band */}
@@ -99,7 +112,7 @@ function ProfileBody({
         </div>
       </StickerCard>
 
-      {/* Roster */}
+      {/* Roster (read-only for everyone; the owner gets full controls in the Workshop) */}
       <section>
         <h2 className="mb-4 font-display text-2xl text-ink">The roster</h2>
         {agents.length ? (
@@ -117,11 +130,6 @@ function ProfileBody({
                 <span className="font-body text-[12px] font-extrabold text-ink-2">
                   {a.wins}W · {Math.max(0, a.matches - a.wins)}L
                 </span>
-                {isMe && (
-                  <div className="mt-1">
-                    <SkinUpload agentId={a.agent_id} owner={address} compact />
-                  </div>
-                )}
               </li>
             ))}
           </ul>
@@ -139,11 +147,18 @@ function ProfileBody({
           <Chip tone="info">{Number(stats.og_calls ?? 0)} thoughts on 0G</Chip>
         </div>
         {matches.length ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {matches.map((m) => (
-              <MatchCard key={m.contest_id} match={m} />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {visibleMatches.map((m) => (
+                <MatchCard key={m.contest_id} match={m} />
+              ))}
+            </div>
+            <LoadMore
+              className="mt-6"
+              remaining={matches.length - visibleMatches.length}
+              onMore={() => setHistoryShown((n) => n + HISTORY_PAGE)}
+            />
+          </>
         ) : (
           <StickerCard className="p-8 text-center">
             <p className="font-body text-[15px] text-ink-2">
@@ -152,7 +167,80 @@ function ProfileBody({
           </StickerCard>
         )}
       </section>
+
+      {/* Workshop: the owner's agent shelf with skin uploads and the claim control. */}
+      {isMe && <Workshop address={address} />}
     </div>
+  );
+}
+
+// The operator's private workshop, shown only when viewing your own profile. Holds
+// your agents as cards (with the skin upload and records) and the "Raise a new
+// agent" claim control, respecting the two-agent cap.
+function Workshop({ address }: { address: string }) {
+  const agentsQ = useAgents(address);
+  const balance = useUsdcBalance(address);
+  const agents = agentsQ.data?.agents ?? [];
+  const atCap = agents.length >= MAX_AGENTS;
+
+  return (
+    <section className="border-t-line border-ink/15 pt-10">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 className="font-display text-3xl text-ink -rotate-1">Workshop</h2>
+          <p className="mt-1 font-body text-[14px] text-ink-2">
+            Your agents to raise, dress up, and send in.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <CoinStat value={balance.formatted} suffix="tUSDC" caption="your balance" />
+          {atCap ? (
+            <PopButton type="button" variant="ghost" disabled>
+              You have your two agents
+            </PopButton>
+          ) : (
+            <Link href="/onboarding">
+              <PopButton type="button" variant="secondary">
+                Raise a new agent
+              </PopButton>
+            </Link>
+          )}
+        </div>
+      </div>
+
+      {agentsQ.isLoading ? (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="h-56 animate-pulse rounded-chunk-lg border-line border-ink bg-cloud-2"
+              aria-hidden
+            />
+          ))}
+        </div>
+      ) : agents.length ? (
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {agents.map((a) => (
+            <DashboardAgentCard key={a.agent_id} agent={a} owner={address} />
+          ))}
+        </div>
+      ) : (
+        <StickerCard className="p-10 text-center">
+          <p className="mx-auto max-w-sm font-body text-[15px] text-ink-2">
+            No agents yet. Raise one and send it into the arena.
+          </p>
+          <div className="mt-6 flex justify-center">
+            <Link href="/onboarding">
+              <PopButton type="button">Raise an agent</PopButton>
+            </Link>
+          </div>
+        </StickerCard>
+      )}
+
+      <p className="mt-5 font-body text-[13px] font-bold text-ink-3">
+        Agent training and duels are coming in v2.
+      </p>
+    </section>
   );
 }
 

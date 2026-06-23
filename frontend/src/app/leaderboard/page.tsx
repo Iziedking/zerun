@@ -15,19 +15,25 @@ import {
   Agent,
   agentVariant,
   Chip,
+  LoadMore,
   SkinnedAgent,
   StickerCard,
   cx,
 } from "@/components/zerun";
 
+// How many ranked rows (beyond the podium) to show before "load more".
+const ROWS_PAGE = 10;
+
 export default function LeaderboardPage() {
   const { address } = useAccount();
   const { data, isLoading, isError } = useLeaderboard();
   const [scope, setScope] = useState<"all" | "arenas">("all");
+  const [rowsShown, setRowsShown] = useState(ROWS_PAGE);
 
   const rows = data?.leaderboard ?? [];
   const top3 = rows.slice(0, 3);
   const rest = rows.slice(3);
+  const restVisible = rest.slice(0, rowsShown);
   const mine = address
     ? rows.find((r) => r.operator.toLowerCase() === address.toLowerCase())
     : undefined;
@@ -73,13 +79,20 @@ export default function LeaderboardPage() {
           {top3.length > 0 && <Podium rows={top3} me={address} />}
 
           {rest.length > 0 && (
-            <StickerCard className="overflow-hidden p-0">
-              <ul>
-                {rest.map((r, i) => (
-                  <Row key={r.operator} row={r} me={address} alt={i % 2 === 1} />
-                ))}
-              </ul>
-            </StickerCard>
+            <>
+              <StickerCard className="overflow-hidden p-0">
+                <ul>
+                  {restVisible.map((r, i) => (
+                    <Row key={r.operator} row={r} me={address} alt={i % 2 === 1} />
+                  ))}
+                </ul>
+              </StickerCard>
+              <LoadMore
+                className="mt-6"
+                remaining={rest.length - restVisible.length}
+                onMore={() => setRowsShown((n) => n + ROWS_PAGE)}
+              />
+            </>
           )}
         </>
       )}

@@ -21,6 +21,15 @@ export function useContests() {
   });
 }
 
+export function useArenaStats() {
+  return useQuery({
+    queryKey: ["arena-stats"],
+    queryFn: () => api.stats(),
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+  });
+}
+
 export function useRecentFeed(limit = 12) {
   return useQuery({
     queryKey: ["recent-feed", limit],

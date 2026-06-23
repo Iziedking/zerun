@@ -8,6 +8,7 @@ export { ProgressGoo } from "./ProgressGoo";
 export { Agent, type AgentVariant, type AgentMood } from "./Agent";
 export { SkinnedAgent } from "./SkinnedAgent";
 export { Confetti } from "./Confetti";
+export { LoadMore } from "./LoadMore";
 
 import type { AgentVariant } from "./Agent";
 

@@ -1,6 +1,7 @@
 import { API_URL } from "./config";
 import type {
   AgentRecord,
+  ArenaStats,
   ClaimInfo,
   ComputeStatus,
   ContestDetail,
@@ -38,6 +39,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   deployment: () => req<Deployment>("/api/deployment"),
   computeStatus: () => req<ComputeStatus>("/api/compute/status"),
+  stats: () => req<ArenaStats>("/api/stats"),
   contests: () => req<{ contests: ContestSummary[] }>("/api/contests"),
   contest: (id: number | string) => req<ContestDetail>(`/api/contests/${id}`),
   feed: (id: number | string, since = 0) =>

@@ -13,6 +13,16 @@ export interface Deployment {
   };
 }
 
+// Arena-wide totals for the home stats band (GET /api/stats).
+export interface ArenaStats {
+  contests: number;
+  settled: number;
+  live: number;
+  agents: number;
+  og_calls: number;
+  settled_pool: string; // tUSDC 6dp string
+}
+
 export type ComputeMode = "0g-compute" | "0g-router" | "offline-dev";
 
 export interface ComputeStatus {

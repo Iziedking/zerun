@@ -4,9 +4,12 @@ import { useMemo, useState } from "react";
 import { useContests } from "@/lib/useAgents";
 import type { ContestSummary } from "@/lib/types";
 import { ContestCard } from "./ContestCard";
-import { Agent, Chip, PopButton, StickerCard, cx } from "./zerun";
+import { Agent, Chip, LoadMore, PopButton, StickerCard, cx } from "./zerun";
 
 type Tab = "live" | "recent" | "duels";
+
+// How many settled contests to show before "load more".
+const RECENT_PAGE = 6;
 
 // "Live" covers anything still in play; "Recent" is settled.
 function isLive(c: ContestSummary): boolean {
@@ -23,6 +26,7 @@ function isSettled(c: ContestSummary): boolean {
 export function ArenaBoard({ onHost }: { onHost?: () => void }) {
   const { data, isLoading } = useContests();
   const [tab, setTab] = useState<Tab>("live");
+  const [recentShown, setRecentShown] = useState(RECENT_PAGE);
 
   const contests = data?.contests ?? [];
   const live = useMemo(() => contests.filter(isLive), [contests]);
@@ -33,6 +37,7 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
         .sort((a, b) => Number(b.contest_id) - Number(a.contest_id)),
     [contests],
   );
+  const recentVisible = recent.slice(0, recentShown);
 
   return (
     <div>
@@ -85,11 +90,18 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
           />
         )
       ) : recent.length ? (
-        <Grid>
-          {recent.map((c) => (
-            <ContestCard key={c.contest_id} contest={c} />
-          ))}
-        </Grid>
+        <>
+          <Grid>
+            {recentVisible.map((c) => (
+              <ContestCard key={c.contest_id} contest={c} />
+            ))}
+          </Grid>
+          <LoadMore
+            className="mt-6"
+            remaining={recent.length - recentVisible.length}
+            onMore={() => setRecentShown((n) => n + RECENT_PAGE)}
+          />
+        </>
       ) : (
         <Empty text="No settled contests yet. The first winners will show up here." />
       )}

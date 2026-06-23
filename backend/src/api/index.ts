@@ -35,6 +35,20 @@ app.get("/api/compute/status", (c) =>
 
 app.get("/api/storage/status", (c) => c.json({ enabled: storageConfigured() }));
 
+// Arena-wide stats for the home page.
+app.get("/api/stats", async (c) => {
+  const { rows } = await query(
+    `select
+       (select count(*)::int from contests_meta) as contests,
+       (select count(*)::int from contests_meta where status = 'settled') as settled,
+       (select count(*)::int from contests_meta where status in ('open','pending','running','active')) as live,
+       (select count(*)::int from agents_meta) as agents,
+       (select count(*)::int from solve_runs where source = '0g-compute') as og_calls,
+       (select coalesce(sum(prize_pool::numeric), 0)::text from contests_meta where status = 'settled') as settled_pool`,
+  );
+  return c.json(rows[0] ?? {});
+});
+
 app.get("/api/deployment", (c) => {
   if (!deploymentReady()) return c.json({ ready: false });
   const dep = loadDeployment();
