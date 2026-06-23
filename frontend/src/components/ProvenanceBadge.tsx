@@ -85,7 +85,7 @@ export function VerificationBadge({ verified }: { verified: boolean | null }) {
       </Chip>
     );
   }
-  return <Chip tone="neutral">Unverified</Chip>;
+  return <Chip tone="info">On 0G Compute</Chip>;
 }
 
 function CheckIcon() {

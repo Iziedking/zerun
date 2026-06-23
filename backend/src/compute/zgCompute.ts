@@ -107,12 +107,44 @@ export async function ensureLedger(): Promise<number> {
   return current;
 }
 
+// The serving struct is an ethers tuple; read the fields we care about by index.
+// [0] provider, [1] serviceType, [6] model, [7] verifiability, [8] additionalInfo, [10] healthy
+function readService(s: unknown) {
+  const t = s as unknown[];
+  let teeTarget = "";
+  try {
+    teeTarget = JSON.parse(String(t[8] ?? "{}")).TargetTeeAddress ?? "";
+  } catch {
+    teeTarget = "";
+  }
+  return {
+    provider: String(t[0]),
+    serviceType: String(t[1]),
+    model: String(t[6] ?? ""),
+    verifiability: String(t[7] ?? ""),
+    healthy: t[10] === true,
+    teeTarget,
+  };
+}
+
+// Pick the best chatbot provider. A higher score is a stronger proof story: a
+// healthy provider whose responses carry a real TEE attestation verifies on
+// chain, so the "Verified on 0G" badge lights up. When none is available we
+// still fall back to a working provider so the agents keep thinking on 0G.
 async function pickProvider(broker: Broker): Promise<string> {
   if (config.compute.pinnedProvider) return config.compute.pinnedProvider;
-  const services = await broker.inference.listService();
+
+  const services = (await broker.inference.listService()).map(readService);
   if (!services.length) throw new Error("0G Compute returned no live providers");
-  const first = services[0] as unknown as { provider: string };
-  return first.provider;
+
+  const chat = services.filter((s) => s.serviceType === "chatbot");
+  const pool = chat.length ? chat : services;
+
+  const score = (s: ReturnType<typeof readService>) =>
+    (s.verifiability === "TeeML" ? 2 : 0) + (s.healthy ? 1 : 0) + (s.teeTarget ? 1 : 0);
+
+  pool.sort((a, b) => score(b) - score(a));
+  return pool[0]!.provider;
 }
 
 // Bring the broker to a ready state: ledger funded, a provider chosen and
