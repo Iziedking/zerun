@@ -82,6 +82,10 @@ create index if not exists solve_runs_contest_idx on solve_runs (contest_id, id)
 alter table solve_runs add column if not exists samples int;
 alter table solve_runs add column if not exists agreement int;
 
+-- When the join window closes (on-chain endTime), so the contest page can show a
+-- countdown and the phase.
+alter table contests_meta add column if not exists ends_at timestamptz;
+
 create table if not exists payouts (
   contest_id  bigint not null,
   operator    text not null,

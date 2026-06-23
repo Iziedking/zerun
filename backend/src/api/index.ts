@@ -120,11 +120,12 @@ app.post("/api/contests/host", async (c) => {
   }
 
   await query(
-    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind)
-       values ($1, 'open', $2, $3, $4, $5)
+    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at)
+       values ($1, 'open', $2, $3, $4, $5, to_timestamp($6))
        on conflict (contest_id) do update set
-         puzzle_count = excluded.puzzle_count, kind = excluded.kind, prize_pool = excluded.prize_pool`,
-    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : "PUZZLE", con.prizePool.toString(), kind],
+         puzzle_count = excluded.puzzle_count, kind = excluded.kind,
+         prize_pool = excluded.prize_pool, ends_at = excluded.ends_at`,
+    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime)],
   );
   return c.json({ ok: true, contestId: id, kind });
 });
@@ -135,6 +136,25 @@ app.post("/api/contests/:id/enter", async (c) => {
   const agentId = Number(body.agentId);
   const operator = String(body.operator ?? "").toLowerCase();
   if (!agentId || !operator) return c.json({ error: "agentId and operator required" }, 400);
+
+  // Only the join window accepts entries.
+  const meta = await query<{ status: string }>(
+    "select status from contests_meta where contest_id = $1",
+    [id],
+  );
+  if (meta.rows[0] && !["open", "pending"].includes(meta.rows[0].status)) {
+    return c.json({ error: "the join window for this contest has closed" }, 409);
+  }
+
+  // One agent per operator per contest. The other agent is for other contests.
+  const existing = await query(
+    "select 1 from contest_entries where contest_id = $1 and lower(operator) = $2 limit 1",
+    [id, operator],
+  );
+  if (existing.rows.length > 0) {
+    return c.json({ error: "you already have an agent in this contest" }, 409);
+  }
+
   await query(
     `insert into contest_entries (contest_id, agent_id, operator) values ($1,$2,$3)
        on conflict (contest_id, agent_id) do nothing`,

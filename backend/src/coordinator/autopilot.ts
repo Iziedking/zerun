@@ -276,11 +276,42 @@ async function ensureContestMeta(id: number, contestType: number): Promise<void>
   });
   const kind = contestType === CONTEST_TYPE.ANALYST ? "analyst" : "solver";
   await query(
-    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind)
-       values ($1, 'open', 4, $2, $3, $4)
-       on conflict (contest_id) do update set kind = excluded.kind, prize_pool = excluded.prize_pool`,
-    [id, kind === "analyst" ? "PREDICTION" : "PUZZLE", c.prizePool.toString(), kind],
+    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at)
+       values ($1, 'open', 4, $2, $3, $4, to_timestamp($5))
+       on conflict (contest_id) do update set
+         kind = excluded.kind, prize_pool = excluded.prize_pool, ends_at = excluded.ends_at`,
+    [id, kind === "analyst" ? "PREDICTION" : "PUZZLE", c.prizePool.toString(), kind, Number(c.endTime)],
   );
+}
+
+// Heal contests whose database status drifted from the chain: a contest the
+// chain has SETTLED or CANCELLED but the database still shows open or running
+// (e.g. a settlement that completed on chain but did not finish writing back).
+// Keeps the arena from showing a finished contest as stuck on "joining".
+async function reconcileStatuses(): Promise<void> {
+  const dep = loadDeployment();
+  const { rows } = await query<{ contest_id: string }>(
+    "select contest_id from contests_meta where status in ('open','running','pending')",
+  );
+  for (const r of rows) {
+    const id = Number(r.contest_id);
+    try {
+      const c = await publicClient.readContract({
+        address: dep.contestEngine,
+        abi: contestEngineAbi,
+        functionName: "getContest",
+        args: [BigInt(id)],
+      });
+      const s = Number(c.status); // 3 = SETTLED, 4 = CANCELLED
+      if (s === 3) {
+        await query("update contests_meta set status = 'settled' where contest_id = $1 and status <> 'settled'", [id]);
+      } else if (s === 4) {
+        await query("update contests_meta set status = 'cancelled' where contest_id = $1 and status <> 'cancelled'", [id]);
+      }
+    } catch {
+      /* skip this one, try again next sweep */
+    }
+  }
 }
 
 const inFlight = new Set<number>();
@@ -311,6 +342,8 @@ async function startDueSweeper(): Promise<void> {
           console.error(`autopilot: settle ${d.id} failed:`, (err as Error).message),
         );
       }
+      // Keep the database status in step with the chain (heals stuck contests).
+      await reconcileStatuses();
     } catch (err) {
       console.error("autopilot sweeper failed:", (err as Error).message);
     }

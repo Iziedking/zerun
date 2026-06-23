@@ -6,6 +6,7 @@ import { traitInferencePlan } from "../runners/traits.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
+import { onchainEntryCount, syncEntriesFromChain } from "./contestOps.js";
 import {
   CONTEST_TYPE,
   agentRegistryAbi,
@@ -82,11 +83,26 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
 export async function runContest(contestId: number): Promise<RunResult> {
   const dep = loadDeployment();
 
-  const entries = await readEntries(contestId);
+  let entries = await readEntries(contestId);
   if (entries.length === 0) {
-    broadcast({ type: "status", contestId, payload: { status: "no-entries" } });
-    await cancelContest(contestId);
-    return { contestId, root: null, posted: false, settled: false, payouts: [] };
+    // The DB mirror can lag the on-chain registerEntry. The chain is the source
+    // of truth, so never cancel a contest that actually has a field.
+    const onchain = await onchainEntryCount(contestId).catch(() => 0);
+    if (onchain > 0) {
+      await syncEntriesFromChain(contestId);
+      entries = await readEntries(contestId);
+    }
+    if (entries.length === 0) {
+      if (onchain > 0) {
+        // Field exists on chain but we could not read it yet; leave it open and
+        // let the next sweep retry instead of cancelling a real contest.
+        console.warn(`contest ${contestId}: ${onchain} on-chain entries not yet mirrored, retrying next sweep`);
+        return { contestId, root: null, posted: false, settled: false, payouts: [] };
+      }
+      broadcast({ type: "status", contestId, payload: { status: "no-entries" } });
+      await cancelContest(contestId);
+      return { contestId, root: null, posted: false, settled: false, payouts: [] };
+    }
   }
 
   const puzzles = generatePuzzles(contestId, await puzzleCountFor(contestId));

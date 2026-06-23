@@ -28,10 +28,9 @@ function toSixDp(amount: string): bigint {
   return BigInt(whole || "0") * 1_000_000n + BigInt(fracPadded || "0");
 }
 
-type Phase = "idle" | "minting" | "approving" | "listing" | "saving";
+type Phase = "idle" | "approving" | "listing" | "saving";
 
 const PHASE_LABEL: Record<Exclude<Phase, "idle">, string> = {
-  minting: "Minting test USDC…",
   approving: "Approving the escrow…",
   listing: "Listing the contest…",
   saving: "Adding it to the arena…",
@@ -61,6 +60,14 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const ready = Boolean(deployment?.ready && usdcAddr && engineAddr && escrowAddr);
   const busy = phase !== "idle";
 
+  let poolDp = 0n;
+  try {
+    poolDp = toSixDp(pool.trim());
+  } catch {
+    /* invalid input, handled on submit */
+  }
+  const short = balance.raw !== undefined && poolDp > 0n && balance.raw < poolDp;
+
   const host = useCallback(async () => {
     setError(null);
     if (!ready || !address || !publicClient || !usdcAddr || !engineAddr || !escrowAddr) return;
@@ -77,21 +84,15 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       return;
     }
 
-    try {
-      // Mint if the wallet is short on test USDC.
-      const have = balance.raw ?? 0n;
-      if (have < prizePool) {
-        setPhase("minting");
-        const mintHash = await writeContractAsync({
-          abi: testUsdcAbi,
-          address: usdcAddr,
-          functionName: "mint",
-          args: [address as `0x${string}`, prizePool],
-          chainId: zeroGGalileo.id,
-        });
-        await publicClient.waitForTransactionReceipt({ hash: mintHash });
-      }
+    // The host funds the pool from their own balance.
+    const have = balance.raw ?? 0n;
+    if (have < prizePool) {
+      const short = (Number(prizePool - have) / 1e6).toFixed(2);
+      setError(`Not enough tUSDC. You are ${short} short for this pool. Mint more on your profile, then try again.`);
+      return;
+    }
 
+    try {
       // Approve the escrow to pull the prize pool.
       setPhase("approving");
       const approveHash = await writeContractAsync({
@@ -208,6 +209,14 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
         </Field>
       </div>
 
+      <p className="font-body text-[13px] text-ink-2">
+        Your balance:{" "}
+        <span className={cx("font-display", short ? "text-coral" : "text-ink")}>
+          {balance.formatted} tUSDC
+        </span>
+        . The pool is charged from this when you host.
+      </p>
+
       {busy && (
         <div className="flex items-center justify-center gap-2 rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3">
           <Spinner />
@@ -235,10 +244,10 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
         <PopButton
           type="button"
           onClick={host}
-          disabled={!ready || busy}
+          disabled={!ready || busy || short}
           icon={busy ? <Spinner /> : undefined}
         >
-          Host it
+          {short ? "Not enough tUSDC" : "Host it"}
         </PopButton>
       </div>
     </div>
