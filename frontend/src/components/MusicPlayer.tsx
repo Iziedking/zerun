@@ -7,7 +7,7 @@ import { cx } from "./zerun/cx";
 // context so it stays in step with the track started from "Enter the arena".
 // Hides itself when no track is present.
 export function MusicPlayer({ className = "" }: { className?: string }) {
-  const { playing, available, toggle } = useMusic();
+  const { muted, available, toggle } = useMusic();
 
   if (!available) return null;
 
@@ -15,15 +15,15 @@ export function MusicPlayer({ className = "" }: { className?: string }) {
     <button
       type="button"
       onClick={toggle}
-      aria-label={playing ? "Turn music off" : "Turn music on"}
-      aria-pressed={playing}
+      aria-label={muted ? "Turn music on" : "Turn music off"}
+      aria-pressed={!muted}
       className={cx(
         "grid h-9 w-9 shrink-0 place-items-center rounded-pill border-line border-ink shadow-pop-press transition hover:-translate-y-px",
-        playing ? "bg-mint" : "bg-cloud",
+        muted ? "bg-cloud" : "bg-mint",
         className,
       )}
     >
-      {playing ? <Bars /> : <Note muted />}
+      {muted ? <Note muted /> : <Bars />}
     </button>
   );
 }

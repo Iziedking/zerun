@@ -61,7 +61,7 @@ export function SiteHeader() {
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <ComputeBadge className="hidden lg:inline-flex" />
             {isConnected && <BalancePill className="hidden md:inline-flex" />}
-            <MusicPlayer className="hidden sm:grid" />
+            <MusicPlayer className="grid" />
             <ConnectButton />
           </div>
         )}

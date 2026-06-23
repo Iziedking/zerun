@@ -132,16 +132,6 @@ export function PostConnectModal() {
             </div>
           </>
         )}
-
-        {step !== "done" && (
-          <button
-            type="button"
-            onClick={close}
-            className="mt-4 font-body text-[13px] font-extrabold uppercase tracking-[0.02em] text-ink-3 transition hover:text-ink"
-          >
-            I will do this later
-          </button>
-        )}
       </StickerCard>
     </div>
   );
