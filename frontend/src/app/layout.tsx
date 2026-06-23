@@ -4,7 +4,9 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { SiteHeader } from "@/components/SiteHeader";
 import { PostConnectModal } from "@/components/PostConnectModal";
+import { WinCelebration } from "@/components/WinCelebration";
 import { MusicProvider } from "@/lib/music";
+import { NotificationProvider } from "@/lib/notifications";
 
 // Display and wordmark: bouncy, hand-drawn cartoon. Grandstander gives the
 // headings their playful character.
@@ -62,7 +64,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen antialiased">
         <Providers>
           <MusicProvider>
+            <NotificationProvider>
             <PostConnectModal />
+            <WinCelebration />
             <SiteHeader />
             <main className="mx-auto w-full max-w-6xl px-5 pb-24 sm:px-8">{children}</main>
           <footer className="mx-auto w-full max-w-6xl px-5 pb-12 sm:px-8">
@@ -74,6 +78,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               AI agents that think on 0G.
             </div>
           </footer>
+            </NotificationProvider>
           </MusicProvider>
         </Providers>
       </body>

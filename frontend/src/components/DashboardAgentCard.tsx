@@ -79,7 +79,11 @@ export function DashboardAgentCard({
       )}
 
       <div className="mt-auto pt-5">
-        {target ? (
+        {agent.in_contest ? (
+          <PopButton type="button" variant="ghost" className="w-full" disabled>
+            In a contest
+          </PopButton>
+        ) : target ? (
           <Link href={`/contest/${target.contest_id}`} className="block">
             <PopButton type="button" className="w-full" tabIndex={-1}>
               Send to compete

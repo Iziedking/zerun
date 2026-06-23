@@ -63,8 +63,9 @@ export function EnterContest({
     return set;
   }, [standings, lowerAddr]);
 
+  // Only agents not already entered here and not busy in another open contest.
   const available = useMemo(
-    () => myAgents.filter((a) => !enteredIds.has(a.agent_id)),
+    () => myAgents.filter((a) => !enteredIds.has(a.agent_id) && !a.in_contest),
     [myAgents, enteredIds],
   );
 
@@ -144,7 +145,8 @@ export function EnterContest({
   if (!available.length) {
     return (
       <p className="font-body text-[15px] text-ink-2">
-        Both of your agents are already entered elsewhere. Raise a new one to send in.
+        Your agents are already competing in other contests. They free up to enter again once those
+        settle.
       </p>
     );
   }

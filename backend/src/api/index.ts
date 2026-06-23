@@ -290,6 +290,19 @@ app.post("/api/contests/:id/enter", async (c) => {
     return c.json({ error: "you already have an agent in this contest" }, 409);
   }
 
+  // An agent can only be in one open contest at a time.
+  const busy = await query(
+    `select 1 from contest_entries ce
+       join contests_meta cm on cm.contest_id = ce.contest_id
+      where ce.agent_id = $1 and ce.contest_id <> $2
+        and cm.status in ('open','pending','running','active')
+      limit 1`,
+    [agentId, id],
+  );
+  if (busy.rows.length > 0) {
+    return c.json({ error: "this agent is already competing in another open contest" }, 409);
+  }
+
   await query(
     `insert into contest_entries (contest_id, agent_id, operator) values ($1,$2,$3)
        on conflict (contest_id, agent_id) do nothing`,
@@ -432,6 +445,10 @@ app.get("/api/agents", async (c) => {
   const { rows } = await query(
     `select m.agent_id, m.owner, m.name, m.created_at, m.compute_level,
             (m.skin_b64 is not null) as has_skin, m.skin_root,
+            (exists (select 1 from contest_entries ce
+               join contests_meta cm on cm.contest_id = ce.contest_id
+              where ce.agent_id = m.agent_id
+                and cm.status in ('open','pending','running','active'))) as in_contest,
             count(distinct e.contest_id)::int as matches,
             (sum(case when p.rank = 1 then 1 else 0 end))::int as wins,
             (select count(*)::int from solve_runs s

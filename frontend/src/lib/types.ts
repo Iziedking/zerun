@@ -105,6 +105,9 @@ export interface AgentRecord {
   og_calls?: number;
   compute_level?: number;
   has_skin?: boolean;
+  // True when the agent is already in an open or running contest; it cannot enter
+  // another until that one settles.
+  in_contest?: boolean;
 }
 
 // One recent inference for the landing "live on 0G" strip.

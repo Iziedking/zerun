@@ -77,8 +77,42 @@ function ProfileBody({
   const [historyShown, setHistoryShown] = useState(HISTORY_PAGE);
   const visibleMatches = matches.slice(0, historyShown);
 
+  // Prizes the owner has won but not yet claimed.
+  const unclaimed = isMe
+    ? matches.filter((m) => m.amount && Number(m.amount) > 0 && !m.claimed)
+    : [];
+
   return (
     <div className="space-y-10 pt-10">
+      {unclaimed.length > 0 && (
+        <StickerCard className="border-amber bg-amber/15 p-5">
+          <h3 className="font-display text-lg text-ink">
+            You have {unclaimed.length} prize{unclaimed.length > 1 ? "s" : ""} to claim
+          </h3>
+          <p className="mt-1 font-body text-[14px] text-ink-2">
+            Open each contest and claim your tUSDC. The nudge clears once you have claimed.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {unclaimed.map((m) => (
+              <li key={m.contest_id}>
+                <Link
+                  href={`/contest/${m.contest_id}`}
+                  className="flex items-center justify-between rounded-chunk border-line border-ink bg-cloud px-4 py-2.5 transition hover:bg-violet/5"
+                >
+                  <span className="font-display text-base text-ink">Contest #{m.contest_id}</span>
+                  <span className="flex items-center gap-3">
+                    <span className="font-display text-base text-ink">
+                      {formatUsdc(m.amount)} tUSDC
+                    </span>
+                    <Chip tone="won">Claim</Chip>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </StickerCard>
+      )}
+
       {/* Hero band */}
       <StickerCard className="relative overflow-hidden p-7">
         <div className="grid items-center gap-6 sm:grid-cols-[160px_1fr]">
@@ -294,7 +328,7 @@ function MatchRow({
               <span className="ml-1 font-body text-[11px] font-extrabold text-ink-2">tUSDC</span>
             </>
           ) : (
-            <span className="text-ink-3">—</span>
+            <span className="font-body text-[12px] font-extrabold text-ink-3">no prize</span>
           )}
         </span>
       </Link>
