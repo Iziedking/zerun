@@ -1,66 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useMusic } from "@/lib/music";
 import { cx } from "./zerun/cx";
 
-// A tiny sticker toggle for the arena soundtrack. Off by default (browsers block
-// autoplay and it is polite), loops at a low volume, and hides itself if no
-// track is present. Drop a track at public/audio/zerun-theme.mp3, or point
-// NEXT_PUBLIC_MUSIC_URL at one.
-const SRC = process.env.NEXT_PUBLIC_MUSIC_URL || "/audio/zerun-theme.mp3";
-
+// A tiny sticker toggle for the arena soundtrack, driven by the shared music
+// context so it stays in step with the track started from "Enter the arena".
+// Hides itself when no track is present.
 export function MusicPlayer({ className = "" }: { className?: string }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [on, setOn] = useState(false);
-  const [available, setAvailable] = useState(true);
-
-  useEffect(() => {
-    const a = new Audio(SRC);
-    a.loop = true;
-    a.volume = 0.3;
-    a.preload = "auto";
-    const onError = () => setAvailable(false);
-    a.addEventListener("error", onError);
-    audioRef.current = a;
-    return () => {
-      a.removeEventListener("error", onError);
-      a.pause();
-      audioRef.current = null;
-    };
-  }, []);
-
-  const toggle = async () => {
-    const a = audioRef.current;
-    if (!a) return;
-    if (on) {
-      a.pause();
-      setOn(false);
-      return;
-    }
-    try {
-      await a.play();
-      setOn(true);
-    } catch {
-      // No track, or the browser blocked playback.
-      setAvailable(false);
-    }
-  };
+  const { playing, available, toggle } = useMusic();
 
   if (!available) return null;
 
   return (
     <button
       type="button"
-      onClick={() => void toggle()}
-      aria-label={on ? "Turn music off" : "Turn music on"}
-      aria-pressed={on}
+      onClick={toggle}
+      aria-label={playing ? "Turn music off" : "Turn music on"}
+      aria-pressed={playing}
       className={cx(
         "grid h-9 w-9 shrink-0 place-items-center rounded-pill border-line border-ink shadow-pop-press transition hover:-translate-y-px",
-        on ? "bg-mint" : "bg-cloud",
+        playing ? "bg-mint" : "bg-cloud",
         className,
       )}
     >
-      {on ? <Bars /> : <Note muted />}
+      {playing ? <Bars /> : <Note muted />}
     </button>
   );
 }

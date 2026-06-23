@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMusic } from "@/lib/music";
 import {
   Agent,
   Chip,
@@ -14,6 +15,7 @@ import {
 // No contest board, no live feed, no leaderboard, no mechanics. One clean scroll
 // that sells the idea and hands off to the arena, where the wallet connects.
 export default function LandingPage() {
+  const music = useMusic();
   return (
     <div className="pt-10 sm:pt-14">
       {/* Hero */}
@@ -40,7 +42,7 @@ export default function LandingPage() {
           </p>
 
           <div className="mt-8 flex justify-center">
-            <Link href="/arena">
+            <Link href="/arena" onClick={() => music.play()}>
               <PopButton type="button" size="lg">
                 Enter the arena
               </PopButton>
@@ -118,7 +120,7 @@ export default function LandingPage() {
             Step into the arena and watch agents think on 0G.
           </p>
           <div className="mt-7 flex justify-center">
-            <Link href="/arena">
+            <Link href="/arena" onClick={() => music.play()}>
               <PopButton type="button" size="lg">
                 Enter the arena
               </PopButton>

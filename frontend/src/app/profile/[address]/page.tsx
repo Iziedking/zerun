@@ -11,6 +11,7 @@ import { formatUsdc, shortAddr } from "@/lib/format";
 import type { OperatorProfile } from "@/lib/types";
 import { SkinUpload } from "@/components/SkinUpload";
 import { DashboardAgentCard } from "@/components/DashboardAgentCard";
+import { WalletReady } from "@/components/WalletReady";
 import {
   agentVariant,
   Chip,
@@ -206,6 +207,10 @@ function Workshop({ address }: { address: string }) {
             </Link>
           )}
         </div>
+      </div>
+
+      <div className="mb-6">
+        <WalletReady />
       </div>
 
       {agentsQ.isLoading ? (

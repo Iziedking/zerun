@@ -1,0 +1,101 @@
+"use client";
+
+import { useState } from "react";
+import { useAccount, useBalance, usePublicClient, useWriteContract } from "wagmi";
+import { zeroGGalileo, FAUCET_URL } from "@/lib/chain";
+import { useUsdcBalance } from "@/lib/useChainData";
+import { useDeployment } from "@/lib/useDeployment";
+import { testUsdcAbi } from "@/lib/contracts";
+import { friendlyError } from "@/lib/errors";
+import { StickerCard } from "./zerun/StickerCard";
+import { PopButton } from "./zerun/PopButton";
+import { Spinner } from "./ui";
+
+const MINT_AMOUNT = 100_000000n; // 100 tUSDC (6 decimals)
+
+// Wallet readiness for the operator's own profile: the 0G gas balance with a
+// faucet link, and the tUSDC balance with a one-click mint to top up the arena's
+// test currency when it runs low. A safety net in case the connect flow was
+// skipped.
+export function WalletReady() {
+  const { address } = useAccount();
+  const { data: gas } = useBalance({
+    address,
+    chainId: zeroGGalileo.id,
+    query: { enabled: Boolean(address), refetchInterval: 10_000 },
+  });
+  const usdc = useUsdcBalance(address);
+  const { data: deployment } = useDeployment();
+  const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient({ chainId: zeroGGalileo.id });
+  const [minting, setMinting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!address) return null;
+
+  const lowGas = gas ? gas.value === 0n : false;
+  const gasText = gas ? `${(Number(gas.value) / 1e18).toFixed(3)} 0G` : "·";
+
+  const mint = async () => {
+    const usdcAddr = deployment?.contracts.testUSDC as `0x${string}` | undefined;
+    if (!usdcAddr) return;
+    setError(null);
+    setMinting(true);
+    try {
+      const hash = await writeContractAsync({
+        abi: testUsdcAbi,
+        address: usdcAddr,
+        functionName: "mint",
+        args: [address, MINT_AMOUNT],
+      });
+      await publicClient?.waitForTransactionReceipt({ hash });
+      await usdc.refetch();
+    } catch (err) {
+      setError(friendlyError(err, "That mint did not go through. Try again."));
+    } finally {
+      setMinting(false);
+    }
+  };
+
+  return (
+    <StickerCard className="p-5">
+      <h3 className="font-display text-lg text-ink">Wallet</h3>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-chunk border-line border-ink/15 bg-cloud-2 p-4">
+          <div className="font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
+            0G for gas
+          </div>
+          <div className="mt-1 font-display text-xl text-ink">{gasText}</div>
+          <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="mt-3 inline-block">
+            <PopButton type="button" variant={lowGas ? "primary" : "secondary"}>
+              {lowGas ? "Get 0G gas" : "Top up 0G"}
+            </PopButton>
+          </a>
+        </div>
+
+        <div className="rounded-chunk border-line border-ink/15 bg-cloud-2 p-4">
+          <div className="font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
+            tUSDC balance
+          </div>
+          <div className="mt-1 font-display text-xl text-ink">
+            {usdc.formatted} <span className="font-body text-[12px] font-extrabold text-ink-2">tUSDC</span>
+          </div>
+          <PopButton
+            type="button"
+            onClick={() => void mint()}
+            disabled={minting}
+            icon={minting ? <Spinner /> : undefined}
+            className="mt-3"
+          >
+            {minting ? "Minting" : "Get 100 tUSDC"}
+          </PopButton>
+        </div>
+      </div>
+      {error && <p className="mt-3 font-body text-[13px] font-bold text-coral">{error}</p>}
+      <p className="mt-3 font-body text-[12px] leading-relaxed text-ink-3">
+        tUSDC is the arena's test currency for claiming, training, and hosting, mint more any time.
+        0G is the network gas, claimed from the faucet.
+      </p>
+    </StickerCard>
+  );
+}

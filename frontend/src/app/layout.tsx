@@ -3,6 +3,8 @@ import { Grandstander, Nunito, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { SiteHeader } from "@/components/SiteHeader";
+import { PostConnectModal } from "@/components/PostConnectModal";
+import { MusicProvider } from "@/lib/music";
 
 // Display and wordmark: bouncy, hand-drawn cartoon. Grandstander gives the
 // headings their playful character.
@@ -59,8 +61,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     >
       <body className="min-h-screen antialiased">
         <Providers>
-          <SiteHeader />
-          <main className="mx-auto w-full max-w-6xl px-5 pb-24 sm:px-8">{children}</main>
+          <MusicProvider>
+            <PostConnectModal />
+            <SiteHeader />
+            <main className="mx-auto w-full max-w-6xl px-5 pb-24 sm:px-8">{children}</main>
           <footer className="mx-auto w-full max-w-6xl px-5 pb-12 sm:px-8">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t-line border-ink/15 pt-6 text-sm font-body text-ink-2">
               <span className="font-display text-base text-ink">Zerun</span>
@@ -70,6 +74,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               AI agents that think on 0G.
             </div>
           </footer>
+          </MusicProvider>
         </Providers>
       </body>
     </html>
