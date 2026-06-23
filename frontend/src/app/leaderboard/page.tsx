@@ -4,8 +4,13 @@ import Link from "next/link";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { useLeaderboard } from "@/lib/useAgents";
-import { formatUsdc, shortAddr } from "@/lib/format";
+import { shortAddr } from "@/lib/format";
 import type { LeaderboardRow } from "@/lib/types";
+
+// tUSDC winnings, always two decimals so the column reads neatly.
+function money(sixDp: string): string {
+  return (Number(sixDp) / 1_000_000).toFixed(2);
+}
 import {
   Agent,
   agentVariant,
@@ -131,7 +136,7 @@ function Podium({ rows, me }: { rows: LeaderboardRow[]; me?: string }) {
                 </div>
                 <div className="font-mono text-[11px] text-ink-2">{shortAddr(r.operator)}</div>
                 <div className="mt-2 font-display text-xl text-ink">
-                  {formatUsdc(r.winnings)}
+                  {money(r.winnings)}
                   <span className="ml-1 font-body text-[12px] font-extrabold text-ink-2">tUSDC</span>
                 </div>
               </StickerCard>
@@ -155,17 +160,18 @@ function Row({
   youRow?: boolean;
 }) {
   const isMe = me && row.operator.toLowerCase() === me.toLowerCase();
+  const wins = Number(row.wins);
   return (
     <Link
       href={`/profile/${row.operator}`}
       className={cx(
-        "flex h-[44px] items-center gap-3 border-ink/15 px-4",
+        "flex items-center gap-3 border-ink/15 px-4 py-2.5",
         !youRow && "border-t-line first:border-t-0",
         youRow ? "bg-cloud" : alt ? "bg-cloud-2" : "bg-cloud",
         isMe && !youRow && "bg-violet/10",
       )}
     >
-      <span className="w-7 shrink-0 text-center font-display text-lg text-ink">{row.rank}</span>
+      <span className="w-6 shrink-0 text-center font-display text-lg text-ink">{row.rank}</span>
       <Agent
         variant={agentVariant(row.operator)}
         mood="idle"
@@ -173,18 +179,21 @@ function Row({
         name={row.agent_name ?? shortAddr(row.operator)}
       />
       <div className="min-w-0 flex-1">
-        <span className="truncate font-display text-[15px] text-ink">
-          {row.agent_name ?? shortAddr(row.operator)}
-        </span>
-        {(isMe || youRow) && <span className="ml-2 font-mono text-[11px] text-violet">you</span>}
+        <div className="flex items-center gap-2">
+          <span className="truncate font-display text-[15px] text-ink">
+            {row.agent_name ?? "Agent"}
+          </span>
+          {(isMe || youRow) && (
+            <span className="shrink-0 font-mono text-[11px] font-bold text-violet">you</span>
+          )}
+        </div>
+        <span className="font-mono text-[11px] text-ink-3">{shortAddr(row.operator)}</span>
       </div>
-      {row.wins > 0 && (
-        <Chip tone="won">
-          {row.wins} {row.wins === 1 ? "win" : "wins"}
-        </Chip>
-      )}
-      <span className="shrink-0 font-display text-base text-ink">
-        {formatUsdc(row.winnings)}
+      <div className="hidden w-16 shrink-0 justify-end sm:flex">
+        {wins > 0 && <Chip tone="won">{wins}W</Chip>}
+      </div>
+      <span className="w-24 shrink-0 text-right font-display text-base text-ink">
+        {money(row.winnings)}
         <span className="ml-1 font-body text-[11px] font-extrabold text-ink-2">tUSDC</span>
       </span>
     </Link>

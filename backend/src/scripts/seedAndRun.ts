@@ -25,6 +25,13 @@ function tierSpread(n: number): number[] {
   return Array.from({ length: n }, (_, i) => Math.round((i * 4) / (n - 1)));
 }
 
+// Friendly agent names so a seeded field reads like real distinct operators,
+// not a row of identical test entries.
+const NAMES = [
+  "Pixel", "Nova", "Byte", "Echo", "Quark", "Volt",
+  "Sage", "Riff", "Juno", "Mochi", "Pip", "Cosmo",
+];
+
 type Operator = { account: ReturnType<typeof privateKeyToAccount>; wallet: ReturnType<typeof createWalletClient> };
 
 // Seeds a field of agents and runs a contest end to end against the live
@@ -144,7 +151,7 @@ async function main() {
       functionName: "nextAgentId",
     });
 
-    const name = `${KIND === "analyst" ? "Analyst" : "Solver"} ${i} T${targetTier}`;
+    const name = NAMES[(i - 1) % NAMES.length] ?? `Agent ${i}`;
     const createHash = await wallet.writeContract({
       address: dep.agentRegistry,
       abi: agentRegistryAbi,

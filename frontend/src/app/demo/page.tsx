@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
 import { Spinner } from "@/components/ui";
 import { PopButton, StickerCard } from "@/components/zerun";
 
@@ -32,7 +33,7 @@ export default function DemoPage() {
       setRunId(String(res.contestId));
       setMsg({ tone: "ok", text: `Opened contest #${res.contestId}.` });
     } catch (e) {
-      setMsg({ tone: "err", text: e instanceof Error ? e.message.split("\n")[0] : "Failed." });
+      setMsg({ tone: "err", text: friendlyError(e, "That did not go through.") });
     } finally {
       setOpening(false);
     }
@@ -50,7 +51,7 @@ export default function DemoPage() {
       await api.adminRun(idNum);
       setMsg({ tone: "ok", text: `Run started for #${idNum}. Watch it on the contest page.` });
     } catch (e) {
-      setMsg({ tone: "err", text: e instanceof Error ? e.message.split("\n")[0] : "Failed." });
+      setMsg({ tone: "err", text: friendlyError(e, "That did not go through.") });
     } finally {
       setRunning(false);
     }

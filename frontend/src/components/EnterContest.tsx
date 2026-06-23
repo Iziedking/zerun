@@ -7,6 +7,7 @@ import { contestEngineAbi } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
 import { useAgents } from "@/lib/useAgents";
 import { api } from "@/lib/api";
+import { friendlyError } from "@/lib/errors";
 import { zeroGGalileo } from "@/lib/chain";
 import { Spinner } from "./ui";
 import { Chip, PopButton } from "./zerun";
@@ -48,7 +49,7 @@ export function EnterContest({ contestId }: { contestId: number }) {
       setDone(true);
       await queryClient.invalidateQueries({ queryKey: ["contest", String(contestId)] });
     } catch (e) {
-      setError(e instanceof Error ? e.message.split("\n")[0] : "Could not enter.");
+      setError(friendlyError(e, "Could not send your agent in. Try again."));
     } finally {
       setBusy(false);
     }

@@ -118,9 +118,9 @@ app.get("/api/agents", async (c) => {
   // many answers it has produced on 0G Compute.
   const { rows } = await query(
     `select m.agent_id, m.owner, m.name, m.created_at,
-            count(distinct e.contest_id) as matches,
-            count(p.*) filter (where p.rank = 1) as wins,
-            (select count(*) from solve_runs s
+            count(distinct e.contest_id)::int as matches,
+            (sum(case when p.rank = 1 then 1 else 0 end))::int as wins,
+            (select count(*)::int from solve_runs s
                where s.agent_id = m.agent_id and s.source = '0g-compute') as og_calls
        from agents_meta m
        left join contest_entries e on e.agent_id = m.agent_id
@@ -154,8 +154,8 @@ app.get("/api/feed/recent", async (c) => {
 app.get("/api/leaderboard", async (c) => {
   const { rows } = await query(
     `select e.operator,
-            count(distinct e.contest_id) as matches,
-            count(p.*) filter (where p.rank = 1) as wins,
+            count(distinct e.contest_id)::int as matches,
+            (sum(case when p.rank = 1 then 1 else 0 end))::int as wins,
             coalesce(sum(p.amount::numeric), 0)::text as winnings,
             (select name from agents_meta am where lower(am.owner) = lower(e.operator)
                order by am.agent_id asc limit 1) as agent_name
@@ -173,10 +173,10 @@ app.get("/api/operators/:address", async (c) => {
   const operator = String(c.req.param("address")).toLowerCase();
 
   const statsQ = await query(
-    `select count(distinct e.contest_id) as matches,
-            count(p.*) filter (where p.rank = 1) as wins,
+    `select count(distinct e.contest_id)::int as matches,
+            (sum(case when p.rank = 1 then 1 else 0 end))::int as wins,
             coalesce(sum(p.amount::numeric), 0)::text as winnings,
-            (select count(*) from solve_runs s where lower(s.operator) = $1 and s.source = '0g-compute') as og_calls
+            (select count(*)::int from solve_runs s where lower(s.operator) = $1 and s.source = '0g-compute') as og_calls
        from contest_entries e
        left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
       where lower(e.operator) = $1`,
@@ -185,8 +185,8 @@ app.get("/api/operators/:address", async (c) => {
 
   const agentsQ = await query(
     `select m.agent_id, m.name,
-            count(distinct e.contest_id) as matches,
-            count(p.*) filter (where p.rank = 1) as wins
+            count(distinct e.contest_id)::int as matches,
+            (sum(case when p.rank = 1 then 1 else 0 end))::int as wins
        from agents_meta m
        left join contest_entries e on e.agent_id = m.agent_id
        left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)

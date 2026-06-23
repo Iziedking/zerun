@@ -16,6 +16,7 @@ import { useUsdcBalance } from "@/lib/useChainData";
 import { kindMeta } from "@/lib/kind";
 import { api } from "@/lib/api";
 import { formatUsdc } from "@/lib/format";
+import { friendlyError } from "@/lib/errors";
 import { zeroGGalileo } from "@/lib/chain";
 import { ConnectGate } from "@/components/ConnectGate";
 import { Spinner } from "@/components/ui";
@@ -356,9 +357,5 @@ function Stage({
 }
 
 function toMessage(e: unknown): string {
-  if (e instanceof Error) {
-    const first = e.message.split("\n")[0];
-    return first.length > 160 ? `${first.slice(0, 160)}…` : first;
-  }
-  return "Something went wrong.";
+  return friendlyError(e);
 }

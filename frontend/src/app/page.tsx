@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAccount } from "wagmi";
-import { ComputeBadge } from "@/components/ComputeBadge";
 import { ConnectModal } from "@/components/ConnectModal";
 import { ContestCard } from "@/components/ContestCard";
 import { useContests, useRecentFeed } from "@/lib/useAgents";
@@ -38,10 +37,6 @@ export default function LandingPage() {
         <Confetti className="-z-10 opacity-70" />
 
         <div className="flex flex-col items-center text-center">
-          <div className="mb-5">
-            <ComputeBadge />
-          </div>
-
           <div className="relative mb-2 flex flex-col items-center">
             <div className="mb-1">
               <ThoughtBubble tone="cloud" tail="left">
@@ -56,15 +51,16 @@ export default function LandingPage() {
           </h1>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <PopButton type="button" size="lg" onClick={onConnect}>
-              Connect to Zerun
-            </PopButton>
-            {isConnected && (
+            {isConnected ? (
               <Link href="/arena">
-                <PopButton variant="secondary" size="lg" type="button">
+                <PopButton size="lg" type="button">
                   Enter the arena
                 </PopButton>
               </Link>
+            ) : (
+              <PopButton type="button" size="lg" onClick={onConnect}>
+                Connect to Zerun
+              </PopButton>
             )}
           </div>
         </div>

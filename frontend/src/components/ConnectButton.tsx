@@ -13,6 +13,7 @@ import {
 import { zeroGGalileo, FAUCET_URL } from "@/lib/chain";
 import { ensureGalileo } from "@/lib/network";
 import { shortAddr } from "@/lib/format";
+import { useAuth } from "@/lib/useAuth";
 import { Spinner } from "./ui";
 import { PopButton } from "./zerun/PopButton";
 
@@ -21,9 +22,10 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
   const router = useRouter();
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { connect, connectors, isPending } = useConnect();
+  const { connectAsync, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
-  const { switchChain } = useSwitchChain();
+  const { switchChainAsync } = useSwitchChain();
+  const { signedIn, signing, signIn, signOut } = useAuth();
   const [busy, setBusy] = useState(false);
   const [hasRouted, setHasRouted] = useState(false);
 
@@ -34,21 +36,21 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
     if (!injected) return;
     setBusy(true);
     try {
-      const provider = (await injected.getProvider()) as
-        | { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }
-        | undefined;
-      connect({ connector: injected });
-      if (provider) {
-        try {
-          await ensureGalileo(provider);
-        } catch {
-          /* user may reject the switch; surfaced via wrongChain banner */
-        }
+      await connectAsync({ connector: injected });
+      try {
+        const provider = (await injected.getProvider()) as
+          | { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }
+          | undefined;
+        if (provider) await ensureGalileo(provider);
+      } catch {
+        /* a wrong chain is surfaced by the switch button */
       }
+    } catch {
+      /* the operator can tap again */
     } finally {
       setBusy(false);
     }
-  }, [connect, injected]);
+  }, [connectAsync, injected]);
 
   const handleSwitch = useCallback(async () => {
     setBusy(true);
@@ -59,20 +61,20 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
             | undefined)
         : undefined;
       if (provider) await ensureGalileo(provider);
-      else switchChain({ chainId: zeroGGalileo.id });
+      else await switchChainAsync({ chainId: zeroGGalileo.id });
     } catch {
       /* ignore */
     } finally {
       setBusy(false);
     }
-  }, [injected, switchChain]);
+  }, [injected, switchChainAsync]);
 
   useEffect(() => {
-    if (routeOnConnect && isConnected && !wrongChain && !hasRouted) {
+    if (routeOnConnect && isConnected && !wrongChain && signedIn && !hasRouted) {
       setHasRouted(true);
       router.push("/arena");
     }
-  }, [routeOnConnect, isConnected, wrongChain, hasRouted, router]);
+  }, [routeOnConnect, isConnected, wrongChain, signedIn, hasRouted, router]);
 
   if (!isConnected) {
     return (
@@ -101,7 +103,28 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
     );
   }
 
-  return <ConnectedChip address={address!} onDisconnect={() => disconnect()} />;
+  if (!signedIn) {
+    return (
+      <PopButton
+        type="button"
+        onClick={() => void signIn()}
+        disabled={signing}
+        icon={signing ? <Spinner /> : undefined}
+      >
+        Sign in
+      </PopButton>
+    );
+  }
+
+  return (
+    <ConnectedChip
+      address={address!}
+      onDisconnect={() => {
+        signOut();
+        disconnect();
+      }}
+    />
+  );
 }
 
 function ConnectedChip({

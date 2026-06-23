@@ -7,6 +7,7 @@ import { contestEngineAbi } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
 import { api } from "@/lib/api";
 import { formatUsdc } from "@/lib/format";
+import { friendlyError } from "@/lib/errors";
 import { zeroGGalileo } from "@/lib/chain";
 import type { ClaimInfo } from "@/lib/types";
 import { Spinner } from "./ui";
@@ -64,7 +65,7 @@ export function ClaimPrize({ contestId }: { contestId: number }) {
       await api.claimed(contestId, { operator: address });
       setClaimed(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message.split("\n")[0] : "Claim failed.");
+      setError(friendlyError(e, "Could not claim that one. Try again."));
     } finally {
       setBusy(false);
     }
