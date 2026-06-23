@@ -16,7 +16,7 @@ interface PopButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANTS: Record<Variant, string> = {
   // White text on violet, ink text on amber, ink text on the ghost fill.
   primary: "bg-violet text-white hover:bg-violet active:bg-violet-deep",
-  secondary: "bg-amber text-ink hover:bg-amber",
+  secondary: "bg-amber text-candyink hover:bg-amber",
   ghost: "bg-cloud text-ink hover:bg-cloud-2",
 };
 

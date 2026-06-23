@@ -61,6 +61,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="en"
       className={`${display.variable} ${body.variable} ${mono.variable}`}
     >
+      <head>
+        {/* Set the saved theme before paint so there is no flash. Light by
+            default; dark only when the operator chose it. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{if(localStorage.getItem('zerun:theme')==='dark'){document.documentElement.classList.add('dark')}}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body className="min-h-screen antialiased">
         <Providers>
           <MusicProvider>

@@ -37,7 +37,7 @@ export function WinCelebration() {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/45 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim/55 p-4 backdrop-blur-sm">
       <StarRain />
       <StickerCard className="relative w-full max-w-md overflow-hidden p-7 text-center motion-safe:animate-pop-in">
         <Confetti className="-z-10 opacity-70" />

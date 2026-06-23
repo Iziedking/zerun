@@ -7,11 +7,14 @@
 :root {
   color-scheme: light;
 }
+.dark {
+  color-scheme: dark;
+}
 
 html,
 body {
-  background: var(--sky);
-  color: var(--ink);
+  background: rgb(var(--sky));
+  color: rgb(var(--ink));
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -19,34 +22,34 @@ body {
 body {
   font-family: var(--font-body), system-ui, sans-serif;
   font-weight: 600;
-  /* A pale cosmic sky with a few low-contrast candy glows, no grid lines. */
-  background-color: var(--sky);
+  /* A cosmic sky with a few low-contrast candy glows, no grid lines. */
+  background-color: rgb(var(--sky));
   background-image:
-    radial-gradient(620px 420px at 88% -6%, rgba(108, 76, 241, 0.10), transparent 62%),
-    radial-gradient(560px 460px at 4% 104%, rgba(54, 197, 255, 0.10), transparent 62%);
+    radial-gradient(620px 420px at 88% -6%, rgb(var(--violet) / 0.1), transparent 62%),
+    radial-gradient(560px 460px at 4% 104%, rgb(var(--cyan) / 0.1), transparent 62%);
   background-attachment: fixed;
 }
 
 ::selection {
-  background: rgba(108, 76, 241, 0.22);
-  color: var(--ink);
+  background: rgb(var(--violet) / 0.22);
+  color: rgb(var(--ink));
 }
 
 /* Chunky, friendly scrollbar. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--ink-3) transparent;
+  scrollbar-color: rgb(var(--ink-3)) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--ink-3);
+  background: rgb(var(--ink-3));
   border-radius: 999px;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: var(--ink-2);
+  background: rgb(var(--ink-2));
 }
 
 /* Visible violet focus ring on every interactive element. */
@@ -55,7 +58,7 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 [tabindex]:focus-visible {
-  outline: 3px solid var(--violet);
+  outline: 3px solid rgb(var(--violet));
   outline-offset: 2px;
   border-radius: 12px;
 }
@@ -67,7 +70,7 @@ select:focus-visible,
   h4 {
     font-family: var(--font-display), system-ui, sans-serif;
     font-weight: 800;
-    color: var(--ink);
+    color: rgb(var(--ink));
   }
 }
 

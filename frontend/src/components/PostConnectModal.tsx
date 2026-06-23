@@ -51,7 +51,7 @@ export function PostConnectModal() {
   const close = () => setDismissed(true);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/50 p-4 backdrop-blur-sm">
       <StickerCard className="relative w-full max-w-md overflow-hidden p-6 text-center sm:p-7">
         {step === "done" && <Confetti className="-z-10 opacity-70" />}
         <button

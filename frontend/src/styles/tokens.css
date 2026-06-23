@@ -1,38 +1,38 @@
 /* Zerun cosmic-candy tokens. The single source of truth for the cartoon look.
-   Pale cosmic sky, bright sticker surfaces outlined in deep indigo ink, a tight
-   set of candy accents, and the signature hard offset (pop) shadow. */
+   Colors are RGB triplets so Tailwind opacity utilities (text-ink/15, bg-violet/10)
+   keep working, and so a single .dark override repaints the whole app. The candy
+   accents stay vivid in both themes; candy-ink is the fixed dark text that always
+   sits on a bright candy fill (it never flips, or chips would lose contrast). */
 
 :root {
-  /* Sky, pale cosmic background, airy and weightless */
-  --sky: #EAEDFF;
-  --sky-2: #DDE2FF;
+  /* Sky, pale cosmic background */
+  --sky: 234 237 255;
+  --sky-2: 221 226 255;
 
-  /* Surfaces, bright sticker cards that pop against the sky */
-  --cloud: #FFFFFF;
-  --cloud-2: #F6F7FF;
+  /* Surfaces, bright sticker cards */
+  --cloud: 255 255 255;
+  --cloud-2: 246 247 255;
 
-  /* Ink, deep cosmic indigo-black: every outline, every shadow, all text */
-  --ink: #171449;
-  --ink-2: #4A477E;
-  --ink-3: #8A88B8;
+  /* Ink, deep cosmic indigo: outlines and text */
+  --ink: 23 20 73;
+  --ink-2: 74 71 126;
+  --ink-3: 138 136 184;
 
-  /* Candy accents, saturated, friendly. Violet is the brand. */
-  --violet: #6C4CF1;
-  --violet-deep: #5436D6;
-  --amber: #FFB13C;
-  --mint: #1FD6A6;
-  --cyan: #36C5FF;
-  --coral: #FF6B5C;
+  /* Candy accents. Violet is the brand. */
+  --violet: 108 76 241;
+  --violet-deep: 84 54 214;
+  --amber: 255 177 60;
+  --mint: 31 214 166;
+  --cyan: 54 197 255;
+  --coral: 255 107 92;
 
-  /* Status (reuse candy) */
-  --ok: var(--mint);
-  --warn: var(--amber);
-  --err: var(--coral);
-
-  /* The sticker shadow, solid ink, no blur. This is the whole vibe. */
-  --pop: 4px 4px 0 var(--ink);
-  --pop-lg: 6px 6px 0 var(--ink);
-  --pop-press: 1px 1px 0 var(--ink);
+  /* Fixed dark ink for text on a candy fill (never flips). */
+  --candy-ink: 23 20 73;
+  /* The hard offset shadow color. */
+  --pop-shadow: 23 20 73;
+  /* Modal scrim, always a deep cosmic dark so overlays darken what is behind in
+     either theme. */
+  --scrim: 7 5 20;
 
   /* Outline and radius */
   --line: 3px;
@@ -42,4 +42,29 @@
 
   /* Spring easing shared across motion */
   --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Dark cosmic night: dark sky and surfaces, light ink for outlines and text, a
+   deep near-black drop shadow so the sticker cards still pop. Candy stays vivid;
+   candy-ink stays dark so chips and the amber button keep their contrast. */
+.dark {
+  --sky: 9 8 28;
+  --sky-2: 15 13 42;
+
+  --cloud: 30 27 77;
+  --cloud-2: 39 35 92;
+
+  --ink: 236 234 255;
+  --ink-2: 179 174 224;
+  --ink-3: 124 121 174;
+
+  --violet: 138 108 255;
+  --violet-deep: 108 76 241;
+  --amber: 255 193 94;
+  --mint: 54 224 181;
+  --cyan: 91 208 255;
+  --coral: 255 132 117;
+
+  --candy-ink: 23 20 73;
+  --pop-shadow: 5 4 18;
 }

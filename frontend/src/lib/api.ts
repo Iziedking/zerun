@@ -128,4 +128,29 @@ export const api = {
     }),
   adminRun: (id: number | string) =>
     req<unknown>(`/api/admin/contests/${id}/run`, { method: "POST" }),
+
+  // Support tools, gated by the admin token (sent as a header).
+  adminAgent: (id: number, token: string) =>
+    req<{
+      agent: {
+        agent_id: number;
+        owner: string;
+        name: string;
+        compute_level: number;
+        is_house: boolean;
+      };
+      trainings: { tx_hash: string; amount_wei: string; level_after: number; created_at: string }[];
+    }>(`/api/admin/agent/${id}`, { headers: { "x-admin-token": token } }),
+  adminCreditTraining: (body: { agentId: number; txHash: string }, token: string) =>
+    req<{ ok: boolean; computeLevel: number; owner: string }>("/api/admin/credit-training", {
+      method: "POST",
+      headers: { "x-admin-token": token },
+      body: JSON.stringify(body),
+    }),
+  adminSetCompute: (body: { agentId: number; level: number }, token: string) =>
+    req<{ ok: boolean; computeLevel: number }>("/api/admin/set-compute", {
+      method: "POST",
+      headers: { "x-admin-token": token },
+      body: JSON.stringify(body),
+    }),
 };

@@ -9,6 +9,7 @@ import { ComputeBadge } from "./ComputeBadge";
 import { BalancePill } from "./BalancePill";
 import { MusicPlayer } from "./MusicPlayer";
 import { NotificationBell } from "./NotificationBell";
+import { ThemeToggle } from "./ThemeToggle";
 import { cx } from "./zerun/cx";
 
 export function SiteHeader() {
@@ -63,6 +64,7 @@ export function SiteHeader() {
             <ComputeBadge className="hidden lg:inline-flex" />
             {isConnected && <BalancePill className="hidden md:inline-flex" />}
             {isConnected && <NotificationBell />}
+            <ThemeToggle />
             <MusicPlayer className="grid" />
             <ConnectButton />
           </div>

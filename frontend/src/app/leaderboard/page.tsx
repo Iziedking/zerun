@@ -103,10 +103,12 @@ export default function LeaderboardPage() {
 
 // size = the desktop (sm+) agent size; the className caps it smaller on phones so
 // three agents never overflow a 360px row.
+// txt/txt2 are fixed dark on the solid amber #1 card (so it holds in dark mode);
+// the other cards use ink, which flips light on their dark surface.
 const PODIUM = [
-  { tint: "bg-amber", size: 120, smClass: "sm:!h-[120px] sm:!w-[120px]", pad: "pt-0", hop: true },
-  { tint: "bg-cloud-2", size: 96, smClass: "sm:!h-[96px] sm:!w-[96px]", pad: "pt-8", hop: false },
-  { tint: "bg-amber/40", size: 92, smClass: "sm:!h-[92px] sm:!w-[92px]", pad: "pt-12", hop: false },
+  { tint: "bg-amber", txt: "text-candyink", txt2: "text-candyink/70", size: 120, smClass: "sm:!h-[120px] sm:!w-[120px]", pad: "pt-0", hop: true },
+  { tint: "bg-cloud-2", txt: "text-ink", txt2: "text-ink-2", size: 96, smClass: "sm:!h-[96px] sm:!w-[96px]", pad: "pt-8", hop: false },
+  { tint: "bg-amber/40", txt: "text-ink", txt2: "text-ink-2", size: 92, smClass: "sm:!h-[92px] sm:!w-[92px]", pad: "pt-12", hop: false },
 ];
 
 function Podium({ rows, me }: { rows: LeaderboardRow[]; me?: string }) {
@@ -140,14 +142,14 @@ function Podium({ rows, me }: { rows: LeaderboardRow[]; me?: string }) {
                   isMe && "border-violet",
                 )}
               >
-                <div className="font-display text-2xl leading-none text-ink sm:text-3xl">#{r.rank}</div>
-                <div className="mt-1 truncate font-display text-[13px] text-ink sm:text-[15px]">
+                <div className={cx("font-display text-2xl leading-none sm:text-3xl", cfg.txt)}>#{r.rank}</div>
+                <div className={cx("mt-1 truncate font-display text-[13px] sm:text-[15px]", cfg.txt)}>
                   {r.agent_name ?? shortAddr(r.operator)}
                 </div>
-                <div className="truncate font-mono text-[10px] text-ink-2 sm:text-[11px]">{shortAddr(r.operator)}</div>
-                <div className="mt-2 font-display text-base text-ink sm:text-xl">
+                <div className={cx("truncate font-mono text-[10px] sm:text-[11px]", cfg.txt2)}>{shortAddr(r.operator)}</div>
+                <div className={cx("mt-2 font-display text-base sm:text-xl", cfg.txt)}>
                   {money(r.winnings)}
-                  <span className="ml-1 font-body text-[12px] font-extrabold text-ink-2">tUSDC</span>
+                  <span className={cx("ml-1 font-body text-[12px] font-extrabold", cfg.txt2)}>tUSDC</span>
                 </div>
               </StickerCard>
             </div>

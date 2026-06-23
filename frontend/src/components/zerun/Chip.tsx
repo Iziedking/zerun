@@ -10,11 +10,13 @@ export type ChipTone =
   | "neutral";
 
 // Status pill: ink text on a candy fill, ink outline, small pop, a leading dot.
-// Use white text only on coral (hot) for contrast; ink reads fine on the rest.
+// Candy fills (mint/cyan/amber) carry fixed dark candyink so they keep contrast
+// in dark mode; coral (hot) uses white; the cloud-filled tones use ink, which
+// flips light on the dark surface.
 const TONES: Record<ChipTone, { fill: string; text: string; dot: string }> = {
-  live: { fill: "bg-mint", text: "text-ink", dot: "bg-ink" },
-  thinking: { fill: "bg-cyan", text: "text-ink", dot: "bg-ink" },
-  won: { fill: "bg-amber", text: "text-ink", dot: "bg-ink" },
+  live: { fill: "bg-mint", text: "text-candyink", dot: "bg-candyink" },
+  thinking: { fill: "bg-cyan", text: "text-candyink", dot: "bg-candyink" },
+  won: { fill: "bg-amber", text: "text-candyink", dot: "bg-candyink" },
   hot: { fill: "bg-coral", text: "text-white", dot: "bg-white" },
   info: { fill: "bg-cloud", text: "text-ink", dot: "bg-violet" },
   neutral: { fill: "bg-cloud-2", text: "text-ink-2", dot: "bg-ink-3" },

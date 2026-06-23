@@ -155,8 +155,8 @@ app.post("/api/agents/:id/train", async (c) => {
   let tx: Awaited<ReturnType<typeof publicClient.getTransaction>>;
   let receipt: Awaited<ReturnType<typeof publicClient.getTransactionReceipt>>;
   try {
+    receipt = await waitReceipt(txHash as `0x${string}`);
     tx = await publicClient.getTransaction({ hash: txHash as `0x${string}` });
-    receipt = await publicClient.getTransactionReceipt({ hash: txHash as `0x${string}` });
   } catch {
     return c.json({ error: "could not read that payment yet, give it a moment and retry" }, 400);
   }
@@ -174,6 +174,87 @@ app.post("/api/agents/:id/train", async (c) => {
     [txHash, agentId, owner, tx.value.toString(), levelAfter],
   );
   return c.json({ ok: true, computeLevel: levelAfter });
+});
+
+// --- Admin support tools (gated by x-admin-token) ---------------------------
+
+// Inspect an agent: owner, compute level, and recent training payments.
+app.get("/api/admin/agent/:id", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const agentId = Number(c.req.param("id"));
+  if (!agentId) return c.json({ error: "agentId required" }, 400);
+  const a = await query(
+    "select agent_id, owner, name, compute_level, is_house from agents_meta where agent_id = $1",
+    [agentId],
+  );
+  if (a.rows.length === 0) return c.json({ error: "unknown agent" }, 404);
+  const trainings = await query(
+    "select tx_hash, amount_wei, level_after, created_at from compute_trainings where agent_id = $1 order by created_at desc limit 10",
+    [agentId],
+  );
+  return c.json({ agent: a.rows[0], trainings: trainings.rows });
+});
+
+// Credit a training payment that did not reflect (e.g. an RPC blip during the
+// normal flow). Re-reads the on-chain payment with robust polling and credits
+// the level if it checks out and was not already used.
+app.post("/api/admin/credit-training", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const agentId = Number(body.agentId);
+  const txHash = String(body.txHash ?? "");
+  if (!agentId || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    return c.json({ error: "agentId and a valid txHash are required" }, 400);
+  }
+
+  const own = await query<{ owner: string; compute_level: number }>(
+    "select owner, compute_level from agents_meta where agent_id = $1",
+    [agentId],
+  );
+  if (own.rows.length === 0) return c.json({ error: "unknown agent" }, 404);
+  const current = own.rows[0]!.compute_level ?? 0;
+  if (current >= MAX_COMPUTE_LEVEL) return c.json({ error: "agent is already at max compute" }, 409);
+
+  const used = await query("select 1 from compute_trainings where tx_hash = $1", [txHash]);
+  if (used.rows.length > 0) return c.json({ error: "that payment was already credited" }, 409);
+
+  const cost = nextLevelCostWei(current)!;
+  let tx: Awaited<ReturnType<typeof publicClient.getTransaction>>;
+  let receipt: Awaited<ReturnType<typeof publicClient.getTransactionReceipt>>;
+  try {
+    receipt = await waitReceipt(txHash as `0x${string}`);
+    tx = await publicClient.getTransaction({ hash: txHash as `0x${string}` });
+  } catch {
+    return c.json({ error: "could not read that payment from the chain" }, 400);
+  }
+  if (receipt.status !== "success") return c.json({ error: "that payment failed on chain" }, 400);
+  if ((tx.to ?? "").toLowerCase() !== coordinatorAddress().toLowerCase()) {
+    return c.json({ error: "that payment went to the wrong address" }, 400);
+  }
+  if (tx.value < cost) {
+    return c.json({ error: `payment too small for the next level (${tx.value} < ${cost})` }, 400);
+  }
+
+  const levelAfter = computeLevelClamp(current + 1);
+  await query("update agents_meta set compute_level = $2 where agent_id = $1", [agentId, levelAfter]);
+  await query(
+    "insert into compute_trainings (tx_hash, agent_id, operator, amount_wei, level_after) values ($1,$2,$3,$4,$5)",
+    [txHash, agentId, tx.from.toLowerCase(), tx.value.toString(), levelAfter],
+  );
+  return c.json({ ok: true, computeLevel: levelAfter, owner: tx.from.toLowerCase() });
+});
+
+// Emergency override: set an agent's compute level directly.
+app.post("/api/admin/set-compute", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const agentId = Number(body.agentId);
+  const level = computeLevelClamp(Number(body.level));
+  if (!agentId) return c.json({ error: "agentId required" }, 400);
+  const a = await query("select 1 from agents_meta where agent_id = $1", [agentId]);
+  if (a.rows.length === 0) return c.json({ error: "unknown agent" }, 404);
+  await query("update agents_meta set compute_level = $2 where agent_id = $1", [agentId, level]);
+  return c.json({ ok: true, computeLevel: level });
 });
 
 app.get("/api/deployment", (c) => {

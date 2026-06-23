@@ -3,6 +3,7 @@ import type { Config } from "tailwindcss";
 // Zerun cosmic-candy theme. Bright sticker surfaces, deep-indigo ink outlines and
 // hard offset (pop) shadows, candy accents with cosmic violet as the brand.
 const config: Config = {
+  darkMode: "class",
   content: [
     "./src/app/**/*.{ts,tsx}",
     "./src/components/**/*.{ts,tsx}",
@@ -10,14 +11,23 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        sky: { DEFAULT: "#EAEDFF", 2: "#DDE2FF" },
-        cloud: { DEFAULT: "#FFFFFF", 2: "#F6F7FF" },
-        ink: { DEFAULT: "#171449", 2: "#4A477E", 3: "#8A88B8" },
-        violet: { DEFAULT: "#6C4CF1", deep: "#5436D6" },
-        amber: { DEFAULT: "#FFB13C" },
-        mint: { DEFAULT: "#1FD6A6" },
-        cyan: { DEFAULT: "#36C5FF" },
-        coral: { DEFAULT: "#FF6B5C" },
+        sky: { DEFAULT: "rgb(var(--sky) / <alpha-value>)", 2: "rgb(var(--sky-2) / <alpha-value>)" },
+        cloud: { DEFAULT: "rgb(var(--cloud) / <alpha-value>)", 2: "rgb(var(--cloud-2) / <alpha-value>)" },
+        ink: {
+          DEFAULT: "rgb(var(--ink) / <alpha-value>)",
+          2: "rgb(var(--ink-2) / <alpha-value>)",
+          3: "rgb(var(--ink-3) / <alpha-value>)",
+        },
+        violet: {
+          DEFAULT: "rgb(var(--violet) / <alpha-value>)",
+          deep: "rgb(var(--violet-deep) / <alpha-value>)",
+        },
+        amber: { DEFAULT: "rgb(var(--amber) / <alpha-value>)" },
+        mint: { DEFAULT: "rgb(var(--mint) / <alpha-value>)" },
+        cyan: { DEFAULT: "rgb(var(--cyan) / <alpha-value>)" },
+        coral: { DEFAULT: "rgb(var(--coral) / <alpha-value>)" },
+        candyink: "rgb(var(--candy-ink) / <alpha-value>)",
+        scrim: "rgb(var(--scrim) / <alpha-value>)",
       },
       fontFamily: {
         display: ["var(--font-display)", "system-ui", "sans-serif"],
@@ -33,9 +43,9 @@ const config: Config = {
         pill: "999px",
       },
       boxShadow: {
-        pop: "4px 4px 0 var(--ink)",
-        "pop-lg": "6px 6px 0 var(--ink)",
-        "pop-press": "1px 1px 0 var(--ink)",
+        pop: "4px 4px 0 rgb(var(--pop-shadow))",
+        "pop-lg": "6px 6px 0 rgb(var(--pop-shadow))",
+        "pop-press": "1px 1px 0 rgb(var(--pop-shadow))",
       },
       transitionTimingFunction: {
         spring: "cubic-bezier(0.34,1.56,0.64,1)",

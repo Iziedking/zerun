@@ -315,7 +315,7 @@ export function HostContestModal({ open, onClose }: { open: boolean; onClose: ()
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink/40 p-4"
+      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-scrim/50 p-4"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
