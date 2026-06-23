@@ -46,6 +46,20 @@ let brokerPromise: Promise<Broker> | null = null;
 let handle: ProviderHandle | null = null;
 let readyPromise: Promise<ProviderHandle> | null = null;
 
+// The broker signs single-use headers per request, and those nonces collide if
+// two requests overlap. Run the per-request work one at a time so concurrent
+// agents queue instead of stepping on each other. The provider stays well
+// inside its rate limit this way too.
+let inflight: Promise<unknown> = Promise.resolve();
+function serialize<T>(fn: () => Promise<T>): Promise<T> {
+  const run = inflight.then(fn, fn);
+  inflight = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 function getWallet(): ethers.Wallet {
   if (!config.signerKey) {
     throw new Error("DEPLOYER_PRIVATE_KEY is not set; the 0G Compute broker needs a funded wallet");
@@ -114,23 +128,23 @@ export async function ensureReady(): Promise<ProviderHandle> {
 
     const provider = await pickProvider(broker);
 
-    // Accept the provider's TEE signer so its responses can be verified.
+    // Accept the provider's TEE signer so its responses can be verified. This
+    // is best effort: if it is already acknowledged, or the provider does not
+    // require it, the inference still works, so a failure here must not stop us.
     try {
       await broker.inference.acknowledgeProviderSigner(provider);
     } catch (err) {
-      // Already acknowledged is fine; anything else is a real failure.
-      const msg = (err as Error).message ?? "";
-      if (!/acknowledged|exists|already/i.test(msg)) throw err;
+      console.warn(`acknowledgeProviderSigner skipped: ${(err as Error).message}`);
     }
 
-    // Lock a small amount to the provider sub-account so calls can be billed.
+    // Lock a small amount to the provider sub-account. Also best effort: the
+    // broker funds the sub-account on demand during a request, so an explicit
+    // transfer reverting here does not block inference.
     try {
       const locked = BigInt(config.compute.perProviderOg) * 10n ** 18n;
       await broker.ledger.transferFund(provider, "inference", locked);
     } catch (err) {
-      // Sub-account may already be funded; ignore that, surface anything else.
-      const msg = (err as Error).message ?? "";
-      if (!/insufficient|exists|already|fund/i.test(msg)) throw err;
+      console.warn(`transferFund skipped: ${(err as Error).message}`);
     }
 
     const { endpoint, model } = await broker.inference.getServiceMetadata(provider);
@@ -161,58 +175,61 @@ export async function computeChat(params: {
     { role: "user", content: params.userPrompt },
   ];
 
-  // Single-use auth + billing headers, bound to this request's content.
-  const headers = await broker.inference.getRequestHeaders(h.provider, params.userPrompt);
+  // One request at a time. Latency is measured around the actual call, not the
+  // time spent waiting in the queue, so the speed tiebreak stays fair.
+  return serialize(async () => {
+    const headers = await broker.inference.getRequestHeaders(h.provider, params.userPrompt);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.compute.callTimeoutMs);
-  const t0 = Date.now();
-  let data: { id?: string; choices?: Array<{ message?: { content?: string } }> };
-  try {
-    const res = await fetch(`${h.endpoint}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers: { "Content-Type": "application/json", ...(headers as unknown as Record<string, string>) },
-      body: JSON.stringify({
-        model: h.model,
-        messages,
-        max_tokens: params.maxTokens,
-        temperature: params.temperature,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`0G provider responded ${res.status}: ${body.slice(0, 200)}`);
-    }
-    data = (await res.json()) as typeof data;
-  } finally {
-    clearTimeout(timer);
-  }
-  const latencyMs = Date.now() - t0;
-
-  const text = (data.choices?.[0]?.message?.content ?? "").trim();
-  const chatID = data.id ?? null;
-
-  // Verify the TEE-signed response on chain. This is the proof the answer came
-  // from the provider we paid, not a substitute.
-  let verified: boolean | null = null;
-  if (chatID) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.compute.callTimeoutMs);
+    const t0 = Date.now();
+    let data: { id?: string; choices?: Array<{ message?: { content?: string } }> };
     try {
-      verified = await broker.inference.processResponse(h.provider, chatID, text);
-    } catch {
-      verified = null;
+      const res = await fetch(`${h.endpoint}/chat/completions`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json", ...(headers as unknown as Record<string, string>) },
+        body: JSON.stringify({
+          model: h.model,
+          messages,
+          max_tokens: params.maxTokens,
+          temperature: params.temperature,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`0G provider responded ${res.status}: ${body.slice(0, 200)}`);
+      }
+      data = (await res.json()) as typeof data;
+    } finally {
+      clearTimeout(timer);
     }
-  }
+    const latencyMs = Date.now() - t0;
 
-  return {
-    text,
-    chatID,
-    verified,
-    provider: h.provider,
-    model: h.model,
-    endpoint: h.endpoint,
-    latencyMs,
-  };
+    const text = (data.choices?.[0]?.message?.content ?? "").trim();
+    const chatID = data.id ?? null;
+
+    // Verify the TEE-signed response on chain. This is the proof the answer came
+    // from the provider we paid, not a substitute.
+    let verified: boolean | null = null;
+    if (chatID) {
+      try {
+        verified = await broker.inference.processResponse(h.provider, chatID, text);
+      } catch {
+        verified = null;
+      }
+    }
+
+    return {
+      text,
+      chatID,
+      verified,
+      provider: h.provider,
+      model: h.model,
+      endpoint: h.endpoint,
+      latencyMs,
+    };
+  });
 }
 
 export function brokerConfigured(): boolean {

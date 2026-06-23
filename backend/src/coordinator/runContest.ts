@@ -2,12 +2,15 @@ import type { Hex } from "viem";
 import { query } from "../db/pool.js";
 import { generatePuzzles } from "../runners/puzzles.js";
 import { solvePuzzle } from "../runners/solver.js";
+import { tierParams } from "../runners/tierConfig.js";
 import { rankAgents, computePayouts, type AgentScore } from "../runners/scoring.js";
 import { payoutLeaf, merkleRoot, merkleProof } from "./merkle.js";
 import { broadcast, type StandingRow } from "./ws.js";
 import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
 import {
+  CONTEST_TYPE,
   GAS_PRICE,
+  agentRegistryAbi,
   contestEngineAbi,
   coordinatorWallet,
   coordinatorAccount,
@@ -47,6 +50,20 @@ async function readEntries(contestId: number): Promise<Entry[]> {
     operator: r.operator,
     agentName: r.name ?? `Agent #${r.agent_id}`,
   }));
+}
+
+async function readSolverTier(registry: `0x${string}`, agentId: number): Promise<number> {
+  try {
+    const tier = await publicClient.readContract({
+      address: registry,
+      abi: agentRegistryAbi,
+      functionName: "getTier",
+      args: [BigInt(agentId), CONTEST_TYPE.SOLVER],
+    });
+    return Number(tier);
+  } catch {
+    return 0;
+  }
 }
 
 async function puzzleCountFor(contestId: number): Promise<number> {
@@ -112,8 +129,11 @@ export async function runContest(contestId: number): Promise<RunResult> {
   // Each agent works through the puzzle set in order; agents run a few at a
   // time. Every answer is persisted and pushed to the live feed immediately.
   await mapLimit(entries, AGENT_CONCURRENCY, async (entry) => {
+    // Read the agent's solver tier from chain; it sets its reasoning budget.
+    const tier = await readSolverTier(dep.agentRegistry, entry.agentId);
+    const params = tierParams(tier);
     for (const puzzle of puzzles) {
-      const outcome = await solvePuzzle(puzzle);
+      const outcome = await solvePuzzle(puzzle, params);
 
       const score = scores.get(entry.agentId)!;
       if (outcome.verdict === "correct") score.correct += 1;

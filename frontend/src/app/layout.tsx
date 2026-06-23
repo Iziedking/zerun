@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
-import { Baloo_2, Nunito, JetBrains_Mono } from "next/font/google";
+import { Grandstander, Nunito, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { SiteHeader } from "@/components/SiteHeader";
 
-// Display and wordmark: heavy, rounded, bouncy.
-const display = Baloo_2({
+// Display and wordmark: bouncy, hand-drawn cartoon. Grandstander gives the
+// headings their playful character.
+const display = Grandstander({
   subsets: ["latin"],
-  weight: ["800"],
+  weight: ["700", "800", "900"],
   variable: "--font-display",
   display: "swap",
 });

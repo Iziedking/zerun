@@ -4,29 +4,25 @@ import { useComputeStatus } from "@/lib/useDeployment";
 import { Chip, type ChipTone } from "./zerun/Chip";
 
 const LABELS: Record<string, string> = {
-  "0g-compute": "0G Compute: live",
-  "0g-router": "0G Router: live",
-  "offline-dev": "0G Compute: offline-dev",
+  "0g-compute": "Compute: live",
+  "0g-router": "Compute: live",
 };
 
-// Live compute indicator sourced from /api/compute/status, shown as a Chip:
-// mint and pulsing when 0G Compute is live, neutral otherwise.
+// Live compute indicator sourced from /api/compute/status, shown only when the
+// agents are actually reasoning on 0G. Anything else (loading, offline, errors)
+// renders nothing, so the chrome stays clean.
 export function ComputeBadge({ className = "" }: { className?: string }) {
-  const { data, isLoading, isError } = useComputeStatus();
+  const { data } = useComputeStatus();
 
   const live = data?.mode === "0g-compute" || data?.mode === "0g-router";
-  const label = isError
-    ? "0G Compute: unreachable"
-    : isLoading
-      ? "0G Compute: …"
-      : LABELS[data?.mode ?? ""] ?? "0G Compute: unknown";
+  if (!live) return null;
 
-  const tone: ChipTone = live ? "live" : "neutral";
+  const tone: ChipTone = "live";
 
   return (
     <span className={className}>
-      <Chip tone={tone} pulse={live}>
-        {label}
+      <Chip tone={tone} pulse>
+        {LABELS[data!.mode] ?? "Compute: live"}
       </Chip>
     </span>
   );

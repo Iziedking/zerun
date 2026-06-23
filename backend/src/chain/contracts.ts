@@ -98,6 +98,8 @@ export const agentRegistryAbi = parseAbi([
   "function getTier(uint256 agentId, uint8 cType) view returns (uint16)",
   "function agentsOf(address owner) view returns (uint256[])",
   "function nextAgentId() view returns (uint256)",
+  "function upgradeAgent(uint256 agentId, uint8 cType, uint16 newTier)",
+  "function upgradePrice(uint8 cType, uint16 fromTier) view returns (uint256)",
   "event AgentCreated(uint256 indexed agentId, address indexed owner)",
 ]);
 

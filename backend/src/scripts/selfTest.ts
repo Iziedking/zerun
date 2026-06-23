@@ -1,5 +1,5 @@
 import { concat, keccak256, type Hex } from "viem";
-import { generatePuzzles } from "../runners/puzzles.js";
+import { generatePuzzles, extractAnswer } from "../runners/puzzles.js";
 import { rankAgents, computePayouts, type AgentScore } from "../runners/scoring.js";
 import { payoutLeaf, merkleRoot, merkleProof } from "../coordinator/merkle.js";
 
@@ -30,6 +30,13 @@ const p2 = generatePuzzles(7, 5);
 check("puzzles deterministic", JSON.stringify(p1) === JSON.stringify(p2));
 check("puzzles have integer answers", p1.every((p) => /^-?\d+$/.test(p.expected)));
 check("different contests differ", JSON.stringify(generatePuzzles(8, 5)) !== JSON.stringify(p1));
+
+// 1b. Answer extraction prefers the tagged answer over stray numbers, so a long
+// correct chain of reasoning is graded fairly.
+check("tagged answer wins", extractAnswer("200*0.75=150 then 150*0.9=135. ANSWER: 135") === "135");
+check("tagged over trailing", extractAnswer("steps give 42 then 9, ANSWER: 43") === "43");
+check("falls back to last int", extractAnswer("no tag, just 7 and then 88") === "88");
+check("no number is null", extractAnswer("I am not sure") === null);
 
 // 2. Scoring: more correct wins, latency breaks ties.
 const scores: AgentScore[] = [

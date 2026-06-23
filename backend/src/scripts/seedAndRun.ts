@@ -5,6 +5,7 @@ import { query, closePool } from "../db/pool.js";
 import { openContest } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
 import {
+  CONTEST_TYPE,
   GAS_PRICE,
   agentRegistryAbi,
   contestEngineAbi,
@@ -15,6 +16,13 @@ import {
   ogGalileo,
   publicClient,
 } from "../chain/contracts.js";
+
+// Spread the field across tiers so the gradient is visible, e.g. 3 agents get
+// tiers 0, 2, 4. A higher tier costs more test USDC to reach but thinks better.
+function tierSpread(n: number): number[] {
+  if (n <= 1) return [2];
+  return Array.from({ length: n }, (_, i) => Math.round((i * 4) / (n - 1)));
+}
 
 type Operator = { account: ReturnType<typeof privateKeyToAccount>; wallet: ReturnType<typeof createWalletClient> };
 
@@ -33,6 +41,62 @@ const PUZZLES = Number(process.argv[5] ?? 4);
 // contest, so the run can be triggered from the UI and streamed over the feed.
 const RUN = process.argv[6] !== "norun";
 
+// Buy an agent from tier 0 up to the target: mint the test USDC it costs,
+// approve the registry, then upgrade one step at a time.
+async function upgradeAgentTo(
+  wallet: ReturnType<typeof createWalletClient>,
+  account: ReturnType<typeof privateKeyToAccount>,
+  agentId: number,
+  target: number,
+): Promise<void> {
+  const dep = loadDeployment();
+  let total = 0n;
+  for (let t = 0; t < target; t++) {
+    const price = await publicClient.readContract({
+      address: dep.agentRegistry,
+      abi: agentRegistryAbi,
+      functionName: "upgradePrice",
+      args: [CONTEST_TYPE.SOLVER, t],
+    });
+    total += price;
+  }
+
+  const mintHash = await wallet.writeContract({
+    address: dep.testUSDC,
+    abi: testUsdcAbi,
+    functionName: "mint",
+    args: [account.address, total],
+    account,
+    chain: undefined,
+    gasPrice: GAS_PRICE,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: mintHash });
+
+  const approveHash = await wallet.writeContract({
+    address: dep.testUSDC,
+    abi: testUsdcAbi,
+    functionName: "approve",
+    args: [dep.agentRegistry, total],
+    account,
+    chain: undefined,
+    gasPrice: GAS_PRICE,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: approveHash });
+
+  for (let t = 0; t < target; t++) {
+    const h = await wallet.writeContract({
+      address: dep.agentRegistry,
+      abi: agentRegistryAbi,
+      functionName: "upgradeAgent",
+      args: [BigInt(agentId), CONTEST_TYPE.SOLVER, t + 1],
+      account,
+      chain: undefined,
+      gasPrice: GAS_PRICE,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: h });
+  }
+}
+
 async function main() {
   const dep = loadDeployment();
   const funder = coordinatorWallet();
@@ -48,17 +112,20 @@ async function main() {
   console.log(`contest ${contestId} open`);
 
   const operators = new Map<string, Operator>();
+  const tiers = tierSpread(AGENTS);
 
   for (let i = 1; i <= AGENTS; i++) {
+    const targetTier = tiers[i - 1] ?? 0;
     const account = privateKeyToAccount(generatePrivateKey());
     const operator = account.address;
     const wallet = createWalletClient({ account, chain: ogGalileo, transport: http(config.chain.rpcUrl) });
     operators.set(operator.toLowerCase(), { account, wallet });
 
-    // Fund the operator with a little 0G for gas.
+    // Fund the operator with a little 0G for gas. Higher tiers need a few more
+    // transactions (mint, approve, upgrade steps), so fund proportionally.
     const fundHash = await funder.sendTransaction({
       to: operator,
-      value: parseEther("0.006"),
+      value: parseEther(String(0.006 + 0.006 * targetTier)),
       account: funderAccount,
       chain: undefined,
       gasPrice: GAS_PRICE,
@@ -72,7 +139,7 @@ async function main() {
       functionName: "nextAgentId",
     });
 
-    const name = `Solver ${i}`;
+    const name = `Solver ${i} T${targetTier}`;
     const createHash = await wallet.writeContract({
       address: dep.agentRegistry,
       abi: agentRegistryAbi,
@@ -90,6 +157,11 @@ async function main() {
       [Number(agentId), operator.toLowerCase(), name],
     );
 
+    // Buy the agent up to its target tier so the field has a real skill spread.
+    if (targetTier > 0) {
+      await upgradeAgentTo(wallet, account, Number(agentId), targetTier);
+    }
+
     const enterHash = await wallet.writeContract({
       address: dep.contestEngine,
       abi: contestEngineAbi,
@@ -106,7 +178,7 @@ async function main() {
          on conflict (contest_id, agent_id) do nothing`,
       [contestId, Number(agentId), operator.toLowerCase()],
     );
-    console.log(`  ${name} (agent ${agentId}) entered as ${operator}`);
+    console.log(`  ${name} (agent ${agentId}, tier ${targetTier}) entered as ${operator}`);
   }
 
   await query(

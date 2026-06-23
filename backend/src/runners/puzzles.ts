@@ -32,9 +32,8 @@ function intBetween(rng: () => number, lo: number, hi: number): number {
 
 type Builder = (rng: () => number) => { prompt: string; expected: string };
 
-// A spread of shapes so a contest is not just arithmetic. Every answer is an
-// integer, normalized to a plain string.
-const BUILDERS: Builder[] = [
+// Single-step shapes most agents can handle. Every answer is an integer.
+const EASY_BUILDERS: Builder[] = [
   // Multi-term arithmetic.
   (rng) => {
     const a = intBetween(rng, 12, 99);
@@ -95,21 +94,77 @@ const BUILDERS: Builder[] = [
   },
 ];
 
+// Multi-step puzzles where a bigger reasoning budget pays off. A low tier agent
+// often truncates before reaching the answer; a high tier agent reasons through.
+const HARD_BUILDERS: Builder[] = [
+  // Hard: average speed over two legs. Needs total distance over total time,
+  // not the average of the two speeds, so a quick guess misses it.
+  (rng) => {
+    const d1 = intBetween(rng, 40, 140);
+    const d2 = intBetween(rng, 40, 140);
+    const t1 = intBetween(rng, 1, 3);
+    const t2 = intBetween(rng, 1, 3);
+    const expected = Math.round((d1 + d2) / (t1 + t2));
+    const hr = (t: number) => `${t} hour${t === 1 ? "" : "s"}`;
+    return {
+      prompt: `A courier drives ${d1} km in ${hr(t1)}, then ${d2} km in ${hr(t2)}. What is the average speed for the whole trip in km/h, rounded to the nearest whole number? End with "ANSWER: <number>".`,
+      expected: String(expected),
+    };
+  },
+  // Hard: two stacked percentage discounts, which do not simply add.
+  (rng) => {
+    const item = pick(rng, ["jacket", "desk", "bike", "lamp", "chair"]);
+    const base = intBetween(rng, 2, 12) * 100;
+    const p1 = pick(rng, [10, 20, 25, 40]);
+    const p2 = pick(rng, [10, 15, 20, 50]);
+    const expected = Math.round((base * (100 - p1) * (100 - p2)) / 10000);
+    return {
+      prompt: `A ${item} costs ${base} dollars. Take ${p1}% off, then take ${p2}% off the reduced price. What is the final price in whole dollars? End with "ANSWER: <number>".`,
+      expected: String(expected),
+    };
+  },
+  // Hard: a small age word problem that needs setting up and solving an
+  // equation, the kind of multi-step reasoning a bigger budget handles better.
+  (rng) => {
+    const t = intBetween(rng, 2, 9);
+    const y = 2 * t; // Mia is 4x Theo now; in y years she is twice as old.
+    const names = pick(rng, [["Mia", "Theo"], ["Ada", "Sam"], ["Nia", "Leo"]]);
+    return {
+      prompt: `${names[0]} is 4 times as old as ${names[1]}. In ${y} years, ${names[0]} will be twice as old as ${names[1]}. How old is ${names[1]} now? End with "ANSWER: <number>".`,
+      expected: String(t),
+    };
+  },
+];
+
+// Builds a contest's puzzle set, alternating easy and hard so a reasoning
+// budget always has something to bite on. Odd positions are hard, which gives
+// roughly half the set to the multi-step problems even on a short contest.
 export function generatePuzzles(contestId: number, count: number): Puzzle[] {
   const rng = mulberry32(0x5e21 ^ (contestId * 2654435761));
   const out: Puzzle[] = [];
+  let easyIdx = 0;
+  let hardIdx = 0;
   for (let i = 0; i < count; i++) {
-    const build = BUILDERS[i % BUILDERS.length]!;
+    const hard = i % 2 === 1;
+    const build = hard
+      ? HARD_BUILDERS[hardIdx++ % HARD_BUILDERS.length]!
+      : EASY_BUILDERS[easyIdx++ % EASY_BUILDERS.length]!;
     const { prompt, expected } = build(rng);
     out.push({ idx: i, prompt, expected });
   }
   return out;
 }
 
-// Pull the integer the agent committed to. Providers vary in verbosity, so we
-// take the last integer in the text, which is where a final answer lands.
+// Pull the integer the agent committed to. The solver asks every agent to end
+// with a line like "ANSWER: 42", so we read that first. This is what makes the
+// grading fair to agents that show their work: a long, correct chain of
+// reasoning is not penalized by stray numbers in the middle of it. Only if no
+// tagged answer is present do we fall back to the last integer in the text.
 export function extractAnswer(text: string): string | null {
-  const matches = text.replace(/,/g, "").match(/-?\d+/g);
+  const clean = text.replace(/,/g, "");
+  const tagged = clean.match(/answer\s*[:=]\s*(-?\d+)/i);
+  if (tagged) return tagged[1]!;
+  const matches = clean.match(/-?\d+/g);
   if (!matches || matches.length === 0) return null;
   return matches[matches.length - 1]!;
 }
