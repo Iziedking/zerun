@@ -32,12 +32,10 @@ services:
       ADDR_PRIZE_ESCROW: "0x29E09A7699BC016f9D73aD074Df851c713e28d56"
       ADDR_AGENT_REGISTRY: "0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c"
       ADDR_CONTEST_ENGINE: "0x5DAE30E30466FB3EA58181807A4633C512b232a0"
-      # Live by default in production. Tune the cadence to taste.
-      COMPUTE_MODE: broker
-      STORAGE_MODE: "on"
-      AUTOPILOT: "on"
-      AUTOPILOT_INTERVAL_SECONDS: "1800"
-      AUTOPILOT_WINDOW_SECONDS: "300"
+      # COMPUTE_MODE, STORAGE_MODE, AUTOPILOT, AUTOPILOT_INTERVAL_SECONDS, and
+      # AUTOPILOT_WINDOW_SECONDS come from .env (env_file above) so you can tune
+      # the cadence by editing .env. They are intentionally NOT set here, because
+      # compose `environment` would override .env.
     depends_on:
       db:
         condition: service_healthy
