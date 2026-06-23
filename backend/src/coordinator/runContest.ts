@@ -4,7 +4,7 @@ import { solvePuzzle } from "../runners/solver.js";
 import { tierParams } from "../runners/tierConfig.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
-import { finalizeContest, pushStandings, type RunResult } from "./finalize.js";
+import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
 import {
   CONTEST_TYPE,
   agentRegistryAbi,
@@ -84,6 +84,7 @@ export async function runContest(contestId: number): Promise<RunResult> {
   const entries = await readEntries(contestId);
   if (entries.length === 0) {
     broadcast({ type: "status", contestId, payload: { status: "no-entries" } });
+    await cancelContest(contestId);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
 

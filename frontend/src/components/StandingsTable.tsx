@@ -1,6 +1,6 @@
 import type { Standing } from "@/lib/types";
 import { shortAddr, formatLatency } from "@/lib/format";
-import { Agent, agentVariant, Chip, StickerCard } from "./zerun";
+import { agentVariant, Chip, SkinnedAgent, StickerCard } from "./zerun";
 
 export function StandingsTable({
   standings,
@@ -36,7 +36,8 @@ export function StandingsTable({
               <span className="w-7 shrink-0 text-center font-display text-xl text-ink">
                 {s.rank}
               </span>
-              <Agent
+              <SkinnedAgent
+                agentId={s.agentId}
                 variant={agentVariant(s.agentId)}
                 mood="idle"
                 size={28}

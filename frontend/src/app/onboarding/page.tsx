@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { decodeEventLog } from "viem";
@@ -33,6 +34,9 @@ import {
 
 // 100 tUSDC in 6 decimals.
 const MINT_AMOUNT = 100_000000n;
+
+// At most two agents per operator (the contract caps it there).
+const MAX_AGENTS = 2;
 
 type Step = 0 | 1 | 2 | 3;
 const TOTAL = 4;
@@ -75,6 +79,9 @@ function OnboardingInner() {
   const ready = Boolean(deployment?.ready && registryAddr && usdcAddr);
 
   const agents = agentsQ.data?.agents ?? [];
+  // The contract caps an operator at two agents. While at the cap (and before a
+  // fresh claim this session), the claim step turns into a friendly full state.
+  const atCap = agentId === null && agents.length >= MAX_AGENTS;
   const myAgent = agents.find((a) => a.agent_id === agentId) ?? agents[0];
   const activeName = myAgent?.name || name.trim() || "your agent";
   const variant = agentVariant(myAgent?.agent_id ?? agentId ?? 1);
@@ -205,7 +212,13 @@ function OnboardingInner() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
-      <header>
+      <header className="space-y-3">
+        <Link
+          href="/arena"
+          className="inline-flex items-center gap-1 font-body text-[13px] font-extrabold uppercase tracking-[0.02em] text-ink-2 transition hover:text-ink"
+        >
+          ← back to arena
+        </Link>
         <ProgressGoo
           value={(step + 1) / TOTAL}
           fill="violet"
@@ -229,7 +242,22 @@ function OnboardingInner() {
             <div className="mt-2 font-display text-xl text-ink">{activeName}</div>
           )}
 
-          {step === 0 && (
+          {step === 0 && atCap && (
+            <Stage
+              title="You have your two agents"
+              body="An operator can raise two agents, and yours are ready. Send one into the arena."
+            >
+              <PopButton
+                type="button"
+                onClick={() => router.push("/arena")}
+                className="w-full"
+              >
+                Go to the arena
+              </PopButton>
+            </Stage>
+          )}
+
+          {step === 0 && !atCap && (
             <Stage
               title="Claim your agent"
               body="Mint your agent as an NFT in the registry. It is yours, on chain."

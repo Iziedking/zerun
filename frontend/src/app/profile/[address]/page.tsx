@@ -7,11 +7,12 @@ import { useOperator } from "@/lib/useAgents";
 import { kindMeta } from "@/lib/kind";
 import { formatUsdc, shortAddr } from "@/lib/format";
 import type { OperatorProfile } from "@/lib/types";
+import { SkinUpload } from "@/components/SkinUpload";
 import {
-  Agent,
   agentVariant,
   Chip,
   CoinStat,
+  SkinnedAgent,
   StickerCard,
 } from "@/components/zerun";
 
@@ -67,7 +68,8 @@ function ProfileBody({
       <StickerCard className="relative overflow-hidden p-7">
         <div className="grid items-center gap-6 sm:grid-cols-[160px_1fr]">
           <div className="flex justify-center">
-            <Agent
+            <SkinnedAgent
+              agentId={primary?.agent_id}
               variant={agentVariant(primary?.agent_id ?? address)}
               mood="idle"
               size={150}
@@ -104,11 +106,22 @@ function ProfileBody({
           <ul className="flex flex-wrap gap-6">
             {agents.map((a) => (
               <li key={a.agent_id} className="flex flex-col items-center gap-1">
-                <Agent variant={agentVariant(a.agent_id)} mood="idle" size={88} name={a.name} />
+                <SkinnedAgent
+                  agentId={a.agent_id}
+                  variant={agentVariant(a.agent_id)}
+                  mood="idle"
+                  size={88}
+                  name={a.name}
+                />
                 <span className="font-display text-[15px] text-ink">{a.name}</span>
                 <span className="font-body text-[12px] font-extrabold text-ink-2">
                   {a.wins}W · {Math.max(0, a.matches - a.wins)}L
                 </span>
+                {isMe && (
+                  <div className="mt-1">
+                    <SkinUpload agentId={a.agent_id} owner={address} compact />
+                  </div>
+                )}
               </li>
             ))}
           </ul>

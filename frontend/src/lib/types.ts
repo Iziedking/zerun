@@ -103,6 +103,9 @@ export interface LeaderboardRow {
   rank: number;
   operator: string;
   agent_name: string | null;
+  // Optional: present when the backend surfaces the operator's lead agent id, so
+  // a custom skin can render. When absent, the default character shows.
+  agent_id?: number | null;
   matches: number;
   wins: number;
   winnings: string; // USDC 6dp string

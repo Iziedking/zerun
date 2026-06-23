@@ -15,6 +15,7 @@ import {
   Agent,
   agentVariant,
   Chip,
+  SkinnedAgent,
   StickerCard,
   cx,
 } from "@/components/zerun";
@@ -117,7 +118,8 @@ function Podium({ rows, me }: { rows: LeaderboardRow[]; me?: string }) {
             className={cx("block", cfg.pad)}
           >
             <div className="flex flex-col items-center">
-              <Agent
+              <SkinnedAgent
+                agentId={r.agent_id ?? undefined}
                 variant={agentVariant(r.operator)}
                 mood={cfg.hop ? "happy" : "idle"}
                 size={cfg.size}
@@ -172,7 +174,8 @@ function Row({
       )}
     >
       <span className="w-6 shrink-0 text-center font-display text-lg text-ink">{row.rank}</span>
-      <Agent
+      <SkinnedAgent
+        agentId={row.agent_id ?? undefined}
         variant={agentVariant(row.operator)}
         mood="idle"
         size={28}

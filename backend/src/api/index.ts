@@ -3,8 +3,13 @@ import { cors } from "hono/cors";
 import { config } from "../config/index.js";
 import { query } from "../db/pool.js";
 import { computeMode, computeConfigured } from "../compute/client.js";
-import { deploymentReady, loadDeployment } from "../chain/contracts.js";
-import { storageConfigured } from "../storage/zgStorage.js";
+import {
+  deploymentReady,
+  loadDeployment,
+  publicClient,
+  contestEngineAbi,
+} from "../chain/contracts.js";
+import { storageConfigured, uploadBytes } from "../storage/zgStorage.js";
 import { openContest } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
@@ -79,6 +84,37 @@ app.get("/api/contests/:id/standings", async (c) => {
   return c.json({ standings: await standingsFor(id) });
 });
 
+// Register a contest an operator hosted on chain (they ran mint, approve, and
+// listContest from their own wallet). We confirm it on chain and mirror it so it
+// shows in the arena; the due-sweeper settles it when the window closes.
+app.post("/api/contests/host", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const id = Number(body.contestId);
+  const kind = body.kind === "analyst" ? "analyst" : "solver";
+  const puzzleCount = Number(body.puzzleCount ?? (kind === "analyst" ? 4 : 5));
+  if (!id) return c.json({ error: "contestId required" }, 400);
+
+  const dep = loadDeployment();
+  const con = await publicClient.readContract({
+    address: dep.contestEngine,
+    abi: contestEngineAbi,
+    functionName: "getContest",
+    args: [BigInt(id)],
+  });
+  if (con.sponsor === "0x0000000000000000000000000000000000000000") {
+    return c.json({ error: "contest not found on chain" }, 404);
+  }
+
+  await query(
+    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind)
+       values ($1, 'open', $2, $3, $4, $5)
+       on conflict (contest_id) do update set
+         puzzle_count = excluded.puzzle_count, kind = excluded.kind, prize_pool = excluded.prize_pool`,
+    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : "PUZZLE", con.prizePool.toString(), kind],
+  );
+  return c.json({ ok: true, contestId: id, kind });
+});
+
 app.post("/api/contests/:id/enter", async (c) => {
   const id = Number(c.req.param("id"));
   const body = await c.req.json().catch(() => ({}));
@@ -111,6 +147,68 @@ app.post("/api/agents", async (c) => {
   return c.json({ ok: true });
 });
 
+// Upload a custom skin for an agent. Stored for fast serving and also put on 0G
+// Storage. The image then shows everywhere this agent appears.
+const SKIN_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const MAX_SKIN_B64 = 1_200_000; // ~900 KB image
+
+app.post("/api/agents/:id/skin", async (c) => {
+  const agentId = Number(c.req.param("id"));
+  const body = await c.req.json().catch(() => ({}));
+  const owner = String(body.owner ?? "").toLowerCase();
+  const mime = String(body.mime ?? "");
+  const dataB64 = String(body.dataB64 ?? "");
+
+  if (!agentId || !owner) return c.json({ error: "agentId and owner required" }, 400);
+  if (!SKIN_MIMES.has(mime)) return c.json({ error: "skin must be a png, jpeg, webp, or gif" }, 400);
+  if (!dataB64 || dataB64.length > MAX_SKIN_B64) {
+    return c.json({ error: "skin image is missing or too large (max ~900 KB)" }, 400);
+  }
+
+  // Only the agent's owner can set its skin.
+  const ownRows = await query<{ owner: string }>(
+    "select owner from agents_meta where agent_id = $1",
+    [agentId],
+  );
+  if (ownRows.rows.length === 0) return c.json({ error: "unknown agent" }, 404);
+  if (ownRows.rows[0]!.owner.toLowerCase() !== owner) return c.json({ error: "not your agent" }, 403);
+
+  // Put the skin on 0G Storage too (best effort), and keep the root.
+  let skinRoot: string | null = null;
+  try {
+    if (storageConfigured()) {
+      const bytes = Buffer.from(dataB64, "base64");
+      const { rootHash } = await uploadBytes(new Uint8Array(bytes));
+      skinRoot = rootHash;
+    }
+  } catch (err) {
+    console.error(`skin storage failed for agent ${agentId} (non-fatal):`, (err as Error).message);
+  }
+
+  await query(
+    "update agents_meta set skin_mime = $2, skin_b64 = $3, skin_root = $4 where agent_id = $1",
+    [agentId, mime, dataB64, skinRoot],
+  );
+  return c.json({ ok: true, skinRoot });
+});
+
+// Serve an agent's skin image, or 404 if it has none (the UI then falls back to
+// the default character).
+app.get("/api/skins/:id", async (c) => {
+  const agentId = Number(c.req.param("id"));
+  const { rows } = await query<{ skin_mime: string | null; skin_b64: string | null }>(
+    "select skin_mime, skin_b64 from agents_meta where agent_id = $1",
+    [agentId],
+  );
+  const row = rows[0];
+  if (!row || !row.skin_b64 || !row.skin_mime) return c.json({ error: "no skin" }, 404);
+  const buf = Buffer.from(row.skin_b64, "base64");
+  return c.body(buf, 200, {
+    "Content-Type": row.skin_mime,
+    "Cache-Control": "public, max-age=300",
+  });
+});
+
 app.get("/api/agents", async (c) => {
   const owner = String(c.req.query("owner") ?? "").toLowerCase();
   if (!owner) return c.json({ agents: [] });
@@ -118,6 +216,7 @@ app.get("/api/agents", async (c) => {
   // many answers it has produced on 0G Compute.
   const { rows } = await query(
     `select m.agent_id, m.owner, m.name, m.created_at,
+            (m.skin_b64 is not null) as has_skin, m.skin_root,
             count(distinct e.contest_id)::int as matches,
             (sum(case when p.rank = 1 then 1 else 0 end))::int as wins,
             (select count(*)::int from solve_runs s

@@ -1,7 +1,7 @@
 import type { ContestKind, Verdict } from "@/lib/types";
 import { kindMeta } from "@/lib/kind";
 import { ProvenanceBadge } from "./ProvenanceBadge";
-import { Agent, agentVariant, Chip, StickerCard, ThoughtBubble, type AgentMood } from "./zerun";
+import { agentVariant, Chip, SkinnedAgent, StickerCard, ThoughtBubble, type AgentMood } from "./zerun";
 
 export interface SolveRow {
   key: string;
@@ -42,7 +42,13 @@ export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: Cont
       <div className="flex items-start gap-4">
         {/* The character */}
         <div className="shrink-0">
-          <Agent variant={variant} mood={v.mood} size={84} name={row.agentName} />
+          <SkinnedAgent
+            agentId={row.agentId}
+            variant={variant}
+            mood={v.mood}
+            size={84}
+            name={row.agentName}
+          />
         </div>
 
         <div className="min-w-0 flex-1">

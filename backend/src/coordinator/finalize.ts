@@ -68,7 +68,9 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
 
   if (payouts.length === 0) {
     broadcast({ type: "status", contestId, payload: { status: "no-winners" } });
-    await query("update contests_meta set status = 'scored' where contest_id = $1", [contestId]);
+    // Nobody scored, so cancel on chain to refund the sponsor and clear the
+    // open state, otherwise the sweeper would retry this contest forever.
+    await cancelContest(contestId);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
 
@@ -149,6 +151,36 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
     settled: true,
     payouts: payouts.map((p) => ({ operator: p.operator, amount: p.amount.toString(), rank: p.rank })),
   };
+}
+
+// Cancel a contest on chain (refunds the sponsor) and mark it cancelled. Used
+// for contests that close with no field or no winner, so they leave the open
+// state instead of being retried forever. Best effort: if the contract rejects
+// it (already settled or cancelled), we log and move on.
+export async function cancelContest(contestId: number): Promise<void> {
+  const dep = loadDeployment();
+  try {
+    const hash = await coordinatorWallet().writeContract({
+      address: dep.contestEngine,
+      abi: contestEngineAbi,
+      functionName: "cancelContest",
+      args: [BigInt(contestId)],
+      account: coordinatorAccount(),
+      chain: undefined,
+      gasPrice: GAS_PRICE,
+    });
+    await publicClient.waitForTransactionReceipt({ hash });
+    await query("update contests_meta set status = 'cancelled' where contest_id = $1", [contestId]);
+    broadcast({ type: "status", contestId, payload: { status: "cancelled" } });
+    console.log(`contest ${contestId} cancelled (no winners)`);
+  } catch (err) {
+    // Already resolved on chain, or another sweep handled it.
+    await query(
+      "update contests_meta set status = 'cancelled' where contest_id = $1 and status not in ('settled')",
+      [contestId],
+    );
+    console.error(`contest ${contestId} cancel skipped:`, (err as Error).message);
+  }
 }
 
 // Build the audit payload from the persisted solve feed and put it on 0G

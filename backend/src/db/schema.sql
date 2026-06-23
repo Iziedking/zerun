@@ -11,6 +11,13 @@ create table if not exists agents_meta (
 );
 create index if not exists agents_meta_owner_idx on agents_meta (lower(owner));
 
+-- Custom agent skin: the image the operator uploaded. Stored as base64 for fast
+-- serving, plus the 0G Storage root so the skin also lives on decentralized
+-- storage. Added separately so existing rows migrate cleanly.
+alter table agents_meta add column if not exists skin_mime text;
+alter table agents_meta add column if not exists skin_b64 text;
+alter table agents_meta add column if not exists skin_root text;
+
 create table if not exists contests_meta (
   contest_id    bigint primary key,
   status        text not null default 'open',

@@ -5,7 +5,8 @@ import { useMemo } from "react";
 import type { AgentRecord } from "@/lib/types";
 import { useContests } from "@/lib/useAgents";
 import { useSolverTier } from "@/lib/useChainData";
-import { Agent, agentVariant, Chip, PopButton, StickerCard } from "./zerun";
+import { SkinUpload } from "./SkinUpload";
+import { agentVariant, Chip, PopButton, SkinnedAgent, StickerCard } from "./zerun";
 
 // Costume label for a solver-ladder tier. Tier 0 is a fresh rookie; higher tiers
 // read as "decked out".
@@ -13,8 +14,15 @@ const TIER_NAME = ["Rookie", "Scout", "Adept", "Ace", "Champ"];
 
 // One agent on the shelf: the character in its costume color, its name, its tier,
 // a small win/loss record, and a one-tap way to send it in.
-export function DashboardAgentCard({ agent }: { agent: AgentRecord }) {
+export function DashboardAgentCard({
+  agent,
+  owner,
+}: {
+  agent: AgentRecord;
+  owner?: string;
+}) {
   const { tier } = useSolverTier(agent.agent_id);
+  const isOwner = Boolean(owner && agent.owner?.toLowerCase() === owner.toLowerCase());
   const { data } = useContests();
 
   const wins = agent.wins ?? 0;
@@ -36,7 +44,8 @@ export function DashboardAgentCard({ agent }: { agent: AgentRecord }) {
   return (
     <StickerCard className="flex h-full flex-col p-6 text-center">
       <div className="flex justify-center">
-        <Agent
+        <SkinnedAgent
+          agentId={agent.agent_id}
           variant={agentVariant(agent.agent_id)}
           mood="idle"
           size={110}
@@ -61,6 +70,12 @@ export function DashboardAgentCard({ agent }: { agent: AgentRecord }) {
         </span>
         <Record label="on 0G" value={agent.og_calls ?? 0} />
       </div>
+
+      {isOwner && owner && (
+        <div className="mt-4 flex justify-center">
+          <SkinUpload agentId={agent.agent_id} owner={owner} compact />
+        </div>
+      )}
 
       <div className="mt-auto pt-5">
         {target ? (

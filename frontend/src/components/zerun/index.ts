@@ -6,6 +6,7 @@ export { CoinStat } from "./CoinStat";
 export { ThoughtBubble } from "./ThoughtBubble";
 export { ProgressGoo } from "./ProgressGoo";
 export { Agent, type AgentVariant, type AgentMood } from "./Agent";
+export { SkinnedAgent } from "./SkinnedAgent";
 export { Confetti } from "./Confetti";
 
 import type { AgentVariant } from "./Agent";

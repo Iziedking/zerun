@@ -4,6 +4,7 @@ import type {
   ClaimInfo,
   ComputeStatus,
   ContestDetail,
+  ContestKind,
   ContestSummary,
   Deployment,
   FeedItem,
@@ -54,6 +55,23 @@ export const api = {
     req<{ agents: AgentRecord[] }>(`/api/agents?owner=${owner}`),
   registerAgent: (body: { agentId: number; owner: string; name: string }) =>
     req<unknown>("/api/agents", { method: "POST", body: JSON.stringify(body) }),
+
+  // An operator hosted a contest from their own wallet; mirror it in the arena.
+  hostContest: (body: { contestId: number; kind: ContestKind; puzzleCount: number }) =>
+    req<{ ok: boolean; contestId: number; kind: ContestKind }>("/api/contests/host", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // Upload a custom skin for an agent (base64 with the data: prefix stripped).
+  uploadSkin: (
+    id: number | string,
+    body: { owner: string; mime: string; dataB64: string },
+  ) =>
+    req<{ ok: boolean; skinRoot: string | null }>(`/api/agents/${id}/skin`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   enter: (id: number | string, body: { agentId: number; operator: string }) =>
     req<unknown>(`/api/contests/${id}/enter`, {

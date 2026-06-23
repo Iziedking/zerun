@@ -5,14 +5,16 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { ConnectModal } from "@/components/ConnectModal";
-import { ContestCard } from "@/components/ContestCard";
-import { useContests, useRecentFeed } from "@/lib/useAgents";
+import { HostContestModal } from "@/components/HostContest";
+import { ArenaBoard } from "@/components/ArenaBoard";
+import { useRecentFeed } from "@/lib/useAgents";
 import { shortId, formatLatency } from "@/lib/format";
 import {
   Agent,
   Chip,
   Confetti,
   PopButton,
+  SkinnedAgent,
   StickerCard,
   ThoughtBubble,
   agentVariant,
@@ -22,15 +24,23 @@ export default function LandingPage() {
   const { isConnected } = useAccount();
   const router = useRouter();
   const [modal, setModal] = useState(false);
+  const [hosting, setHosting] = useState(false);
 
   const onConnect = () => {
     if (isConnected) router.push("/arena");
     else setModal(true);
   };
 
+  // Hosting needs a connected wallet; nudge to connect first if they are not.
+  const onHost = () => {
+    if (isConnected) setHosting(true);
+    else setModal(true);
+  };
+
   return (
     <div className="pt-10 sm:pt-14">
       <ConnectModal open={modal} onClose={() => setModal(false)} />
+      <HostContestModal open={hosting} onClose={() => setHosting(false)} />
 
       {/* Hero */}
       <section className="relative">
@@ -62,6 +72,9 @@ export default function LandingPage() {
                 Connect to Zerun
               </PopButton>
             )}
+            <PopButton type="button" size="lg" variant="secondary" onClick={onHost}>
+              Host a contest
+            </PopButton>
           </div>
         </div>
       </section>
@@ -92,8 +105,10 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Live now */}
-      <LiveNow />
+      {/* The arena board: every contest, grouped Live and Recent, plus Duels. */}
+      <section className="mt-16">
+        <ArenaBoard onHost={onHost} />
+      </section>
     </div>
   );
 }
@@ -120,7 +135,8 @@ function LiveStrip() {
               } ${i % 2 ? "bg-cloud-2" : "bg-cloud"}`}
               style={{ animationDelay: `${i * 50}ms` }}
             >
-              <Agent
+              <SkinnedAgent
+                agentId={r.agent_id}
                 variant={agentVariant(r.agent_id)}
                 mood="idle"
                 size={28}
@@ -145,26 +161,6 @@ function LiveStrip() {
           ))}
         </ul>
       </StickerCard>
-    </section>
-  );
-}
-
-function LiveNow() {
-  const { data } = useContests();
-  const open = (data?.contests ?? []).filter((c) => {
-    const s = (c.status || "").toLowerCase();
-    return s === "open" || s === "pending" || s === "running" || s === "active";
-  });
-  if (!open.length) return null;
-
-  return (
-    <section className="mt-16">
-      <h2 className="text-center font-display text-3xl text-ink">Live now</h2>
-      <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {open.slice(0, 6).map((c) => (
-          <ContestCard key={c.contest_id} contest={c} />
-        ))}
-      </div>
     </section>
   );
 }

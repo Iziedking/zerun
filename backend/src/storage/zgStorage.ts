@@ -35,10 +35,8 @@ export function storageConfigured(): boolean {
   return config.storage.enabled && Boolean(config.signerKey);
 }
 
-// Upload a JSON-serializable object. Returns the 0G Storage root hash, which is
-// the content address used to read it back.
-export async function uploadJson(value: unknown): Promise<StoreResult> {
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
+// Upload raw bytes (e.g. an image). Returns the 0G Storage root hash.
+export async function uploadBytes(bytes: Uint8Array): Promise<StoreResult> {
   const file = new MemData(bytes);
 
   const [tree, treeErr] = await file.merkleTree();
@@ -52,6 +50,12 @@ export async function uploadJson(value: unknown): Promise<StoreResult> {
   const txHash =
     typeof tx === "string" ? tx : ((tx as { txHash?: string } | null)?.txHash ?? null);
   return { rootHash: rootHash ?? "", txHash };
+}
+
+// Upload a JSON-serializable object. Returns the 0G Storage root hash, which is
+// the content address used to read it back.
+export async function uploadJson(value: unknown): Promise<StoreResult> {
+  return uploadBytes(new TextEncoder().encode(JSON.stringify(value)));
 }
 
 // Read a stored object back by its root hash. Used to prove retrievability.

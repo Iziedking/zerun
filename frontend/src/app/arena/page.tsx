@@ -1,22 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useAccount } from "wagmi";
 import { ConnectGate } from "@/components/ConnectGate";
-import { ContestCard } from "@/components/ContestCard";
+import { ArenaBoard } from "@/components/ArenaBoard";
 import { DashboardAgentCard } from "@/components/DashboardAgentCard";
-import { useAgents, useContests } from "@/lib/useAgents";
+import { HostContestModal } from "@/components/HostContest";
+import { useAgents } from "@/lib/useAgents";
 import { useUsdcBalance } from "@/lib/useChainData";
 import { shortAddr } from "@/lib/format";
 import {
   Agent,
-  Chip,
   CoinStat,
   PopButton,
   StickerCard,
-  cx,
 } from "@/components/zerun";
+
+// At most two agents per operator (the contract caps it there).
+const MAX_AGENTS = 2;
 
 export default function ArenaPage() {
   return (
@@ -28,31 +30,19 @@ export default function ArenaPage() {
   );
 }
 
-type Tab = "arenas" | "duels";
-
 function Dashboard() {
   const { address } = useAccount();
   const agentsQ = useAgents(address);
-  const contestsQ = useContests();
   const balance = useUsdcBalance(address);
-  const [tab, setTab] = useState<Tab>("arenas");
+  const [hosting, setHosting] = useState(false);
 
   const agents = agentsQ.data?.agents ?? [];
-  const contests = contestsQ.data?.contests ?? [];
-
-  // Contests the operator's agents are actively in float to the top as "watch live".
-  const myAgentIds = useMemo(() => new Set(agents.map((a) => a.agent_id)), [agents]);
-  const active = useMemo(
-    () =>
-      contests.filter((c) => {
-        const s = (c.status || "").toLowerCase();
-        return s === "running" || s === "active";
-      }),
-    [contests],
-  );
+  const atCap = agents.length >= MAX_AGENTS;
 
   return (
     <div className="space-y-10">
+      <HostContestModal open={hosting} onClose={() => setHosting(false)} />
+
       {/* Greeting and balance */}
       <header className="flex flex-wrap items-end justify-between gap-5">
         <div className="flex items-center gap-4">
@@ -64,30 +54,31 @@ function Dashboard() {
             </p>
           </div>
         </div>
-        <CoinStat value={balance.formatted} suffix="tUSDC" caption="your balance" />
+        <div className="flex flex-wrap items-center gap-3">
+          <CoinStat value={balance.formatted} suffix="tUSDC" caption="your balance" />
+          <PopButton type="button" variant="secondary" onClick={() => setHosting(true)}>
+            Host a contest
+          </PopButton>
+        </div>
       </header>
-
-      {/* Active match, floated to the top */}
-      {active.length > 0 && (
-        <section>
-          <h2 className="mb-3 font-display text-2xl text-ink">Watch live</h2>
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {active.map((c) => (
-              <ContestCard key={c.contest_id} contest={c} />
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* Agents shelf */}
       <section>
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="font-display text-2xl text-ink">Your agents</h2>
-          <Link href="/onboarding">
-            <PopButton type="button" variant="secondary">
-              Raise a new agent
-            </PopButton>
-          </Link>
+          {atCap ? (
+            <Link href="/arena">
+              <PopButton type="button" variant="ghost" disabled>
+                You have your two agents
+              </PopButton>
+            </Link>
+          ) : (
+            <Link href="/onboarding">
+              <PopButton type="button" variant="secondary">
+                Raise a new agent
+              </PopButton>
+            </Link>
+          )}
         </div>
 
         {agentsQ.isLoading ? (
@@ -103,7 +94,7 @@ function Dashboard() {
         ) : agents.length ? (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {agents.map((a) => (
-              <DashboardAgentCard key={a.agent_id} agent={a} />
+              <DashboardAgentCard key={a.agent_id} agent={a} owner={address} />
             ))}
           </div>
         ) : (
@@ -123,84 +114,10 @@ function Dashboard() {
         )}
       </section>
 
-      {/* Tab switch: Arenas and Duels */}
+      {/* The full arena board: Live, Recent, and Duels. */}
       <section>
-        <div className="mb-4 flex items-center gap-2">
-          <TabChip active={tab === "arenas"} onClick={() => setTab("arenas")}>
-            Arenas
-          </TabChip>
-          <TabChip active={tab === "duels"} onClick={() => setTab("duels")}>
-            Duels
-          </TabChip>
-        </div>
-
-        {tab === "arenas" ? (
-          contestsQ.isLoading ? (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="h-56 animate-pulse rounded-chunk-lg border-line border-ink bg-cloud-2"
-                  aria-hidden
-                />
-              ))}
-            </div>
-          ) : contests.length ? (
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {contests.map((c) => (
-                <ContestCard key={c.contest_id} contest={c} />
-              ))}
-            </div>
-          ) : (
-            <StickerCard className="p-8 text-center">
-              <p className="font-body text-[15px] text-ink-2">
-                No contests open yet. Check back soon.
-              </p>
-            </StickerCard>
-          )
-        ) : (
-          <StickerCard className="p-10 text-center">
-            <div className="flex justify-center">
-              <Agent variant="coral" mood="idle" size={110} name="duel buddy" />
-            </div>
-            <div className="mt-4 flex justify-center">
-              <Chip tone="info">coming soon</Chip>
-            </div>
-            <p className="mx-auto mt-3 max-w-sm font-body text-[15px] text-ink-2">
-              One-on-one duels arrive with the challenge contract. Soon you will be
-              able to call out another agent head to head.
-            </p>
-            <div className="mt-6 flex justify-center">
-              <PopButton type="button" disabled>
-                Start a duel
-              </PopButton>
-            </div>
-          </StickerCard>
-        )}
+        <ArenaBoard onHost={() => setHosting(true)} />
       </section>
     </div>
-  );
-}
-
-function TabChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cx(
-        "rounded-pill border-line border-ink px-4 py-1.5 font-body text-[13px] font-extrabold uppercase tracking-[0.02em] shadow-pop-press transition",
-        active ? "bg-violet text-white" : "bg-cloud text-ink-2 hover:text-ink",
-      )}
-    >
-      {children}
-    </button>
   );
 }

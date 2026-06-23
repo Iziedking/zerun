@@ -81,6 +81,7 @@ export const contestEngineAbi = parseAbi([
   "function registerEntry(uint256 contestId, uint256 agentId, uint256 syndicateId)",
   "function postScoreRoot(uint256 contestId, bytes32 root)",
   "function settle(uint256 contestId)",
+  "function cancelContest(uint256 contestId)",
   "function claimPrize(uint256 contestId, uint256 amount, bytes32[] proof)",
   "function nextContestId() view returns (uint256)",
   "function entryCount(uint256) view returns (uint64)",
