@@ -173,17 +173,24 @@ export async function runContest(contestId: number): Promise<RunResult> {
     payload: { status: "running", detail: `${entries.length} agents, ${puzzles.length} puzzles` },
   });
 
+  // Each agent's compute level (its 0G investment), fixed once. It builds the 0G
+  // inference plan (more level = more passes and tokens) and breaks scoring ties.
+  const levelOf = new Map<number, number>();
+  for (const e of entries) levelOf.set(e.agentId, await getAgentCompute(e.agentId));
+  const planOf = new Map<number, ReturnType<typeof computePlan>>();
+  for (const e of entries) planOf.set(e.agentId, computePlan(levelOf.get(e.agentId)!));
+
   const scores = new Map<number, AgentScore>();
   for (const e of entries) {
-    scores.set(e.agentId, { agentId: e.agentId, operator: e.operator, correct: 0, totalLatencyMs: 0 });
+    scores.set(e.agentId, {
+      agentId: e.agentId,
+      operator: e.operator,
+      correct: 0,
+      totalLatencyMs: 0,
+      computeLevel: levelOf.get(e.agentId) ?? 0,
+    });
   }
   const nameOf = new Map(entries.map((e) => [e.agentId, e.agentName]));
-
-  // Plan per agent, fixed once: its compute level (bought with 0G) builds its 0G
-  // inference plan, where more level means more self-consistency passes and a
-  // bigger token budget.
-  const planOf = new Map<number, ReturnType<typeof computePlan>>();
-  for (const e of entries) planOf.set(e.agentId, computePlan(await getAgentCompute(e.agentId)));
 
   // Any answer that errored on a transient 0G blip (dropped fetch, slow
   // provider), to re-run once so it never lands as an unfair loss.

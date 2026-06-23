@@ -6,7 +6,6 @@ import { openContest } from "./contestOps.js";
 import { runContest } from "./runContest.js";
 import { runAnalystContest } from "./runAnalystContest.js";
 import { resettleFromStored } from "./finalize.js";
-import { MAX_COMPUTE_LEVEL } from "../runners/computeLevels.js";
 import {
   CONTEST_TYPE,
   GAS_PRICE,
@@ -116,15 +115,16 @@ async function ensureHouseRoster(): Promise<HouseAgent[]> {
       agentId = Number(nextId);
     }
 
-    // Give the house a compute spread so contests show a real skill gradient.
-    const computeLevel = Math.min(MAX_COMPUTE_LEVEL, i + 1);
+    // The house is the weak baseline: every house agent stays at Compute level 0,
+    // so any operator who trains (level 1+) reliably beats them and the leaderboard
+    // belongs to real players. Forced down even if an old row sat higher.
     await query(
-      `insert into agents_meta (agent_id, owner, name, compute_level, is_house) values ($1,$2,$3,$4,true)
+      `insert into agents_meta (agent_id, owner, name, compute_level, is_house) values ($1,$2,$3,0,true)
          on conflict (agent_id) do update set
            name = excluded.name,
-           compute_level = greatest(agents_meta.compute_level, excluded.compute_level),
+           compute_level = 0,
            is_house = true`,
-      [agentId, account.address.toLowerCase(), name, computeLevel],
+      [agentId, account.address.toLowerCase(), name],
     );
 
     out.push({ account, wallet, agentId, name });

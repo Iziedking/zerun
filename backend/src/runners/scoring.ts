@@ -1,14 +1,17 @@
 // Deterministic scoring and payout split. No randomness anywhere on the money
-// path: the field is ranked purely by skill (correct answers), with total
-// latency as the tiebreak, so the fastest accurate agent wins. Given the same
-// inputs this always produces the same ranking and the same payouts, which is
-// what lets the merkle root be reproduced and trusted.
+// path: the field is ranked by skill (correct answers); ties go to the agent
+// with the higher Compute level (the bigger 0G investment), then to the faster
+// one. Given the same inputs this always produces the same ranking and the same
+// payouts, which is what lets the merkle root be reproduced and trusted.
 
 export interface AgentScore {
   agentId: number;
   operator: string;
   correct: number;
   totalLatencyMs: number;
+  // Compute level (0G investment). Higher wins a tie, so paying for more compute
+  // never loses to a cheaper agent that merely answered faster.
+  computeLevel?: number;
 }
 
 export interface RankedAgent extends AgentScore {
@@ -21,10 +24,14 @@ export interface Payout {
   rank: number;
 }
 
-// Solver ranking: most correct wins, total latency breaks ties.
+// Ranking: most correct wins; ties go to the higher Compute level, then to the
+// lower total latency, then to the lower agent id for full determinism.
 export function rankAgents(scores: AgentScore[]): RankedAgent[] {
   const sorted = [...scores].sort((a, b) => {
     if (b.correct !== a.correct) return b.correct - a.correct;
+    const la = a.computeLevel ?? 0;
+    const lb = b.computeLevel ?? 0;
+    if (lb !== la) return lb - la;
     if (a.totalLatencyMs !== b.totalLatencyMs) return a.totalLatencyMs - b.totalLatencyMs;
     return a.agentId - b.agentId;
   });

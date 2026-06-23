@@ -167,14 +167,24 @@ export async function runAnalystContest(contestId: number): Promise<RunResult> {
     payload: { status: "running", detail: `${entries.length} agents, ${markets.length} markets` },
   });
 
+  // Each agent's compute level (its 0G investment), fixed once: builds the plan
+  // and breaks scoring ties so the bigger investment wins a tie.
+  const levelOf = new Map<number, number>();
+  for (const e of entries) levelOf.set(e.agentId, await getAgentCompute(e.agentId));
+  const planOf = new Map<number, ReturnType<typeof computePlan>>();
+  for (const e of entries) planOf.set(e.agentId, computePlan(levelOf.get(e.agentId)!));
+
   const scores = new Map<number, AgentScore>();
   for (const e of entries) {
-    scores.set(e.agentId, { agentId: e.agentId, operator: e.operator, correct: 0, totalLatencyMs: 0 });
+    scores.set(e.agentId, {
+      agentId: e.agentId,
+      operator: e.operator,
+      correct: 0,
+      totalLatencyMs: 0,
+      computeLevel: levelOf.get(e.agentId) ?? 0,
+    });
   }
   const nameOf = new Map(entries.map((e) => [e.agentId, e.agentName]));
-
-  const planOf = new Map<number, ReturnType<typeof computePlan>>();
-  for (const e of entries) planOf.set(e.agentId, computePlan(await getAgentCompute(e.agentId)));
 
   // Calls that errored on a transient 0G blip, to re-run once so they never land
   // as an unfair loss.
