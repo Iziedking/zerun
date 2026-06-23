@@ -153,4 +153,34 @@ export const api = {
       headers: { "x-admin-token": token },
       body: JSON.stringify(body),
     }),
+  adminOperator: (address: string, token: string) =>
+    req<{
+      owner: string;
+      usdcWei: string;
+      usdcClaimedThisWeekWei: string;
+      agents: { agent_id: number; name: string; compute_level: number; is_house: boolean }[];
+      contests: { contest_id: number; status: string; kind: string }[];
+    }>(`/api/admin/operator/${address}`, { headers: { "x-admin-token": token } }),
+  adminGrantUsdc: (body: { owner: string; amount: number }, token: string) =>
+    req<{ ok: boolean; mintedWei: string; txHash: string }>("/api/admin/grant-usdc", {
+      method: "POST",
+      headers: { "x-admin-token": token },
+      body: JSON.stringify(body),
+    }),
+  adminContest: (id: number, token: string) =>
+    req<{
+      contest: { contest_id: number; status: string; kind: string; prize_pool: string };
+      dbEntries: number;
+      onchainEntries: number;
+    }>(`/api/admin/contest/${id}`, { headers: { "x-admin-token": token } }),
+  adminResettle: (id: number, token: string) =>
+    req<{ ok: boolean }>(`/api/admin/contest/${id}/resettle`, {
+      method: "POST",
+      headers: { "x-admin-token": token },
+    }),
+  adminCancelContest: (id: number, token: string) =>
+    req<{ ok: boolean }>(`/api/admin/contest/${id}/cancel`, {
+      method: "POST",
+      headers: { "x-admin-token": token },
+    }),
 };

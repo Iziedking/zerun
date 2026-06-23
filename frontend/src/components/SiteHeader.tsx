@@ -59,7 +59,11 @@ export function SiteHeader() {
           )}
         </div>
 
-        {!isLanding && (
+        {isLanding ? (
+          <div className="flex shrink-0 items-center">
+            <ThemeToggle />
+          </div>
+        ) : (
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <ComputeBadge className="hidden lg:inline-flex" />
             {isConnected && <BalancePill className="hidden md:inline-flex" />}

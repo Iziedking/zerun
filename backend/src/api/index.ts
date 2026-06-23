@@ -22,9 +22,10 @@ import {
   COMPUTE_COSTS_OG,
 } from "../runners/computeLevels.js";
 import { storageConfigured, uploadBytes, downloadBytes } from "../storage/zgStorage.js";
-import { openContest } from "../coordinator/contestOps.js";
+import { openContest, onchainEntryCount } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
+import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 
 // Read API plus the admin/demo triggers. The live feed itself goes over the
 // WebSocket; these endpoints serve initial loads, lookups, and the proofs
@@ -255,6 +256,116 @@ app.post("/api/admin/set-compute", async (c) => {
   if (a.rows.length === 0) return c.json({ error: "unknown agent" }, 404);
   await query("update agents_meta set compute_level = $2 where agent_id = $1", [agentId, level]);
   return c.json({ ok: true, computeLevel: level });
+});
+
+// Diagnose an operator: their agents, on-chain tUSDC balance (why they cannot
+// host or enter is usually here), faucet claims, and contests they touched.
+app.get("/api/admin/operator/:address", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const owner = String(c.req.param("address")).toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(owner)) return c.json({ error: "a valid address is required" }, 400);
+
+  const agents = await query(
+    "select agent_id, name, compute_level, is_house from agents_meta where lower(owner) = $1 order by agent_id asc",
+    [owner],
+  );
+  const claimed = await query<{ sum: string }>(
+    `select coalesce(sum(amount_wei::numeric), 0)::text as sum from usdc_claims
+       where lower(operator) = $1 and created_at > now() - interval '7 days'`,
+    [owner],
+  );
+  const contests = await query(
+    `select distinct e.contest_id, c.status, c.kind
+       from contest_entries e join contests_meta c on c.contest_id = e.contest_id
+      where lower(e.operator) = $1 order by e.contest_id desc limit 10`,
+    [owner],
+  );
+
+  let usdcWei = "0";
+  try {
+    const bal = (await publicClient.readContract({
+      address: loadDeployment().testUSDC,
+      abi: testUsdcAbi,
+      functionName: "balanceOf",
+      args: [owner as `0x${string}`],
+    })) as bigint;
+    usdcWei = bal.toString();
+  } catch {
+    /* leave 0 */
+  }
+
+  return c.json({
+    owner,
+    usdcWei,
+    usdcClaimedThisWeekWei: claimed.rows[0]?.sum ?? "0",
+    agents: agents.rows,
+    contests: contests.rows,
+  });
+});
+
+// Grant tUSDC to an operator (no weekly cap). Unblocks a user who cannot host or
+// enter for lack of funds.
+app.post("/api/admin/grant-usdc", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const owner = String(body.owner ?? "").toLowerCase();
+  const amount = Number(body.amount);
+  if (!/^0x[0-9a-f]{40}$/.test(owner)) return c.json({ error: "a valid address is required" }, 400);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 100000) {
+    return c.json({ error: "amount must be between 0 and 100000 tUSDC" }, 400);
+  }
+  const amountWei = BigInt(Math.round(amount * 1_000_000)); // tUSDC has 6 decimals
+  const hash = await coordinatorWallet().writeContract({
+    address: loadDeployment().testUSDC,
+    abi: testUsdcAbi,
+    functionName: "mint",
+    args: [owner as `0x${string}`, amountWei],
+    account: coordinatorAccount(),
+    chain: undefined,
+    gasPrice: GAS_PRICE,
+  });
+  await waitReceipt(hash);
+  return c.json({ ok: true, mintedWei: amountWei.toString(), txHash: hash });
+});
+
+// Inspect a contest: stored status vs the on-chain entry count, so a stuck or
+// mis-mirrored contest is obvious.
+app.get("/api/admin/contest/:id", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const id = Number(c.req.param("id"));
+  if (!id) return c.json({ error: "contest id required" }, 400);
+  const meta = await query(
+    "select contest_id, status, kind, prize_pool, agent_count, max_operators, ends_at, settled_at from contests_meta where contest_id = $1",
+    [id],
+  );
+  if (meta.rows.length === 0) return c.json({ error: "unknown contest" }, 404);
+  const dbEntries = await query<{ n: string }>(
+    "select count(*)::text as n from contest_entries where contest_id = $1",
+    [id],
+  );
+  const onchain = await onchainEntryCount(id).catch(() => -1);
+  return c.json({
+    contest: meta.rows[0],
+    dbEntries: Number(dbEntries.rows[0]?.n ?? "0"),
+    onchainEntries: onchain,
+  });
+});
+
+// Recover a stuck contest: resume settlement from the stored root, or cancel it.
+app.post("/api/admin/contest/:id/resettle", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const id = Number(c.req.param("id"));
+  if (!id) return c.json({ error: "contest id required" }, 400);
+  await resettleFromStored(id);
+  return c.json({ ok: true });
+});
+
+app.post("/api/admin/contest/:id/cancel", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const id = Number(c.req.param("id"));
+  if (!id) return c.json({ error: "contest id required" }, 400);
+  await cancelContest(id);
+  return c.json({ ok: true });
 });
 
 app.get("/api/deployment", (c) => {

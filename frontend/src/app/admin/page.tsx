@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
-import { shortAddr } from "@/lib/format";
+import { shortAddr, formatUsdc } from "@/lib/format";
 import { StickerCard, PopButton } from "@/components/zerun";
 
 const TOKEN_KEY = "zerun:admin:token";
@@ -12,19 +12,32 @@ const INPUT =
 const LABEL = "block font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2";
 
 type AgentInfo = Awaited<ReturnType<typeof api.adminAgent>>;
+type OpInfo = Awaited<ReturnType<typeof api.adminOperator>>;
+type ContestInfo = Awaited<ReturnType<typeof api.adminContest>>;
 
-// Internal support console: credit a training payment that did not reflect (the
-// common RPC-blip case) or override an agent's Compute level. Everything is gated
-// by the admin token, which the backend checks on every call.
+// Internal support console. Diagnose and fix the common operator issues: a
+// training payment that did not reflect, a user who cannot host or enter for
+// lack of tUSDC, and a stuck contest. All gated by the admin token.
 export default function AdminPage() {
   const [token, setToken] = useState("");
   const [saved, setSaved] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // agent tools
   const [agentId, setAgentId] = useState("");
   const [txHash, setTxHash] = useState("");
   const [level, setLevel] = useState("");
-  const [info, setInfo] = useState<AgentInfo | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [agent, setAgent] = useState<AgentInfo | null>(null);
+
+  // operator tools
+  const [opAddr, setOpAddr] = useState("");
+  const [op, setOp] = useState<OpInfo | null>(null);
+  const [grant, setGrant] = useState("");
+
+  // contest tools
+  const [contestId, setContestId] = useState("");
+  const [contest, setContest] = useState<ContestInfo | null>(null);
 
   useEffect(() => {
     const t = localStorage.getItem(TOKEN_KEY) ?? "";
@@ -50,40 +63,14 @@ export default function AdminPage() {
     }
   };
 
-  const lookup = () =>
-    run(async () => {
-      const r = await api.adminAgent(Number(agentId), saved);
-      setInfo(r);
-      return `Loaded agent #${r.agent.agent_id}.`;
-    });
-
-  const credit = () =>
-    run(async () => {
-      const r = await api.adminCreditTraining(
-        { agentId: Number(agentId), txHash: txHash.trim() },
-        saved,
-      );
-      const a = await api.adminAgent(Number(agentId), saved).catch(() => null);
-      if (a) setInfo(a);
-      return `Credited. Agent #${agentId} is now Compute level ${r.computeLevel}.`;
-    });
-
-  const setCompute = () =>
-    run(async () => {
-      const r = await api.adminSetCompute({ agentId: Number(agentId), level: Number(level) }, saved);
-      const a = await api.adminAgent(Number(agentId), saved).catch(() => null);
-      if (a) setInfo(a);
-      return `Agent #${agentId} set to Compute level ${r.computeLevel}.`;
-    });
-
-  const canAct = Boolean(saved) && Boolean(agentId) && !busy;
+  const ready = Boolean(saved) && !busy;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pt-10">
       <header>
-        <h1 className="font-display text-4xl text-ink -rotate-1">Admin</h1>
+        <h1 className="font-display text-4xl text-ink -rotate-1">Support console</h1>
         <p className="mt-1 font-body text-[15px] text-ink-2">
-          Support tools. Everything here is gated by the admin token.
+          Diagnose and fix operator issues. Gated by the admin token.
         </p>
       </header>
 
@@ -106,78 +93,143 @@ export default function AdminPage() {
         </p>
       </StickerCard>
 
+      {/* ---- Operator: balances, grant tUSDC (the "cannot host" fix) ---- */}
       <StickerCard className="space-y-4 p-5">
-        <div>
-          <label className={LABEL}>Agent id</label>
-          <div className="mt-1 flex flex-wrap gap-2">
-            <input
-              inputMode="numeric"
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value.replace(/\D/g, ""))}
-              placeholder="e.g. 29"
-              className={INPUT + " flex-1"}
-            />
-            <PopButton type="button" variant="ghost" onClick={lookup} disabled={!canAct}>
-              Look up
-            </PopButton>
-          </div>
+        <h2 className="font-display text-lg text-ink">Operator</h2>
+        <p className="font-body text-[13px] text-ink-2">
+          Look up a wallet to see why they cannot host or enter (usually no tUSDC), then grant some.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <input
+            value={opAddr}
+            onChange={(e) => setOpAddr(e.target.value.trim())}
+            placeholder="0x… wallet"
+            className={INPUT + " flex-1 font-mono text-[13px]"}
+          />
+          <PopButton
+            type="button"
+            variant="ghost"
+            disabled={!ready || !opAddr}
+            onClick={() =>
+              run(async () => {
+                const r = await api.adminOperator(opAddr, saved);
+                setOp(r);
+                return `Loaded ${shortAddr(r.owner)}.`;
+              })
+            }
+          >
+            Look up
+          </PopButton>
         </div>
 
-        {info && (
+        {op && (
           <div className="rounded-chunk border-line border-ink/15 bg-cloud-2 p-4">
             <div className="font-display text-lg text-ink">
-              {info.agent.name} · Compute level {info.agent.compute_level}
-              {info.agent.is_house ? " · house" : ""}
+              {formatUsdc(op.usdcWei)} tUSDC on hand
             </div>
-            <div className="mt-0.5 font-mono text-[12px] text-ink-2">
-              owner {shortAddr(info.agent.owner)}
+            <div className="mt-0.5 font-body text-[12px] text-ink-2">
+              claimed this week: {formatUsdc(op.usdcClaimedThisWeekWei)} / 100
             </div>
-            <div className="mt-3 font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-3">
-              recent trainings
+            <div className="mt-2 font-body text-[13px] text-ink-2">
+              {op.agents.length} agent(s) · {op.contests.length} recent contest(s)
             </div>
-            {info.trainings.length === 0 ? (
-              <p className="font-body text-[13px] text-ink-3">none on record</p>
-            ) : (
-              <ul className="mt-1 space-y-1">
-                {info.trainings.map((t) => (
-                  <li key={t.tx_hash} className="font-mono text-[12px] text-ink-2">
-                    L{t.level_after} · {shortAddr(t.tx_hash, 10, 8)}
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         )}
+
+        <div className="flex flex-wrap items-end gap-2 border-t-line border-ink/10 pt-3">
+          <div className="flex-1">
+            <label className={LABEL}>Grant tUSDC</label>
+            <input
+              inputMode="decimal"
+              value={grant}
+              onChange={(e) => setGrant(e.target.value.replace(/[^\d.]/g, ""))}
+              placeholder="amount, e.g. 200"
+              className={INPUT + " mt-1"}
+            />
+          </div>
+          <PopButton
+            type="button"
+            disabled={!ready || !opAddr || !grant}
+            onClick={() =>
+              run(async () => {
+                await api.adminGrantUsdc({ owner: opAddr, amount: Number(grant) }, saved);
+                return `Granted ${grant} tUSDC to ${shortAddr(opAddr)}.`;
+              })
+            }
+          >
+            Grant
+          </PopButton>
+        </div>
       </StickerCard>
 
+      {/* ---- Agent: credit a stuck training, override compute level ---- */}
       <StickerCard className="space-y-4 p-5">
-        <h2 className="font-display text-lg text-ink">Credit a training payment</h2>
-        <p className="font-body text-[13px] text-ink-2">
-          For a payment that is on chain but did not reflect. Re-reads the transaction and credits
-          the next level if it checks out.
-        </p>
+        <h2 className="font-display text-lg text-ink">Agent</h2>
+        <div className="flex flex-wrap gap-2">
+          <input
+            inputMode="numeric"
+            value={agentId}
+            onChange={(e) => setAgentId(e.target.value.replace(/\D/g, ""))}
+            placeholder="agent id, e.g. 29"
+            className={INPUT + " flex-1"}
+          />
+          <PopButton
+            type="button"
+            variant="ghost"
+            disabled={!ready || !agentId}
+            onClick={() =>
+              run(async () => {
+                const r = await api.adminAgent(Number(agentId), saved);
+                setAgent(r);
+                return `Loaded agent #${r.agent.agent_id}.`;
+              })
+            }
+          >
+            Look up
+          </PopButton>
+        </div>
+
+        {agent && (
+          <div className="rounded-chunk border-line border-ink/15 bg-cloud-2 p-4">
+            <div className="font-display text-lg text-ink">
+              {agent.agent.name} · Compute level {agent.agent.compute_level}
+              {agent.agent.is_house ? " · house" : ""}
+            </div>
+            <div className="mt-0.5 font-mono text-[12px] text-ink-2">
+              owner {shortAddr(agent.agent.owner)} · {agent.trainings.length} training(s)
+            </div>
+          </div>
+        )}
+
         <div>
-          <label className={LABEL}>Payment tx hash</label>
+          <label className={LABEL}>Credit a training payment (tx hash)</label>
           <input
             value={txHash}
             onChange={(e) => setTxHash(e.target.value.trim())}
-            placeholder="0x…"
+            placeholder="0x… on-chain payment that did not reflect"
             className={INPUT + " mt-1 font-mono text-[13px]"}
           />
+          <PopButton
+            type="button"
+            className="mt-2"
+            disabled={!ready || !agentId || !txHash}
+            onClick={() =>
+              run(async () => {
+                const r = await api.adminCreditTraining(
+                  { agentId: Number(agentId), txHash: txHash.trim() },
+                  saved,
+                );
+                return `Credited. Agent #${agentId} is now Compute level ${r.computeLevel}.`;
+              })
+            }
+          >
+            Credit training
+          </PopButton>
         </div>
-        <PopButton type="button" onClick={credit} disabled={!canAct || !txHash}>
-          {busy ? "Working" : "Credit training"}
-        </PopButton>
-      </StickerCard>
 
-      <StickerCard className="space-y-4 p-5">
-        <h2 className="font-display text-lg text-ink">Override Compute level</h2>
-        <p className="font-body text-[13px] text-ink-2">
-          Emergency only. Sets the level directly without a payment.
-        </p>
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2 border-t-line border-ink/10 pt-3">
           <div className="flex-1">
-            <label className={LABEL}>Level (0 to 5)</label>
+            <label className={LABEL}>Override level (0 to 5)</label>
             <input
               inputMode="numeric"
               value={level}
@@ -186,18 +238,95 @@ export default function AdminPage() {
               className={INPUT + " mt-1"}
             />
           </div>
-          <PopButton type="button" variant="ghost" onClick={setCompute} disabled={!canAct || level === ""}>
+          <PopButton
+            type="button"
+            variant="ghost"
+            disabled={!ready || !agentId || level === ""}
+            onClick={() =>
+              run(async () => {
+                const r = await api.adminSetCompute(
+                  { agentId: Number(agentId), level: Number(level) },
+                  saved,
+                );
+                return `Agent #${agentId} set to Compute level ${r.computeLevel}.`;
+              })
+            }
+          >
             Set level
           </PopButton>
         </div>
       </StickerCard>
 
+      {/* ---- Contest: inspect and recover a stuck contest ---- */}
+      <StickerCard className="space-y-4 p-5">
+        <h2 className="font-display text-lg text-ink">Contest</h2>
+        <div className="flex flex-wrap gap-2">
+          <input
+            inputMode="numeric"
+            value={contestId}
+            onChange={(e) => setContestId(e.target.value.replace(/\D/g, ""))}
+            placeholder="contest id"
+            className={INPUT + " flex-1"}
+          />
+          <PopButton
+            type="button"
+            variant="ghost"
+            disabled={!ready || !contestId}
+            onClick={() =>
+              run(async () => {
+                const r = await api.adminContest(Number(contestId), saved);
+                setContest(r);
+                return `Loaded contest #${r.contest.contest_id} (${r.contest.status}).`;
+              })
+            }
+          >
+            Inspect
+          </PopButton>
+        </div>
+
+        {contest && (
+          <div className="rounded-chunk border-line border-ink/15 bg-cloud-2 p-4">
+            <div className="font-display text-lg text-ink">
+              #{contest.contest.contest_id} · {contest.contest.status} · {contest.contest.kind}
+            </div>
+            <div className="mt-0.5 font-body text-[13px] text-ink-2">
+              entries: {contest.dbEntries} in db / {contest.onchainEntries} on chain · pool{" "}
+              {formatUsdc(contest.contest.prize_pool)} tUSDC
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2 border-t-line border-ink/10 pt-3">
+          <PopButton
+            type="button"
+            disabled={!ready || !contestId}
+            onClick={() =>
+              run(async () => {
+                await api.adminResettle(Number(contestId), saved);
+                return `Resettle triggered for #${contestId}.`;
+              })
+            }
+          >
+            Resettle
+          </PopButton>
+          <PopButton
+            type="button"
+            variant="ghost"
+            disabled={!ready || !contestId}
+            onClick={() =>
+              run(async () => {
+                await api.adminCancelContest(Number(contestId), saved);
+                return `Cancelled #${contestId}.`;
+              })
+            }
+          >
+            Cancel contest
+          </PopButton>
+        </div>
+      </StickerCard>
+
       {msg && (
-        <p
-          className={
-            "font-body text-[14px] font-bold " + (msg.ok ? "text-ink" : "text-coral")
-          }
-        >
+        <p className={"font-body text-[14px] font-bold " + (msg.ok ? "text-ink" : "text-coral")}>
           {msg.text}
         </p>
       )}
