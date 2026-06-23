@@ -5,8 +5,12 @@ export const agentRegistryAbi = parseAbi([
   "function ownerOfAgent(uint256) view returns (address)",
   "function agentsOf(address) view returns (uint256[])",
   "function nextAgentId() view returns (uint256)",
+  "function getTier(uint256 agentId, uint8 cType) view returns (uint16)",
   "event AgentCreated(uint256 indexed agentId, address indexed owner)",
 ]);
+
+// ContestType enum on chain: SCOUT=0, ANALYST=1, SOLVER=2.
+export const CONTEST_TYPE = { scout: 0, analyst: 1, solver: 2 } as const;
 
 export const testUsdcAbi = parseAbi([
   "function mint(address to, uint256 amount)",

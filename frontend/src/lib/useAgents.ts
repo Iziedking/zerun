@@ -20,3 +20,30 @@ export function useContests() {
     refetchInterval: 12_000,
   });
 }
+
+export function useRecentFeed(limit = 12) {
+  return useQuery({
+    queryKey: ["recent-feed", limit],
+    queryFn: () => api.recentFeed(limit),
+    staleTime: 6_000,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useLeaderboard() {
+  return useQuery({
+    queryKey: ["leaderboard"],
+    queryFn: () => api.leaderboard(),
+    staleTime: 10_000,
+    refetchInterval: 20_000,
+  });
+}
+
+export function useOperator(address: string | undefined) {
+  return useQuery({
+    queryKey: ["operator", address?.toLowerCase()],
+    queryFn: () => api.operator(address!),
+    enabled: Boolean(address),
+    staleTime: 10_000,
+  });
+}

@@ -20,9 +20,14 @@ export interface ComputeStatus {
   configured: boolean;
 }
 
+// A contest is one of two flavors. Solver agents work numeric puzzles; analyst
+// agents forecast prediction markets with a Yes/No call.
+export type ContestKind = "solver" | "analyst";
+
 export interface ContestSummary {
   contest_id: number;
   status: string;
+  kind: ContestKind;
   puzzle_count: number;
   agent_count: number;
   metric: string;
@@ -72,6 +77,52 @@ export interface AgentRecord {
   agent_id: number;
   owner: string;
   name: string;
+  // Returned by GET /api/agents?owner= ; absent on freshly-posted records.
+  matches?: number;
+  wins?: number;
+  og_calls?: number;
+}
+
+// One recent inference for the landing "live on 0G" strip.
+export interface RecentFeedItem {
+  id: number;
+  contest_id: number;
+  agent_id: number;
+  agent_name: string | null;
+  verdict: Verdict;
+  source: string;
+  provider: string;
+  model: string;
+  chat_id: string;
+  verified: boolean | null;
+  latency_ms: number;
+  created_at: string | number | null;
+}
+
+export interface LeaderboardRow {
+  rank: number;
+  operator: string;
+  agent_name: string | null;
+  matches: number;
+  wins: number;
+  winnings: string; // USDC 6dp string
+}
+
+// Operator profile from GET /api/operators/:address.
+export interface OperatorProfile {
+  operator: string;
+  stats: { matches: number; wins: number; winnings: string; og_calls: number };
+  agents: { agent_id: number; name: string; matches: number; wins: number }[];
+  matches: {
+    contest_id: number;
+    kind: ContestKind;
+    status: string;
+    prize_pool: string;
+    settled_at: string | number | null;
+    amount: string | null;
+    rank: number | null;
+    claimed: boolean | null;
+  }[];
 }
 
 export interface ClaimInfo {

@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useContestSocket, type SocketState } from "@/lib/useContestSocket";
 import type {
+  ContestKind,
   FeedItem,
   Standing,
   WsMessage,
   WsSettledPayload,
   WsStatusPayload,
 } from "@/lib/types";
+import { kindMeta } from "@/lib/kind";
 import { SolveCard, type SolveRow } from "./SolveCard";
 import { StandingsTable } from "./StandingsTable";
 import { SettledBanner } from "./SettledBanner";
@@ -39,10 +41,12 @@ export function ContestLive({
   contestId,
   initialStandings,
   highlight,
+  kind = "solver",
 }: {
   contestId: number;
   initialStandings: Standing[];
   highlight?: string;
+  kind?: ContestKind;
 }) {
   const [rows, setRows] = useState<SolveRow[]>([]);
   const [standings, setStandings] = useState<Standing[]>(initialStandings);
@@ -114,15 +118,15 @@ export function ContestLive({
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       {/* Live solve feed */}
       <section>
-        <FeedHeader socketState={socketState} status={status} count={rows.length} />
+        <FeedHeader socketState={socketState} status={status} count={rows.length} kind={kind} />
         <div className="mt-4 space-y-4">
           {rows.length ? (
-            rows.map((row) => <SolveCard key={row.key} row={row} />)
+            rows.map((row) => <SolveCard key={row.key} row={row} kind={kind} />)
           ) : (
             <StickerCard className="p-10 text-center">
               <p className="font-body text-[15px] text-ink-2">
-                Waiting for the first solve. Each answer lands here with its 0G
-                Compute provenance the moment the run begins.
+                Waiting for the first answer. Every {kindMeta(kind).taskWord} lands here
+                with its 0G Compute provenance the moment the run begins.
               </p>
             </StickerCard>
           )}
@@ -145,10 +149,12 @@ function FeedHeader({
   socketState,
   status,
   count,
+  kind,
 }: {
   socketState: SocketState;
   status: WsStatusPayload | null;
   count: number;
+  kind: ContestKind;
 }) {
   const live = socketState === "open";
   const label = useMemo(() => {
@@ -157,9 +163,14 @@ function FeedHeader({
     return status?.status ? `live · ${status.status}` : "live";
   }, [socketState, status]);
 
+  const title = kind === "analyst" ? "Live forecast feed" : "Live solve feed";
+
   return (
-    <div className="flex items-center justify-between gap-3">
-      <h2 className="font-display text-2xl text-ink">Live solve feed</h2>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
+        <h2 className="font-display text-2xl text-ink">{title}</h2>
+        <Chip tone={kindMeta(kind).tone}>{kindMeta(kind).label}</Chip>
+      </div>
       <Chip tone={live ? "live" : "neutral"} pulse={live}>
         {label} · {count}
       </Chip>

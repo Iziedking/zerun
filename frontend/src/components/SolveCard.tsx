@@ -1,4 +1,5 @@
-import type { Verdict } from "@/lib/types";
+import type { ContestKind, Verdict } from "@/lib/types";
+import { kindMeta } from "@/lib/kind";
 import { ProvenanceBadge } from "./ProvenanceBadge";
 import { Agent, agentVariant, Chip, StickerCard, ThoughtBubble, type AgentMood } from "./zerun";
 
@@ -27,9 +28,12 @@ const VERDICT: Record<Verdict, { label: string; tone: "live" | "hot" | "won"; mo
 
 // One solve in the live feed, reframed as the agent character with its current
 // ThoughtBubble showing the answer, and the 0G provenance prominently below.
-export function SolveCard({ row }: { row: SolveRow }) {
+// Reads for both flavors: a number for a solver, a Yes/No call for an analyst.
+export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: ContestKind }) {
   const v = VERDICT[row.verdict] ?? VERDICT.error;
   const variant = agentVariant(row.agentId ?? row.agentName);
+  const meta = kindMeta(kind);
+  const answer = row.answer || "·";
 
   return (
     <StickerCard
@@ -46,25 +50,30 @@ export function SolveCard({ row }: { row: SolveRow }) {
             <div className="flex items-center gap-2">
               <span className="font-display text-lg text-ink">{row.agentName}</span>
               <span className="font-mono text-[11px] text-ink-3">
-                puzzle {row.puzzleIdx + 1}
+                {meta.taskWord} {row.puzzleIdx + 1}
               </span>
             </div>
             <Chip tone={v.tone}>{v.label}</Chip>
           </div>
 
-          {/* The thought bubble shows the answer it produced on 0G. */}
+          {/* The thought bubble shows what it produced on 0G: a number for a
+              solver, a Yes/No call for an analyst. */}
           <div className="mt-2">
             <ThoughtBubble tone="cloud" tail="left">
-              <span className="font-mono text-[13px]">{row.answer || "·"}</span>
+              {kind === "analyst" ? (
+                <span className="font-body text-[15px] font-extrabold text-ink">{answer}</span>
+              ) : (
+                <span className="font-mono text-[13px]">{answer}</span>
+              )}
             </ThoughtBubble>
           </div>
         </div>
       </div>
 
-      {/* Puzzle line */}
+      {/* The task line: a puzzle for a solver, a real market question for an analyst. */}
       <p className="mt-4 font-body text-[14px] leading-relaxed text-ink-2">
         <span className="font-extrabold uppercase tracking-[0.02em] text-ink-3">
-          puzzle ·{" "}
+          {meta.promptLabel} ·{" "}
         </span>
         {row.prompt || "·"}
       </p>

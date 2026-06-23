@@ -7,6 +7,9 @@ import type {
   ContestSummary,
   Deployment,
   FeedItem,
+  LeaderboardRow,
+  OperatorProfile,
+  RecentFeedItem,
   Standing,
 } from "./types";
 
@@ -40,6 +43,12 @@ export const api = {
     req<{ feed: FeedItem[] }>(`/api/contests/${id}/feed?since=${since}`),
   standings: (id: number | string) =>
     req<{ standings: Standing[] }>(`/api/contests/${id}/standings`),
+
+  recentFeed: (limit = 12) =>
+    req<{ feed: RecentFeedItem[] }>(`/api/feed/recent?limit=${limit}`),
+  leaderboard: () => req<{ leaderboard: LeaderboardRow[] }>("/api/leaderboard"),
+  operator: (address: string) =>
+    req<OperatorProfile>(`/api/operators/${address}`),
 
   agents: (owner: string) =>
     req<{ agents: AgentRecord[] }>(`/api/agents?owner=${owner}`),

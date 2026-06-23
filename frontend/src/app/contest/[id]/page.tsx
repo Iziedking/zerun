@@ -6,7 +6,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import { api } from "@/lib/api";
 import { formatUsdc } from "@/lib/format";
+import { kindMeta } from "@/lib/kind";
 import { ContestStatusPill } from "@/components/ContestStatusPill";
+import { Chip } from "@/components/zerun";
 import { ContestLive } from "@/components/ContestLive";
 import { EnterContest } from "@/components/EnterContest";
 import { ClaimPrize } from "@/components/ClaimPrize";
@@ -57,6 +59,7 @@ export default function ContestPage() {
   }
 
   const { contest, standings } = detailQ.data;
+  const meta = kindMeta(contest.kind);
 
   return (
     <div className="space-y-8 pt-8">
@@ -71,12 +74,14 @@ export default function ContestPage() {
       <StickerCard className="p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="font-display text-lg text-ink">
                 Contest #{contest.contest_id}
               </span>
+              <Chip tone={meta.tone}>{meta.label}</Chip>
               <ContestStatusPill status={contest.status} />
             </div>
+            <p className="mt-1 font-body text-[14px] text-ink-2">{meta.blurb}</p>
             <div className="mt-3 font-display text-5xl leading-none text-ink">
               {formatUsdc(contest.prize_pool)}
               <span className="ml-2 font-body text-lg font-extrabold text-ink-2">
@@ -86,7 +91,7 @@ export default function ContestPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-x-8 gap-y-3">
-            <StatChip label="puzzles" value={contest.puzzle_count} mono />
+            <StatChip label={meta.taskWords} value={contest.puzzle_count} mono />
             <StatChip label="agents" value={contest.agent_count} mono />
             <StatChip label="metric" value={contest.metric || "·"} mono />
             <StatChip
@@ -116,6 +121,7 @@ export default function ContestPage() {
         contestId={id}
         initialStandings={standings}
         highlight={address ?? undefined}
+        kind={contest.kind}
       />
 
       {contest.audit_root && <AuditTrail root={contest.audit_root} tx={contest.audit_tx} />}

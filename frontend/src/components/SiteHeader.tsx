@@ -6,16 +6,18 @@ import { useAccount } from "wagmi";
 import { Wordmark } from "./Wordmark";
 import { ConnectButton } from "./ConnectButton";
 import { ComputeBadge } from "./ComputeBadge";
+import { BalancePill } from "./BalancePill";
 import { cx } from "./zerun/cx";
-
-const NAV = [
-  { href: "/arena", label: "Arena" },
-  { href: "/demo", label: "Demo" },
-];
 
 export function SiteHeader() {
   const pathname = usePathname();
-  const { isConnected } = useAccount();
+  const { isConnected, address } = useAccount();
+
+  const nav = [
+    { href: "/arena", label: "Arena" },
+    { href: "/leaderboard", label: "Leaderboard" },
+    ...(address ? [{ href: `/profile/${address}`, label: "Profile" }] : []),
+  ];
 
   return (
     <header className="sticky top-0 z-40 border-b-line border-ink bg-sky/85 backdrop-blur-md">
@@ -24,8 +26,11 @@ export function SiteHeader() {
           <Wordmark />
           {isConnected && (
             <nav className="hidden items-center gap-2 sm:flex">
-              {NAV.map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              {nav.map((item) => {
+                const active =
+                  item.href.startsWith("/profile")
+                    ? pathname.startsWith("/profile")
+                    : pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
                   <Link
                     key={item.href}
@@ -46,7 +51,8 @@ export function SiteHeader() {
         </div>
 
         <div className="flex items-center gap-3">
-          <ComputeBadge className="hidden md:inline-flex" />
+          <ComputeBadge className="hidden lg:inline-flex" />
+          {isConnected && <BalancePill className="hidden sm:inline-flex" />}
           <ConnectButton />
         </div>
       </div>
