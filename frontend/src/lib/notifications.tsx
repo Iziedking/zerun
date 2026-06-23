@@ -13,7 +13,7 @@ import {
 import { useAccount } from "wagmi";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
-import { formatUsdc } from "./format";
+import { formatUsdc, ordinal } from "./format";
 
 export interface Notif {
   id: string;
@@ -22,6 +22,7 @@ export interface Notif {
   title: string;
   body: string;
   amount?: string;
+  rank?: number;
   ts: number;
   read: boolean;
 }
@@ -99,15 +100,18 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       if (seen.has(m.contest_id)) continue;
       seen.add(m.contest_id);
       const won = Boolean(m.amount && Number(m.amount) > 0);
+      const place = m.rank ?? 0;
+      const placed = won && place > 1 ? `You took ${ordinal(place)}` : "You won";
       fresh.push({
         id: `c${m.contest_id}-${m.settled_at ?? ""}`,
         contestId: m.contest_id,
         type: won ? "win" : "settled",
-        title: won ? `You won ${formatUsdc(m.amount)} tUSDC` : `Contest #${m.contest_id} settled`,
+        title: won ? `${placed}, ${formatUsdc(m.amount)} tUSDC` : `Contest #${m.contest_id} settled`,
         body: won
           ? `Contest #${m.contest_id} is in. Claim your reward.`
           : `A contest you entered has settled.`,
         amount: m.amount ?? undefined,
+        rank: place || undefined,
         ts: Date.now(),
         read: false,
       });

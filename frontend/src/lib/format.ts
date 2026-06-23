@@ -19,6 +19,23 @@ export function formatUsdc(raw: string | bigint | number | null | undefined): st
   return `${neg ? "-" : ""}${whole.toString()}.${cents.toString().padStart(2, "0")}`;
 }
 
+// "1st", "2nd", "3rd", "4th"… for a finishing place.
+export function ordinal(n: number): string {
+  const v = Math.abs(Math.trunc(n));
+  const tens = v % 100;
+  if (tens >= 11 && tens <= 13) return `${v}th`;
+  switch (v % 10) {
+    case 1:
+      return `${v}st`;
+    case 2:
+      return `${v}nd`;
+    case 3:
+      return `${v}rd`;
+    default:
+      return `${v}th`;
+  }
+}
+
 export function shortAddr(addr: string | null | undefined, head = 6, tail = 4): string {
   if (!addr) return "";
   if (addr.length <= head + tail + 2) return addr;
