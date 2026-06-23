@@ -12,15 +12,17 @@ export const MAX_COMPUTE_LEVEL = 5;
 // an easy on-ramp, then a real wall, then genuinely rare at the top.
 export const COMPUTE_COSTS_OG = [0.8, 2, 5, 12, 30] as const;
 
-// Each level's real 0G inference plan. More level means more passes, more tokens,
-// and a steadier (lower) temperature.
+// Each level's real 0G inference plan. The 0G provider rate-limits hard (10
+// requests/min), so self-consistency passes are expensive: higher levels lean on
+// a bigger token budget and a steadier (lower) temperature, which cost no extra
+// calls, and only the top levels add a pass.
 const LEVELS: InferencePlan[] = [
-  { maxTokens: 220, temperature: 0.6, samples: 1, retries: 1, hint: "" },
-  { maxTokens: 320, temperature: 0.5, samples: 2, retries: 1, hint: "" },
-  { maxTokens: 480, temperature: 0.4, samples: 3, retries: 1, hint: "" },
-  { maxTokens: 640, temperature: 0.3, samples: 4, retries: 2, hint: " Check your work before the final answer." },
-  { maxTokens: 850, temperature: 0.2, samples: 5, retries: 2, hint: " Check your work before the final answer." },
-  { maxTokens: 1024, temperature: 0.15, samples: 5, retries: 2, hint: " Reason carefully and verify before the final answer." },
+  { maxTokens: 220, temperature: 0.55, samples: 1, retries: 1, hint: "" },
+  { maxTokens: 380, temperature: 0.45, samples: 1, retries: 1, hint: "" },
+  { maxTokens: 550, temperature: 0.35, samples: 1, retries: 1, hint: " Check your work before the final answer." },
+  { maxTokens: 720, temperature: 0.28, samples: 2, retries: 1, hint: " Check your work before the final answer." },
+  { maxTokens: 900, temperature: 0.22, samples: 2, retries: 1, hint: " Check your work before the final answer." },
+  { maxTokens: 1024, temperature: 0.18, samples: 3, retries: 1, hint: " Reason carefully and verify before the final answer." },
 ];
 
 export function computeLevelClamp(level: number): number {

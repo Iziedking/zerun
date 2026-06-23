@@ -29,6 +29,10 @@ alter table agents_meta add column if not exists trait_resilience int;
 -- (identical at claim); training with 0G raises it for more passes and tokens.
 alter table agents_meta add column if not exists compute_level int not null default 0;
 
+-- House agents are the autopilot's filler so the arena is never empty. They are
+-- always ranked below real operators and can be hidden once real players scale.
+alter table agents_meta add column if not exists is_house boolean not null default false;
+
 -- 0G training payments already credited, so a transaction can never be reused.
 create table if not exists compute_trainings (
   tx_hash    text primary key,

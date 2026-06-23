@@ -483,7 +483,7 @@ app.get("/api/feed/recent", async (c) => {
 // Leaderboard: operators ranked by total winnings. Scope to a mode (arenas =
 // all contests for now; duels arrive with the challenge contract).
 app.get("/api/leaderboard", async (c) => {
-  const { rows } = await query(
+  const { rows } = await query<{ is_house: boolean | null }>(
     `select e.operator,
             count(distinct e.contest_id)::int as matches,
             (sum(case when p.rank = 1 then 1 else 0 end))::int as wins,
@@ -491,14 +491,20 @@ app.get("/api/leaderboard", async (c) => {
             (select name from agents_meta am where lower(am.owner) = lower(e.operator)
                order by am.agent_id asc limit 1) as agent_name,
             (select am.agent_id from agents_meta am where lower(am.owner) = lower(e.operator)
-               order by am.agent_id asc limit 1)::int as agent_id
+               order by am.agent_id asc limit 1)::int as agent_id,
+            coalesce((select bool_or(am.is_house) from agents_meta am
+               where lower(am.owner) = lower(e.operator)), false) as is_house
        from contest_entries e
        left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
       group by e.operator
-      order by winnings desc, wins desc, matches desc
-      limit 50`,
+      order by is_house asc, winnings desc, wins desc, matches desc
+      limit 100`,
   );
-  return c.json({ leaderboard: rows.map((r, i) => ({ rank: i + 1, ...r })) });
+  // Real operators always rank above the autopilot's house agents. Once real
+  // players scale, set LEADERBOARD_HIDE_HOUSE=on to drop the house entirely.
+  const hideHouse = (process.env.LEADERBOARD_HIDE_HOUSE ?? "off").toLowerCase() === "on";
+  const visible = (hideHouse ? rows.filter((r) => !r.is_house) : rows).slice(0, 50);
+  return c.json({ leaderboard: visible.map((r, i) => ({ rank: i + 1, ...r })) });
 });
 
 // Operator profile: lifetime stats, their agents, and recent match history.

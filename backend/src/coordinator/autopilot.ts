@@ -119,10 +119,11 @@ async function ensureHouseRoster(): Promise<HouseAgent[]> {
     // Give the house a compute spread so contests show a real skill gradient.
     const computeLevel = Math.min(MAX_COMPUTE_LEVEL, i + 1);
     await query(
-      `insert into agents_meta (agent_id, owner, name, compute_level) values ($1,$2,$3,$4)
+      `insert into agents_meta (agent_id, owner, name, compute_level, is_house) values ($1,$2,$3,$4,true)
          on conflict (agent_id) do update set
            name = excluded.name,
-           compute_level = greatest(agents_meta.compute_level, excluded.compute_level)`,
+           compute_level = greatest(agents_meta.compute_level, excluded.compute_level),
+           is_house = true`,
       [agentId, account.address.toLowerCase(), name, computeLevel],
     );
 

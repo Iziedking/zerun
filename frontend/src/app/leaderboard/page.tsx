@@ -97,14 +97,6 @@ export default function LeaderboardPage() {
         </>
       )}
 
-      {/* Sticky "you are #N", only when you are not already shown in the podium. */}
-      {mine && mine.rank > 3 && (
-        <div className="sticky bottom-4 z-10">
-          <StickerCard className="border-violet bg-cloud p-0">
-            <Row row={mine} me={address} youRow />
-          </StickerCard>
-        </div>
-      )}
     </div>
   );
 }
