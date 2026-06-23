@@ -18,6 +18,7 @@ import {
   loadDeployment,
   ogGalileo,
   publicClient,
+  waitReceipt,
 } from "../chain/contracts.js";
 
 // The self-driving arena. On a cadence it opens a contest, alternating puzzle
@@ -39,6 +40,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const INTERVAL_MS = Number(process.env.AUTOPILOT_INTERVAL_SECONDS ?? "1800") * 1000;
 const WINDOW_S = Number(process.env.AUTOPILOT_WINDOW_SECONDS ?? "300");
 const POOL_USDC = Number(process.env.AUTOPILOT_POOL_USDC ?? "30");
+// Pools the autopilot picks from at random, so prizes vary contest to contest.
+const POOL_CHOICES = [25, 30, 40, 50, 60, 70, 80, 100];
 const HOUSE_SIZE = Number(process.env.AUTOPILOT_HOUSE ?? "4");
 const SWEEP_MS = 30_000;
 const RUN_TIMEOUT_MS = 600_000;
@@ -81,7 +84,7 @@ async function ensureHouseRoster(): Promise<HouseAgent[]> {
         chain: undefined,
         gasPrice: GAS_PRICE,
       });
-      await publicClient.waitForTransactionReceipt({ hash: h });
+      await waitReceipt(h);
     }
 
     const owned = (await publicClient.readContract({
@@ -109,7 +112,7 @@ async function ensureHouseRoster(): Promise<HouseAgent[]> {
         chain: undefined,
         gasPrice: GAS_PRICE,
       });
-      await publicClient.waitForTransactionReceipt({ hash: ch });
+      await waitReceipt(ch);
       agentId = Number(nextId);
     }
 
@@ -172,7 +175,7 @@ async function upgradeHouseTier(
     chain: undefined,
     gasPrice: GAS_PRICE,
   });
-  await publicClient.waitForTransactionReceipt({ hash: mint });
+  await waitReceipt(mint);
 
   const approve = await wallet.writeContract({
     address: dep.testUSDC,
@@ -183,7 +186,7 @@ async function upgradeHouseTier(
     chain: undefined,
     gasPrice: GAS_PRICE,
   });
-  await publicClient.waitForTransactionReceipt({ hash: approve });
+  await waitReceipt(approve);
 
   for (let t = current; t < target; t++) {
     const h = await wallet.writeContract({
@@ -195,7 +198,7 @@ async function upgradeHouseTier(
       chain: undefined,
       gasPrice: GAS_PRICE,
     });
-    await publicClient.waitForTransactionReceipt({ hash: h });
+    await waitReceipt(h);
   }
 }
 
@@ -213,7 +216,7 @@ async function seedHouseInto(contestId: number): Promise<void> {
         chain: undefined,
         gasPrice: GAS_PRICE,
       });
-      await publicClient.waitForTransactionReceipt({ hash });
+      await waitReceipt(hash);
       await query(
         `insert into contest_entries (contest_id, agent_id, operator) values ($1,$2,$3)
            on conflict (contest_id, agent_id) do nothing`,
@@ -361,9 +364,11 @@ async function startOpenLoop(): Promise<void> {
   for (;;) {
     try {
       const kind = cycle % 2 === 0 ? "solver" : "analyst";
-      console.log(`autopilot: opening a ${kind} contest`);
+      // Vary the pool so the arena does not look canned.
+      const pool = POOL_CHOICES[Math.floor(Math.random() * POOL_CHOICES.length)]!;
+      console.log(`autopilot: opening a ${kind} contest (${pool} tUSDC)`);
       const id = await openContest({
-        prizePoolUsdc: POOL_USDC,
+        prizePoolUsdc: pool,
         durationSecs: WINDOW_S,
         topN: 3,
         puzzleCount: 6,

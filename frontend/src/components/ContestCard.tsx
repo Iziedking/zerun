@@ -12,6 +12,8 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
   const meta = kindMeta(contest.kind);
   const s = (contest.status || "").toLowerCase();
   const live = s === "running" || s === "active";
+  const done = s === "settled" || s === "scored" || s === "cancelled";
+  const cta = live ? "Watch live" : done ? "View" : "Enter";
 
   return (
     <Link href={`/contest/${contest.contest_id}`} className="block">
@@ -66,7 +68,7 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
 
         <div className="mt-5 pt-1">
           <PopButton type="button" className="w-full" tabIndex={-1}>
-            {live ? "Watch live" : "Enter"}
+            {cta}
           </PopButton>
         </div>
       </StickerCard>

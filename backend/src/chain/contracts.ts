@@ -118,6 +118,25 @@ export const prizeEscrowAbi = parseAbi([
 
 export const publicClient = createPublicClient({ chain: ogGalileo, transport: http(config.chain.rpcUrl) });
 
+// 0G's RPC can momentarily fail to find a freshly sent transaction's receipt (the
+// node answering the read may not be the one that accepted the tx). Poll the
+// receipt with a generous budget so the coordinator never gives up on a good
+// transaction, the bug that stopped the autopilot from opening contests.
+export async function waitReceipt(hash: `0x${string}`, tries = 40, delayMs = 3000) {
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await publicClient.getTransactionReceipt({ hash });
+    } catch (err) {
+      lastErr = err;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error(
+    `receipt for ${hash} not found after ${tries} tries: ${(lastErr as Error)?.message ?? ""}`,
+  );
+}
+
 let _account: ReturnType<typeof privateKeyToAccount> | null = null;
 // The coordinator's local signing account. Passing this object (not just the
 // address) to writeContract makes viem sign locally and send a raw transaction,

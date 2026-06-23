@@ -8,7 +8,12 @@ import {
   loadDeployment,
   publicClient,
   contestEngineAbi,
+  testUsdcAbi,
   coordinatorAddress,
+  coordinatorWallet,
+  coordinatorAccount,
+  waitReceipt,
+  GAS_PRICE,
 } from "../chain/contracts.js";
 import {
   nextLevelCostWei,
@@ -54,6 +59,44 @@ app.get("/api/stats", async (c) => {
        (select coalesce(sum(prize_pool::numeric), 0)::text from contests_meta where status = 'settled') as settled_pool`,
   );
   return c.json(rows[0] ?? {});
+});
+
+// tUSDC faucet, capped to 100 tUSDC per operator per rolling 7 days so it cannot
+// be farmed. The coordinator mints to the operator and pays the gas.
+const USDC_WEEKLY_CAP = 100_000000n; // 100 tUSDC (6 decimals)
+
+app.post("/api/faucet/usdc", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const owner = String(body.owner ?? "").toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(owner)) return c.json({ error: "a valid wallet is required" }, 400);
+
+  const claimed = await query<{ sum: string }>(
+    `select coalesce(sum(amount_wei::numeric), 0)::text as sum
+       from usdc_claims where lower(operator) = $1 and created_at > now() - interval '7 days'`,
+    [owner],
+  );
+  const claimedWei = BigInt(claimed.rows[0]?.sum ?? "0");
+  const remaining = USDC_WEEKLY_CAP - claimedWei;
+  if (remaining <= 0n) {
+    return c.json(
+      { error: "you have claimed your 100 tUSDC for this week. It resets in a few days." },
+      429,
+    );
+  }
+
+  const dep = loadDeployment();
+  const hash = await coordinatorWallet().writeContract({
+    address: dep.testUSDC,
+    abi: testUsdcAbi,
+    functionName: "mint",
+    args: [owner as `0x${string}`, remaining],
+    account: coordinatorAccount(),
+    chain: undefined,
+    gasPrice: GAS_PRICE,
+  });
+  await waitReceipt(hash);
+  await query("insert into usdc_claims (operator, amount_wei) values ($1, $2)", [owner, remaining.toString()]);
+  return c.json({ ok: true, minted: remaining.toString(), txHash: hash });
 });
 
 // Where training payments go, and the 0G cost ladder, so the frontend can send

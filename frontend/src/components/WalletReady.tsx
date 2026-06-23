@@ -1,22 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, useBalance, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, useBalance } from "wagmi";
 import { zeroGGalileo, FAUCET_URL } from "@/lib/chain";
 import { useUsdcBalance } from "@/lib/useChainData";
-import { useDeployment } from "@/lib/useDeployment";
-import { testUsdcAbi } from "@/lib/contracts";
+import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { StickerCard } from "./zerun/StickerCard";
 import { PopButton } from "./zerun/PopButton";
 import { Spinner } from "./ui";
 
-const MINT_AMOUNT = 100_000000n; // 100 tUSDC (6 decimals)
-
 // Wallet readiness for the operator's own profile: the 0G gas balance with a
-// faucet link, and the tUSDC balance with a one-click mint to top up the arena's
-// test currency when it runs low. A safety net in case the connect flow was
-// skipped.
+// faucet link, and the tUSDC balance with a one-click claim from the capped
+// faucet (100 tUSDC per 7 days) to top up the arena's test currency.
 export function WalletReady() {
   const { address } = useAccount();
   const { data: gas } = useBalance({
@@ -25,9 +21,6 @@ export function WalletReady() {
     query: { enabled: Boolean(address), refetchInterval: 10_000 },
   });
   const usdc = useUsdcBalance(address);
-  const { data: deployment } = useDeployment();
-  const { writeContractAsync } = useWriteContract();
-  const publicClient = usePublicClient({ chainId: zeroGGalileo.id });
   const [minting, setMinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,21 +30,13 @@ export function WalletReady() {
   const gasText = gas ? `${(Number(gas.value) / 1e18).toFixed(3)} 0G` : "·";
 
   const mint = async () => {
-    const usdcAddr = deployment?.contracts.testUSDC as `0x${string}` | undefined;
-    if (!usdcAddr) return;
     setError(null);
     setMinting(true);
     try {
-      const hash = await writeContractAsync({
-        abi: testUsdcAbi,
-        address: usdcAddr,
-        functionName: "mint",
-        args: [address, MINT_AMOUNT],
-      });
-      await publicClient?.waitForTransactionReceipt({ hash });
+      await api.faucetUsdc({ owner: address });
       await usdc.refetch();
     } catch (err) {
-      setError(friendlyError(err, "That mint did not go through. Try again."));
+      setError(friendlyError(err, "That claim did not go through. Try again."));
     } finally {
       setMinting(false);
     }
@@ -87,13 +72,14 @@ export function WalletReady() {
             icon={minting ? <Spinner /> : undefined}
             className="mt-3"
           >
-            {minting ? "Minting" : "Get 100 tUSDC"}
+            {minting ? "Claiming" : "Claim tUSDC"}
           </PopButton>
         </div>
       </div>
       {error && <p className="mt-3 font-body text-[13px] font-bold text-coral">{error}</p>}
       <p className="mt-3 font-body text-[12px] leading-relaxed text-ink-3">
-        tUSDC is the arena's test currency for claiming, training, and hosting, mint more any time.
+        tUSDC is the arena's test currency for claiming, training, and hosting. The faucet gives up
+        to 100 tUSDC per wallet each week.
         0G is the network gas, claimed from the faucet.
       </p>
     </StickerCard>

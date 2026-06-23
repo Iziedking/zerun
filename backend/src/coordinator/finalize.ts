@@ -11,6 +11,7 @@ import {
   coordinatorAccount,
   loadDeployment,
   publicClient,
+  waitReceipt,
 } from "../chain/contracts.js";
 
 // Shared settlement, used by every contest type. Given the ranked field, it
@@ -115,7 +116,7 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
     chain: undefined,
     gasPrice: GAS_PRICE,
   });
-  await publicClient.waitForTransactionReceipt({ hash: postHash });
+  await waitReceipt(postHash);
 
   broadcast({ type: "status", contestId, payload: { status: "settling" } });
   const settleHash = await wallet.writeContract({
@@ -127,7 +128,7 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
     chain: undefined,
     gasPrice: GAS_PRICE,
   });
-  await publicClient.waitForTransactionReceipt({ hash: settleHash });
+  await waitReceipt(settleHash);
 
   await query(
     "update contests_meta set status = 'settled', settled_at = now() where contest_id = $1",
@@ -169,7 +170,7 @@ export async function cancelContest(contestId: number): Promise<void> {
       chain: undefined,
       gasPrice: GAS_PRICE,
     });
-    await publicClient.waitForTransactionReceipt({ hash });
+    await waitReceipt(hash);
     await query("update contests_meta set status = 'cancelled' where contest_id = $1", [contestId]);
     broadcast({ type: "status", contestId, payload: { status: "cancelled" } });
     console.log(`contest ${contestId} cancelled (no winners)`);
@@ -221,13 +222,13 @@ export async function resettleFromStored(contestId: number): Promise<void> {
       address: dep.contestEngine, abi: contestEngineAbi, functionName: "postScoreRoot",
       args: [BigInt(contestId), root], account, chain: undefined, gasPrice: GAS_PRICE,
     });
-    await publicClient.waitForTransactionReceipt({ hash: postHash });
+    await waitReceipt(postHash);
   }
   const settleHash = await wallet.writeContract({
     address: dep.contestEngine, abi: contestEngineAbi, functionName: "settle",
     args: [BigInt(contestId)], account, chain: undefined, gasPrice: GAS_PRICE,
   });
-  await publicClient.waitForTransactionReceipt({ hash: settleHash });
+  await waitReceipt(settleHash);
   await query("update contests_meta set status = 'settled', settled_at = now() where contest_id = $1", [contestId]);
   console.log(`contest ${contestId} resettled from stored root`);
 }

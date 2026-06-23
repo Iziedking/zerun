@@ -9,6 +9,7 @@ import {
   coordinatorWallet,
   loadDeployment,
   publicClient,
+  waitReceipt,
   testUsdcAbi,
 } from "../chain/contracts.js";
 
@@ -52,7 +53,7 @@ export async function openContest(params: OpenContestParams): Promise<number> {
     chain: undefined,
     gasPrice: GAS_PRICE,
   });
-  await publicClient.waitForTransactionReceipt({ hash: mintHash });
+  await waitReceipt(mintHash);
 
   const approveHash = await wallet.writeContract({
     address: dep.testUSDC,
@@ -63,7 +64,7 @@ export async function openContest(params: OpenContestParams): Promise<number> {
     chain: undefined,
     gasPrice: GAS_PRICE,
   });
-  await publicClient.waitForTransactionReceipt({ hash: approveHash });
+  await waitReceipt(approveHash);
 
   // The next id the engine will assign becomes this contest's id.
   const contestId = await publicClient.readContract({
@@ -91,7 +92,7 @@ export async function openContest(params: OpenContestParams): Promise<number> {
     chain: undefined,
     gasPrice: GAS_PRICE,
   });
-  await publicClient.waitForTransactionReceipt({ hash: listHash });
+  await waitReceipt(listHash);
 
   const id = Number(contestId);
   const con = await publicClient.readContract({

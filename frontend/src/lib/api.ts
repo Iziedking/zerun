@@ -86,6 +86,13 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  // Claim tUSDC from the capped faucet (100 per operator per 7 days).
+  faucetUsdc: (body: { owner: string }) =>
+    req<{ ok: boolean; minted: string; txHash: string }>("/api/faucet/usdc", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   // Where training 0G goes, and the 0G cost ladder per compute level.
   computeInfo: () =>
     req<{ coordinator: string; costsOg: number[]; maxLevel: number }>("/api/compute/info"),

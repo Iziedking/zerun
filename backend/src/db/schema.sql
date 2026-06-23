@@ -39,6 +39,15 @@ create table if not exists compute_trainings (
   created_at timestamptz not null default now()
 );
 
+-- tUSDC faucet claims, so an operator is capped to 100 tUSDC per 7 days.
+create table if not exists usdc_claims (
+  id         bigserial primary key,
+  operator   text not null,
+  amount_wei text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists usdc_claims_op_idx on usdc_claims (lower(operator), created_at);
+
 create table if not exists contests_meta (
   contest_id    bigint primary key,
   status        text not null default 'open',
