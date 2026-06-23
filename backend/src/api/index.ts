@@ -7,6 +7,7 @@ import { deploymentReady, loadDeployment } from "../chain/contracts.js";
 import { storageConfigured } from "../storage/zgStorage.js";
 import { openContest } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
+import { runAnalystContest } from "../coordinator/runAnalystContest.js";
 
 // Read API plus the admin/demo triggers. The live feed itself goes over the
 // WebSocket; these endpoints serve initial loads, lookups, and the proofs
@@ -48,7 +49,7 @@ app.get("/api/deployment", (c) => {
 
 app.get("/api/contests", async (c) => {
   const { rows } = await query(
-    `select contest_id, status, puzzle_count, agent_count, metric, prize_pool, final_root, created_at, settled_at
+    `select contest_id, status, kind, puzzle_count, agent_count, metric, prize_pool, final_root, created_at, settled_at
        from contests_meta order by contest_id desc`,
   );
   return c.json({ contests: rows });
@@ -148,21 +149,29 @@ app.post("/api/contests/:id/claimed", async (c) => {
 app.post("/api/admin/contests/open", async (c) => {
   if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
+  const kind = body.kind === "analyst" ? "analyst" : "solver";
   const id = await openContest({
     prizePoolUsdc: Number(body.prizePoolUsdc ?? 100),
     durationSecs: Number(body.durationSecs ?? 120),
     topN: Number(body.topN ?? 3),
-    puzzleCount: Number(body.puzzleCount ?? 5),
+    puzzleCount: Number(body.puzzleCount ?? (kind === "analyst" ? 4 : 5)),
+    kind,
   });
-  return c.json({ ok: true, contestId: id });
+  return c.json({ ok: true, contestId: id, kind });
 });
 
 app.post("/api/admin/contests/:id/run", async (c) => {
   if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
   const id = Number(c.req.param("id"));
+  const { rows } = await query<{ kind: string }>(
+    "select kind from contests_meta where contest_id = $1",
+    [id],
+  );
+  const kind = rows[0]?.kind ?? "solver";
   // Fire and forget; progress streams over the WebSocket.
-  runContest(id).catch((err) => console.error(`runContest(${id}) failed:`, err));
-  return c.json({ ok: true, accepted: true, contestId: id });
+  const run = kind === "analyst" ? runAnalystContest(id) : runContest(id);
+  run.catch((err) => console.error(`run contest ${id} (${kind}) failed:`, err));
+  return c.json({ ok: true, accepted: true, contestId: id, kind });
 });
 
 async function standingsFor(contestId: number) {

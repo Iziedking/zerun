@@ -28,6 +28,9 @@ create table if not exists contests_meta (
 alter table contests_meta add column if not exists audit_root text;
 alter table contests_meta add column if not exists audit_tx text;
 
+-- Contest type: 'solver' (puzzles) or 'analyst' (prediction markets).
+alter table contests_meta add column if not exists kind text not null default 'solver';
+
 create table if not exists contest_entries (
   contest_id  bigint not null,
   agent_id    bigint not null,

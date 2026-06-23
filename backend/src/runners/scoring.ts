@@ -21,6 +21,7 @@ export interface Payout {
   rank: number;
 }
 
+// Solver ranking: most correct wins, total latency breaks ties.
 export function rankAgents(scores: AgentScore[]): RankedAgent[] {
   const sorted = [...scores].sort((a, b) => {
     if (b.correct !== a.correct) return b.correct - a.correct;

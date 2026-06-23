@@ -4,6 +4,7 @@ import { config } from "../config/index.js";
 import { query, closePool } from "../db/pool.js";
 import { openContest } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
+import { runAnalystContest } from "../coordinator/runAnalystContest.js";
 import {
   CONTEST_TYPE,
   GAS_PRICE,
@@ -31,15 +32,17 @@ type Operator = { account: ReturnType<typeof privateKeyToAccount>; wallet: Retur
 // with a little 0G for gas, so the field looks like real separate operators.
 // Use it to drive a demo, or as an on-chain integration check.
 //
-//   pnpm tsx src/scripts/seedAndRun.ts [agents] [prizeUsdc] [durationSecs] [puzzles]
+//   pnpm tsx src/scripts/seedAndRun.ts [agents] [prizeUsdc] [durationSecs] [puzzles] [analyst] [norun]
 
 const AGENTS = Number(process.argv[2] ?? 3);
 const PRIZE_USDC = Number(process.argv[3] ?? 50);
 const DURATION = Number(process.argv[4] ?? 120);
 const PUZZLES = Number(process.argv[5] ?? 4);
-// Pass "norun" as the last argument to seed a field without running the
-// contest, so the run can be triggered from the UI and streamed over the feed.
-const RUN = process.argv[6] !== "norun";
+// Pass "analyst" anywhere in the args for a prediction-market contest, and
+// "norun" to seed the field without running it (so the UI can trigger the run).
+const KIND: "solver" | "analyst" = process.argv.includes("analyst") ? "analyst" : "solver";
+const RUN = !process.argv.includes("norun");
+const TIER_TYPE = KIND === "analyst" ? CONTEST_TYPE.ANALYST : CONTEST_TYPE.SOLVER;
 
 // Buy an agent from tier 0 up to the target: mint the test USDC it costs,
 // approve the registry, then upgrade one step at a time.
@@ -56,7 +59,7 @@ async function upgradeAgentTo(
       address: dep.agentRegistry,
       abi: agentRegistryAbi,
       functionName: "upgradePrice",
-      args: [CONTEST_TYPE.SOLVER, t],
+      args: [TIER_TYPE, t],
     });
     total += price;
   }
@@ -88,7 +91,7 @@ async function upgradeAgentTo(
       address: dep.agentRegistry,
       abi: agentRegistryAbi,
       functionName: "upgradeAgent",
-      args: [BigInt(agentId), CONTEST_TYPE.SOLVER, t + 1],
+      args: [BigInt(agentId), TIER_TYPE, t + 1],
       account,
       chain: undefined,
       gasPrice: GAS_PRICE,
@@ -102,12 +105,14 @@ async function main() {
   const funder = coordinatorWallet();
   const funderAccount = coordinatorAccount();
 
-  console.log(`opening a contest: ${PRIZE_USDC} tUSDC, ${DURATION}s, ${PUZZLES} puzzles`);
+  const itemWord = KIND === "analyst" ? "markets" : "puzzles";
+  console.log(`opening a ${KIND} contest: ${PRIZE_USDC} tUSDC, ${DURATION}s, ${PUZZLES} ${itemWord}`);
   const contestId = await openContest({
     prizePoolUsdc: PRIZE_USDC,
     durationSecs: DURATION,
     topN: Math.min(3, AGENTS),
     puzzleCount: PUZZLES,
+    kind: KIND,
   });
   console.log(`contest ${contestId} open`);
 
@@ -139,7 +144,7 @@ async function main() {
       functionName: "nextAgentId",
     });
 
-    const name = `Solver ${i} T${targetTier}`;
+    const name = `${KIND === "analyst" ? "Analyst" : "Solver"} ${i} T${targetTier}`;
     const createHash = await wallet.writeContract({
       address: dep.agentRegistry,
       abi: agentRegistryAbi,
@@ -193,8 +198,8 @@ async function main() {
     return;
   }
 
-  console.log(`running contest ${contestId}...`);
-  const result = await runContest(contestId);
+  console.log(`running ${KIND} contest ${contestId}...`);
+  const result = KIND === "analyst" ? await runAnalystContest(contestId) : await runContest(contestId);
 
   console.log("\n--- result ---");
   console.log(`root:    ${result.root}`);

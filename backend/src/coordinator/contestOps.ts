@@ -22,12 +22,19 @@ export interface OpenContestParams {
   durationSecs: number;
   topN: number;
   puzzleCount: number;
+  /// 'solver' (puzzles) or 'analyst' (prediction markets). Defaults to solver.
+  kind?: "solver" | "analyst";
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
-const PUZZLE_METRIC = keccak256(toHex("PUZZLE"));
+const METRIC = {
+  solver: { hash: keccak256(toHex("PUZZLE")), label: "PUZZLE", contestType: CONTEST_TYPE.SOLVER },
+  analyst: { hash: keccak256(toHex("PREDICTION")), label: "PREDICTION", contestType: CONTEST_TYPE.ANALYST },
+} as const;
 
 export async function openContest(params: OpenContestParams): Promise<number> {
+  const kind = params.kind ?? "solver";
+  const metric = METRIC[kind];
   const dep = loadDeployment();
   const wallet = coordinatorWallet();
   const signer = coordinatorAccount();
@@ -70,9 +77,9 @@ export async function openContest(params: OpenContestParams): Promise<number> {
     abi: contestEngineAbi,
     functionName: "listContest",
     args: [
-      CONTEST_TYPE.SOLVER,
+      metric.contestType,
       ZERO_ADDRESS,
-      PUZZLE_METRIC,
+      metric.hash,
       prizePool,
       BigInt(params.durationSecs),
       6000, // winnerCutBps: published headline share
@@ -88,11 +95,11 @@ export async function openContest(params: OpenContestParams): Promise<number> {
 
   const id = Number(contestId);
   await query(
-    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool)
-     values ($1, 'open', $2, 'PUZZLE', $3)
+    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind)
+     values ($1, 'open', $2, $3, $4, $5)
      on conflict (contest_id) do update set
-       puzzle_count = excluded.puzzle_count, prize_pool = excluded.prize_pool`,
-    [id, params.puzzleCount, prizePool.toString()],
+       puzzle_count = excluded.puzzle_count, prize_pool = excluded.prize_pool, kind = excluded.kind`,
+    [id, params.puzzleCount, metric.label, prizePool.toString(), kind],
   );
 
   return id;

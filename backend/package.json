@@ -9,6 +9,7 @@
     "start": "tsx src/server.ts",
     "compute:check": "tsx src/scripts/computeCheck.ts",
     "storage:check": "tsx src/scripts/storageCheck.ts",
+    "analyst:check": "tsx src/scripts/analystCheck.ts",
     "ledger:fund": "tsx src/scripts/fundLedger.ts",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "selftest": "tsx src/scripts/selfTest.ts",
