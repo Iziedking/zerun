@@ -114,11 +114,104 @@ app.post("/api/agents", async (c) => {
 app.get("/api/agents", async (c) => {
   const owner = String(c.req.query("owner") ?? "").toLowerCase();
   if (!owner) return c.json({ agents: [] });
+  // Each agent with its record: matches entered, wins (placed first), and how
+  // many answers it has produced on 0G Compute.
   const { rows } = await query(
-    "select agent_id, owner, name, created_at from agents_meta where lower(owner) = $1 order by agent_id asc",
+    `select m.agent_id, m.owner, m.name, m.created_at,
+            count(distinct e.contest_id) as matches,
+            count(p.*) filter (where p.rank = 1) as wins,
+            (select count(*) from solve_runs s
+               where s.agent_id = m.agent_id and s.source = '0g-compute') as og_calls
+       from agents_meta m
+       left join contest_entries e on e.agent_id = m.agent_id
+       left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
+      where lower(m.owner) = $1
+      group by m.agent_id, m.owner, m.name, m.created_at
+      order by m.agent_id asc`,
     [owner],
   );
   return c.json({ agents: rows });
+});
+
+// Recent inference across all contests, for the landing proof strip. Each row
+// is an agent answer produced on 0G Compute, newest first.
+app.get("/api/feed/recent", async (c) => {
+  const limit = Math.min(Number(c.req.query("limit") ?? "12"), 50);
+  const { rows } = await query(
+    `select s.id, s.contest_id, s.agent_id, m.name as agent_name, s.verdict,
+            s.source, s.provider, s.model, s.chat_id, s.verified, s.latency_ms, s.created_at
+       from solve_runs s
+       left join agents_meta m on m.agent_id = s.agent_id
+      where s.source = '0g-compute'
+      order by s.id desc limit $1`,
+    [limit],
+  );
+  return c.json({ feed: rows });
+});
+
+// Leaderboard: operators ranked by total winnings. Scope to a mode (arenas =
+// all contests for now; duels arrive with the challenge contract).
+app.get("/api/leaderboard", async (c) => {
+  const { rows } = await query(
+    `select e.operator,
+            count(distinct e.contest_id) as matches,
+            count(p.*) filter (where p.rank = 1) as wins,
+            coalesce(sum(p.amount::numeric), 0)::text as winnings,
+            (select name from agents_meta am where lower(am.owner) = lower(e.operator)
+               order by am.agent_id asc limit 1) as agent_name
+       from contest_entries e
+       left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
+      group by e.operator
+      order by winnings desc, wins desc, matches desc
+      limit 50`,
+  );
+  return c.json({ leaderboard: rows.map((r, i) => ({ rank: i + 1, ...r })) });
+});
+
+// Operator profile: lifetime stats, their agents, and recent match history.
+app.get("/api/operators/:address", async (c) => {
+  const operator = String(c.req.param("address")).toLowerCase();
+
+  const statsQ = await query(
+    `select count(distinct e.contest_id) as matches,
+            count(p.*) filter (where p.rank = 1) as wins,
+            coalesce(sum(p.amount::numeric), 0)::text as winnings,
+            (select count(*) from solve_runs s where lower(s.operator) = $1 and s.source = '0g-compute') as og_calls
+       from contest_entries e
+       left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
+      where lower(e.operator) = $1`,
+    [operator],
+  );
+
+  const agentsQ = await query(
+    `select m.agent_id, m.name,
+            count(distinct e.contest_id) as matches,
+            count(p.*) filter (where p.rank = 1) as wins
+       from agents_meta m
+       left join contest_entries e on e.agent_id = m.agent_id
+       left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
+      where lower(m.owner) = $1
+      group by m.agent_id, m.name order by m.agent_id asc`,
+    [operator],
+  );
+
+  const matchesQ = await query(
+    `select c.contest_id, c.kind, c.status, c.prize_pool, c.settled_at,
+            p.amount, p.rank, p.claimed
+       from contest_entries e
+       join contests_meta c on c.contest_id = e.contest_id
+       left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
+      where lower(e.operator) = $1
+      order by c.contest_id desc limit 20`,
+    [operator],
+  );
+
+  return c.json({
+    operator,
+    stats: statsQ.rows[0] ?? { matches: 0, wins: 0, winnings: "0", og_calls: 0 },
+    agents: agentsQ.rows,
+    matches: matchesQ.rows,
+  });
 });
 
 app.get("/api/contests/:id/claim", async (c) => {
