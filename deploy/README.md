@@ -54,15 +54,18 @@ happens on 0G, not on the server.
 ## Frontend on Vercel
 
 Import the repo in Vercel with the project root set to `frontend`. Set the
-environment variable:
+environment variables:
 
 ```
 NEXT_PUBLIC_API_URL=https://api.zerun.site
+NEXT_PUBLIC_WALLETCONNECT_ID=<your WalletConnect Cloud project id>
 ```
 
-The app derives the `wss://` live-feed URL from it. Vercel rebuilds and deploys
-the frontend on every push through its GitHub integration, so nothing else is
-needed for the frontend.
+`NEXT_PUBLIC_API_URL` is also where the app derives the `wss://` live-feed URL.
+`NEXT_PUBLIC_WALLETCONNECT_ID` (free from cloud.reown.com) powers the RainbowKit
+connect modal for WalletConnect and mobile wallets; injected wallets work without
+it. Vercel rebuilds and deploys the frontend on every push through its GitHub
+integration, so nothing else is needed for the frontend.
 
 ## CI/CD for the backend
 

@@ -2,72 +2,41 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import {
-  useAccount,
-  useBalance,
-  useChainId,
-  useConnect,
-  useDisconnect,
-  useSwitchChain,
-} from "wagmi";
+import { useAccount, useBalance, useChainId, useDisconnect, useSwitchChain } from "wagmi";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { zeroGGalileo, FAUCET_URL } from "@/lib/chain";
-import { ensureGalileo } from "@/lib/network";
 import { shortAddr } from "@/lib/format";
 import { useAuth } from "@/lib/useAuth";
 import { Spinner } from "./ui";
 import { PopButton } from "./zerun/PopButton";
 
-// "Connect to Zerun". Connects the injected wallet, then ensures chain 16602.
+// "Connect to Zerun". RainbowKit's modal handles the wallet pick and adds and
+// switches to 0G Galileo; the sign-in proof and faucet gas-gate after it are
+// ours and unchanged.
 export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boolean }) {
   const router = useRouter();
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { connectAsync, connectors, isPending } = useConnect();
+  const { openConnectModal } = useConnectModal();
   const { disconnect } = useDisconnect();
   const { switchChainAsync } = useSwitchChain();
   const { signedIn, signing, signIn, signOut } = useAuth();
   const [busy, setBusy] = useState(false);
   const [hasRouted, setHasRouted] = useState(false);
 
-  const injected = connectors.find((c) => c.id === "injected") ?? connectors[0];
   const wrongChain = isConnected && chainId !== zeroGGalileo.id;
 
-  const handleConnect = useCallback(async () => {
-    if (!injected) return;
-    setBusy(true);
-    try {
-      await connectAsync({ connector: injected, chainId: zeroGGalileo.id });
-      try {
-        const provider = (await injected.getProvider()) as
-          | { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }
-          | undefined;
-        if (provider) await ensureGalileo(provider);
-      } catch {
-        /* a wrong chain is surfaced by the switch button */
-      }
-    } catch {
-      /* the operator can tap again */
-    } finally {
-      setBusy(false);
-    }
-  }, [connectAsync, injected]);
-
+  // wagmi adds the chain to the wallet if it does not know it, then switches.
   const handleSwitch = useCallback(async () => {
     setBusy(true);
     try {
-      const provider = injected
-        ? ((await injected.getProvider()) as
-            | { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }
-            | undefined)
-        : undefined;
-      if (provider) await ensureGalileo(provider);
-      else await switchChainAsync({ chainId: zeroGGalileo.id });
+      await switchChainAsync({ chainId: zeroGGalileo.id });
     } catch {
-      /* ignore */
+      /* ignore; the operator can tap again */
     } finally {
       setBusy(false);
     }
-  }, [injected, switchChainAsync]);
+  }, [switchChainAsync]);
 
   useEffect(() => {
     if (routeOnConnect && isConnected && !wrongChain && signedIn && !hasRouted) {
@@ -80,9 +49,8 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
     return (
       <PopButton
         type="button"
-        onClick={handleConnect}
-        disabled={busy || isPending}
-        icon={(busy || isPending) ? <Spinner /> : undefined}
+        onClick={() => openConnectModal?.()}
+        disabled={!openConnectModal}
       >
         Connect to Zerun
       </PopButton>
