@@ -66,3 +66,12 @@ export async function downloadJson<T = unknown>(rootHash: string): Promise<T> {
   const text = await blob.text();
   return JSON.parse(text) as T;
 }
+
+// Read raw bytes back by root hash (e.g. an agent skin image).
+export async function downloadBytes(rootHash: string): Promise<Uint8Array> {
+  const indexer = getIndexer();
+  const [blob, err] = await indexer.downloadToBlob(rootHash, { proof: true });
+  if (err !== null || !blob) throw new Error(`0G Storage download failed: ${err}`);
+  const ab = await blob.arrayBuffer();
+  return new Uint8Array(ab);
+}

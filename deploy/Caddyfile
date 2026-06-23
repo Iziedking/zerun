@@ -1,0 +1,9 @@
+# Reverse proxy with automatic HTTPS for the Zerun backend. Caddy gets a
+# Let's Encrypt certificate for the domain and proxies to the backend container,
+# upgrading WebSocket connections automatically (needed for the live feed over
+# wss). Replace api.zerun.site with your subdomain.
+
+api.zerun.site {
+	encode zstd gzip
+	reverse_proxy backend:8787
+}

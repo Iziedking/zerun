@@ -1,0 +1,62 @@
+# Production stack for the VPS: Postgres, the Zerun backend, and Caddy for TLS.
+# The frontend lives on Vercel, so it is not here. Bring it up with:
+#   docker compose -f deploy/docker-compose.prod.yml up -d --build
+#
+# Put the real secrets in a .env at the repo root (DEPLOYER_PRIVATE_KEY, OG_*,
+# COMPUTE_MODE=broker, STORAGE_MODE=on, and the AUTOPILOT settings). The compose
+# overrides DATABASE_URL and the contract addresses below.
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: zerun
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zerun"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - zerun_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  backend:
+    build: ../backend
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/zerun
+      PORT: "8787"
+      # Deployed 0G Galileo contracts.
+      ADDR_TEST_USDC: "0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64"
+      ADDR_PRIZE_ESCROW: "0x29E09A7699BC016f9D73aD074Df851c713e28d56"
+      ADDR_AGENT_REGISTRY: "0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c"
+      ADDR_CONTEST_ENGINE: "0x5DAE30E30466FB3EA58181807A4633C512b232a0"
+      # Live by default in production. Tune the cadence to taste.
+      COMPUTE_MODE: broker
+      STORAGE_MODE: "on"
+      AUTOPILOT: "on"
+      AUTOPILOT_INTERVAL_SECONDS: "1800"
+      AUTOPILOT_WINDOW_SECONDS: "300"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  zerun_pgdata:
+  caddy_data:
+  caddy_config:

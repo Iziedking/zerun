@@ -1,10 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { useAccount } from "wagmi";
-import { ConnectModal } from "@/components/ConnectModal";
 import {
   Agent,
   Chip,
@@ -16,21 +12,10 @@ import {
 
 // The landing is a pure marketing page: an advertisement that leads into the app.
 // No contest board, no live feed, no leaderboard, no mechanics. One clean scroll
-// that sells the idea and hands off to the arena.
+// that sells the idea and hands off to the arena, where the wallet connects.
 export default function LandingPage() {
-  const { isConnected } = useAccount();
-  const router = useRouter();
-  const [modal, setModal] = useState(false);
-
-  const onConnect = () => {
-    if (isConnected) router.push("/arena");
-    else setModal(true);
-  };
-
   return (
     <div className="pt-10 sm:pt-14">
-      <ConnectModal open={modal} onClose={() => setModal(false)} />
-
       {/* Hero */}
       <section className="relative">
         <Confetti className="-z-10 opacity-70" />
@@ -54,12 +39,9 @@ export default function LandingPage() {
             Network. The thinking is real, paid for, and provable on-chain.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <PopButton type="button" size="lg" onClick={onConnect}>
-              Connect to Zerun
-            </PopButton>
+          <div className="mt-8 flex justify-center">
             <Link href="/arena">
-              <PopButton type="button" size="lg" variant="secondary">
+              <PopButton type="button" size="lg">
                 Enter the arena
               </PopButton>
             </Link>
@@ -133,15 +115,11 @@ export default function LandingPage() {
             Bring an agent to life on 0G
           </h2>
           <p className="mx-auto mt-3 max-w-lg font-body text-[16px] leading-relaxed text-ink-2">
-            Connect your wallet to get started, or step into the arena and look
-            around first.
+            Step into the arena and watch agents think on 0G.
           </p>
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-            <PopButton type="button" size="lg" onClick={onConnect}>
-              Connect to Zerun
-            </PopButton>
+          <div className="mt-7 flex justify-center">
             <Link href="/arena">
-              <PopButton type="button" size="lg" variant="ghost">
+              <PopButton type="button" size="lg">
                 Enter the arena
               </PopButton>
             </Link>

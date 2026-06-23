@@ -9,7 +9,7 @@ import {
   publicClient,
   contestEngineAbi,
 } from "../chain/contracts.js";
-import { storageConfigured, uploadBytes } from "../storage/zgStorage.js";
+import { storageConfigured, uploadBytes, downloadBytes } from "../storage/zgStorage.js";
 import { openContest } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
@@ -187,40 +187,86 @@ app.post("/api/agents/:id/skin", async (c) => {
   if (ownRows.rows.length === 0) return c.json({ error: "unknown agent" }, 404);
   if (ownRows.rows[0]!.owner.toLowerCase() !== owner) return c.json({ error: "not your agent" }, 403);
 
-  // Put the skin on 0G Storage too (best effort), and keep the root.
+  // Skins live on 0G Storage. Upload the image and keep its root hash; the bytes
+  // are served back from 0G, not from the database. If storage is off (local dev
+  // without funds), fall back to keeping the base64 in the database.
   let skinRoot: string | null = null;
-  try {
-    if (storageConfigured()) {
-      const bytes = Buffer.from(dataB64, "base64");
-      const { rootHash } = await uploadBytes(new Uint8Array(bytes));
-      skinRoot = rootHash;
+  if (storageConfigured()) {
+    const bytes = new Uint8Array(Buffer.from(dataB64, "base64"));
+    // 0G storage nodes can drop a connection; a couple of tries clears it before
+    // we fall back to keeping the image in the database.
+    for (let attempt = 0; attempt < 3 && !skinRoot; attempt++) {
+      try {
+        const { rootHash } = await uploadBytes(bytes);
+        skinRoot = rootHash;
+      } catch (err) {
+        console.error(`skin storage attempt ${attempt + 1} for agent ${agentId}:`, (err as Error).message);
+      }
     }
-  } catch (err) {
-    console.error(`skin storage failed for agent ${agentId} (non-fatal):`, (err as Error).message);
   }
 
-  await query(
-    "update agents_meta set skin_mime = $2, skin_b64 = $3, skin_root = $4 where agent_id = $1",
-    [agentId, mime, dataB64, skinRoot],
-  );
-  return c.json({ ok: true, skinRoot });
+  if (skinRoot) {
+    await query(
+      "update agents_meta set skin_mime = $2, skin_root = $3, skin_b64 = null where agent_id = $1",
+      [agentId, mime, skinRoot],
+    );
+  } else {
+    await query(
+      "update agents_meta set skin_mime = $2, skin_root = null, skin_b64 = $3 where agent_id = $1",
+      [agentId, mime, dataB64],
+    );
+  }
+  return c.json({ ok: true, skinRoot, source: skinRoot ? "0g-storage" : "db" });
 });
 
-// Serve an agent's skin image, or 404 if it has none (the UI then falls back to
-// the default character).
+// Small in-memory cache so a skin is fetched from 0G Storage once, not on every
+// request. Keyed by root hash, which changes when a new skin is uploaded.
+const skinCache = new Map<string, { bytes: Uint8Array<ArrayBuffer>; mime: string }>();
+const SKIN_CACHE_MAX = 64;
+
+// Serve an agent's skin image from 0G Storage, or 404 if it has none (the UI
+// then falls back to the default character).
 app.get("/api/skins/:id", async (c) => {
   const agentId = Number(c.req.param("id"));
-  const { rows } = await query<{ skin_mime: string | null; skin_b64: string | null }>(
-    "select skin_mime, skin_b64 from agents_meta where agent_id = $1",
+  const { rows } = await query<{ skin_mime: string | null; skin_b64: string | null; skin_root: string | null }>(
+    "select skin_mime, skin_b64, skin_root from agents_meta where agent_id = $1",
     [agentId],
   );
   const row = rows[0];
-  if (!row || !row.skin_b64 || !row.skin_mime) return c.json({ error: "no skin" }, 404);
-  const buf = Buffer.from(row.skin_b64, "base64");
-  return c.body(buf, 200, {
-    "Content-Type": row.skin_mime,
-    "Cache-Control": "public, max-age=300",
-  });
+  if (!row || !row.skin_mime) return c.json({ error: "no skin" }, 404);
+
+  // Prefer 0G Storage.
+  if (row.skin_root) {
+    let entry = skinCache.get(row.skin_root);
+    if (!entry) {
+      try {
+        const bytes = await downloadBytes(row.skin_root);
+        entry = { bytes: Uint8Array.from(bytes), mime: row.skin_mime };
+        if (skinCache.size >= SKIN_CACHE_MAX) {
+          const oldest = skinCache.keys().next().value;
+          if (oldest) skinCache.delete(oldest);
+        }
+        skinCache.set(row.skin_root, entry);
+      } catch (err) {
+        console.error(`skin ${agentId} read from 0G failed:`, (err as Error).message);
+      }
+    }
+    if (entry) {
+      return c.body(entry.bytes, 200, {
+        "Content-Type": entry.mime,
+        "Cache-Control": "public, max-age=600",
+      });
+    }
+  }
+
+  // Local-dev fallback: base64 in the database.
+  if (row.skin_b64) {
+    return c.body(Uint8Array.from(Buffer.from(row.skin_b64, "base64")), 200, {
+      "Content-Type": row.skin_mime,
+      "Cache-Control": "public, max-age=600",
+    });
+  }
+  return c.json({ error: "no skin" }, 404);
 });
 
 app.get("/api/agents", async (c) => {

@@ -14,6 +14,10 @@ export function SiteHeader() {
   const pathname = usePathname();
   const { isConnected, address } = useAccount();
 
+  // The landing is a marketing page: only the wordmark shows. Everything else
+  // (nav, compute badge, balance, music, connect) lives inside the app.
+  const isLanding = pathname === "/";
+
   const nav = [
     { href: "/arena", label: "Arena" },
     { href: "/leaderboard", label: "Leaderboard" },
@@ -25,7 +29,7 @@ export function SiteHeader() {
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-3 sm:px-8">
         <div className="flex items-center gap-5">
           <Wordmark />
-          {isConnected && (
+          {!isLanding && isConnected && (
             <nav className="hidden items-center gap-2 sm:flex">
               {nav.map((item) => {
                 const active =
@@ -51,12 +55,14 @@ export function SiteHeader() {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <ComputeBadge className="hidden lg:inline-flex" />
-          {isConnected && <BalancePill className="hidden sm:inline-flex" />}
-          <MusicPlayer className="hidden sm:grid" />
-          <ConnectButton />
-        </div>
+        {!isLanding && (
+          <div className="flex items-center gap-3">
+            <ComputeBadge className="hidden lg:inline-flex" />
+            {isConnected && <BalancePill className="hidden sm:inline-flex" />}
+            <MusicPlayer className="hidden sm:grid" />
+            <ConnectButton />
+          </div>
+        )}
       </div>
     </header>
   );
