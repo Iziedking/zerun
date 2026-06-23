@@ -94,6 +94,41 @@ const EASY_BUILDERS: Builder[] = [
   },
 ];
 
+// Two-step puzzles: a notch above easy, where a careless agent slips but a
+// focused one holds. These sit in the middle of the difficulty gradient.
+const MEDIUM_BUILDERS: Builder[] = [
+  // Order of operations with a subtraction tail.
+  (rng) => {
+    const a = intBetween(rng, 6, 30);
+    const b = intBetween(rng, 6, 30);
+    const c = intBetween(rng, 2, 9);
+    const d = intBetween(rng, 5, 50);
+    const expected = (a + b) * c - d;
+    return { prompt: `Compute (${a} + ${b}) * ${c} - ${d}.`, expected: String(expected) };
+  },
+  // Unit price then tax.
+  (rng) => {
+    const qty = intBetween(rng, 3, 12);
+    const price = intBetween(rng, 4, 25);
+    const tax = pick(rng, [10, 20, 25]);
+    const expected = Math.round((qty * price * (100 + tax)) / 100);
+    return {
+      prompt: `You buy ${qty} items at ${price} dollars each, then add ${tax}% tax on the total. What is the final cost in whole dollars? Round to the nearest whole number.`,
+      expected: String(expected),
+    };
+  },
+  // Division with a remainder, framed as a word problem.
+  (rng) => {
+    const total = intBetween(rng, 40, 200);
+    const per = intBetween(rng, 6, 18);
+    const expected = total % per;
+    return {
+      prompt: `${total} apples are packed into boxes of ${per}. After filling as many full boxes as possible, how many apples are left over?`,
+      expected: String(expected),
+    };
+  },
+];
+
 // Multi-step puzzles where a bigger reasoning budget pays off. A low tier agent
 // often truncates before reaching the answer; a high tier agent reasons through.
 const HARD_BUILDERS: Builder[] = [
@@ -136,19 +171,22 @@ const HARD_BUILDERS: Builder[] = [
   },
 ];
 
-// Builds a contest's puzzle set, alternating easy and hard so a reasoning
-// budget always has something to bite on. Odd positions are hard, which gives
-// roughly half the set to the multi-step problems even on a short contest.
+// Builds a contest's puzzle set as a difficulty gradient: it ramps from easy
+// through medium to hard across the set, so weak and strong builds separate
+// (everyone clears the openers, only sharp agents crack the closers). Seeded by
+// contest id, so the same field faces the same questions and it is reproducible.
 export function generatePuzzles(contestId: number, count: number): Puzzle[] {
   const rng = mulberry32(0x5e21 ^ (contestId * 2654435761));
   const out: Puzzle[] = [];
-  let easyIdx = 0;
-  let hardIdx = 0;
+  const idxs = { easy: 0, medium: 0, hard: 0 };
   for (let i = 0; i < count; i++) {
-    const hard = i % 2 === 1;
-    const build = hard
-      ? HARD_BUILDERS[hardIdx++ % HARD_BUILDERS.length]!
-      : EASY_BUILDERS[easyIdx++ % EASY_BUILDERS.length]!;
+    const frac = count <= 1 ? 0 : i / (count - 1);
+    const build =
+      frac < 0.4
+        ? EASY_BUILDERS[idxs.easy++ % EASY_BUILDERS.length]!
+        : frac < 0.7
+          ? MEDIUM_BUILDERS[idxs.medium++ % MEDIUM_BUILDERS.length]!
+          : HARD_BUILDERS[idxs.hard++ % HARD_BUILDERS.length]!;
     const { prompt, expected } = build(rng);
     out.push({ idx: i, prompt, expected });
   }

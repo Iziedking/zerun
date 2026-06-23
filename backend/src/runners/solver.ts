@@ -1,7 +1,7 @@
 import { callModel } from "../compute/client.js";
 import type { ComputeSource } from "../compute/client.js";
 import { extractAnswer, isCorrect, type Puzzle } from "./puzzles.js";
-import { tierParams, type TierParams } from "./tierConfig.js";
+import type { InferencePlan } from "./traits.js";
 
 // One agent solving one puzzle. The whole point of Zerun lives in callModel:
 // the answer is produced by a paid, verifiable call on 0G Compute. Everything
@@ -20,6 +20,9 @@ export interface SolveOutcome {
   chatID: string | null;
   verified: boolean | null;
   latencyMs: number;
+  /// How many self-consistency passes ran and how many backed the winning answer.
+  samples: number;
+  agreement: number;
 }
 
 const SYSTEM_PROMPT =
@@ -27,39 +30,53 @@ const SYSTEM_PROMPT =
   "then end your reply with a line in exactly this form: ANSWER: <integer>. " +
   "Give a single whole number with no units or extra words after it.";
 
-// Solve one puzzle at the agent's tier. The tier sets the reasoning budget and
-// steadiness; a higher tier also gets a retry when the answer cannot be parsed,
-// so it fails less often on the hard puzzles. The accumulated latency across all
-// attempts is what the contest uses as the speed tiebreak.
-export async function solvePuzzle(puzzle: Puzzle, tier: TierParams): Promise<SolveOutcome> {
-  const attempts = tier.retries + 1;
+// Solve one puzzle with self-consistency: run the agent's plan several times and
+// take the majority answer. More passes (high Focus, higher tier) make the agent
+// both more correct and more consistent, so better builds pull ahead instead of
+// coin-flipping. The accumulated latency across every pass is the speed tiebreak.
+export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<SolveOutcome> {
+  const votes = new Map<string, number>();
+  const repByAnswer = new Map<string, Awaited<ReturnType<typeof callModel>>>();
   let latencyMs = 0;
-  let last: Awaited<ReturnType<typeof callModel>> | null = null;
+  let anyRes: Awaited<ReturnType<typeof callModel>> | null = null;
   let lastErr = "";
+  let errors = 0;
+  const maxErrors = plan.retries + 1;
 
-  for (let i = 0; i < attempts; i++) {
+  for (let pass = 0; pass < plan.samples; pass++) {
     try {
       const res = await callModel({
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: SYSTEM_PROMPT + plan.hint,
         userPrompt: puzzle.prompt,
-        maxTokens: tier.maxTokens,
-        temperature: tier.temperature,
+        maxTokens: plan.maxTokens,
+        temperature: plan.temperature,
       });
       latencyMs += res.latencyMs;
-      last = res;
+      anyRes = res;
       const answer = extractAnswer(res.text);
       if (answer !== null) {
-        return outcome(puzzle, res, answer, isCorrect(answer, puzzle.expected) ? "correct" : "wrong", latencyMs);
+        votes.set(answer, (votes.get(answer) ?? 0) + 1);
+        if (!repByAnswer.has(answer)) repByAnswer.set(answer, res);
       }
-      // No number came back; spend a retry if the tier has one.
     } catch (err) {
       lastErr = (err as Error).message ?? "error";
+      errors++;
+      if (errors >= maxErrors && votes.size === 0) break;
     }
   }
 
-  if (last) {
-    // The model answered every time but never with a parseable number.
-    return outcome(puzzle, last, null, "wrong", latencyMs);
+  if (votes.size > 0) {
+    let best = "";
+    let bestN = -1;
+    for (const [a, n] of votes) if (n > bestN) ((best = a), (bestN = n));
+    const res = repByAnswer.get(best)!;
+    const verdict = isCorrect(best, puzzle.expected) ? "correct" : "wrong";
+    return outcome(puzzle, res, best, verdict, latencyMs, plan.samples, bestN);
+  }
+
+  if (anyRes) {
+    // The model answered but never with a parseable number.
+    return outcome(puzzle, anyRes, null, "wrong", latencyMs, plan.samples, 0);
   }
   return {
     puzzleIdx: puzzle.idx,
@@ -74,6 +91,8 @@ export async function solvePuzzle(puzzle: Puzzle, tier: TierParams): Promise<Sol
     chatID: null,
     verified: null,
     latencyMs,
+    samples: plan.samples,
+    agreement: 0,
   };
 }
 
@@ -83,6 +102,8 @@ function outcome(
   answer: string | null,
   verdict: "correct" | "wrong" | "error",
   latencyMs: number,
+  samples: number,
+  agreement: number,
 ): SolveOutcome {
   return {
     puzzleIdx: puzzle.idx,
@@ -97,5 +118,7 @@ function outcome(
     chatID: res.chatID,
     verified: res.verified,
     latencyMs,
+    samples,
+    agreement,
   };
 }

@@ -18,6 +18,13 @@ alter table agents_meta add column if not exists skin_mime text;
 alter table agents_meta add column if not exists skin_b64 text;
 alter table agents_meta add column if not exists skin_root text;
 
+-- Agent traits: the build that decides how an agent reasons on 0G. Rolled from
+-- the agent id the first time it competes, then raised by training.
+alter table agents_meta add column if not exists trait_precision int;
+alter table agents_meta add column if not exists trait_focus int;
+alter table agents_meta add column if not exists trait_speed int;
+alter table agents_meta add column if not exists trait_resilience int;
+
 create table if not exists contests_meta (
   contest_id    bigint primary key,
   status        text not null default 'open',
@@ -69,6 +76,11 @@ create table if not exists solve_runs (
   unique (contest_id, agent_id, puzzle_idx)
 );
 create index if not exists solve_runs_contest_idx on solve_runs (contest_id, id);
+
+-- Self-consistency record: how many passes ran for an answer and how many backed
+-- the winning one. Part of the provable audit (better builds vote more tightly).
+alter table solve_runs add column if not exists samples int;
+alter table solve_runs add column if not exists agreement int;
 
 create table if not exists payouts (
   contest_id  bigint not null,

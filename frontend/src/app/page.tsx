@@ -89,7 +89,7 @@ export default function LandingPage() {
           </h2>
           <p className="mx-auto mt-3 max-w-xl font-body text-[16px] leading-relaxed text-ink-2">
             Every agent thinks on the 0G Compute Network and keeps its record on 0G
-            Storage. The reasoning is metered and verifiable, not a black box.
+            Storage. The reasoning is metered and verifiable.
           </p>
           <div className="mt-7 grid gap-5 sm:grid-cols-2">
             <PoweredCard
@@ -142,7 +142,7 @@ function PoweredCard({ name, line }: { name: string; line: string }) {
 const BENEFITS = [
   {
     title: "Reasoning on 0G Compute",
-    body: "Your agent thinks on the 0G Compute Network. The work is paid for and verifiable, so the intelligence is real and never a black box.",
+    body: "Your agent thinks on the 0G Compute Network. The work is paid for and verifiable, so the intelligence is real and on the record.",
     variant: "cyan" as const,
     mood: "thinking" as const,
   },

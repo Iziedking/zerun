@@ -10,6 +10,7 @@ import {
   GAS_PRICE,
   agentRegistryAbi,
   contestEngineAbi,
+  testUsdcAbi,
   coordinatorAccount,
   coordinatorWallet,
   loadDeployment,
@@ -67,11 +68,13 @@ async function ensureHouseRoster(): Promise<HouseAgent[]> {
     const wallet = createWalletClient({ account, chain: ogGalileo, transport: http(config.chain.rpcUrl) });
     const name = HOUSE_NAMES[i % HOUSE_NAMES.length]!;
 
+    // Fund enough for the one-time tier upgrades (mint, approve, steps) plus a
+    // long run of per-contest entries.
     const balance = await publicClient.getBalance({ address: account.address });
-    if (balance < parseEther("0.012")) {
+    if (balance < parseEther("0.03")) {
       const h = await funder.sendTransaction({
         to: account.address,
-        value: parseEther("0.03"),
+        value: parseEther("0.12"),
         account: funderAccount,
         chain: undefined,
         gasPrice: GAS_PRICE,
@@ -113,12 +116,91 @@ async function ensureHouseRoster(): Promise<HouseAgent[]> {
          on conflict (agent_id) do update set name = excluded.name`,
       [agentId, account.address.toLowerCase(), name],
     );
+
+    // Give the house a tier spread so contests show a real skill gradient: more
+    // tier means more compute means more self-consistency passes and tokens.
+    const target = Math.min(4, i + 1);
+    try {
+      await upgradeHouseTier(wallet, account, agentId, CONTEST_TYPE.SOLVER, target);
+      await upgradeHouseTier(wallet, account, agentId, CONTEST_TYPE.ANALYST, target);
+    } catch (err) {
+      console.error(`autopilot: house ${name} tier upgrade skipped:`, (err as Error).message);
+    }
+
     out.push({ account, wallet, agentId, name });
   }
 
   houseCache = out;
   console.log(`autopilot: house roster ready (${out.length} agents)`);
   return out;
+}
+
+// Buy a house agent from its current tier up to a target for one contest type:
+// price the steps, mint and approve the test USDC, then upgrade one step at a
+// time. Idempotent: a no-op once the agent already sits at or above the target.
+async function upgradeHouseTier(
+  wallet: ReturnType<typeof createWalletClient>,
+  account: ReturnType<typeof privateKeyToAccount>,
+  agentId: number,
+  contestType: number,
+  target: number,
+): Promise<void> {
+  const dep = loadDeployment();
+  const current = Number(
+    await publicClient.readContract({
+      address: dep.agentRegistry,
+      abi: agentRegistryAbi,
+      functionName: "getTier",
+      args: [BigInt(agentId), contestType],
+    }),
+  );
+  if (current >= target) return;
+
+  let total = 0n;
+  for (let t = current; t < target; t++) {
+    const price = (await publicClient.readContract({
+      address: dep.agentRegistry,
+      abi: agentRegistryAbi,
+      functionName: "upgradePrice",
+      args: [contestType, t],
+    })) as bigint;
+    total += price;
+  }
+
+  const mint = await wallet.writeContract({
+    address: dep.testUSDC,
+    abi: testUsdcAbi,
+    functionName: "mint",
+    args: [account.address, total],
+    account,
+    chain: undefined,
+    gasPrice: GAS_PRICE,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: mint });
+
+  const approve = await wallet.writeContract({
+    address: dep.testUSDC,
+    abi: testUsdcAbi,
+    functionName: "approve",
+    args: [dep.agentRegistry, total],
+    account,
+    chain: undefined,
+    gasPrice: GAS_PRICE,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: approve });
+
+  for (let t = current; t < target; t++) {
+    const h = await wallet.writeContract({
+      address: dep.agentRegistry,
+      abi: agentRegistryAbi,
+      functionName: "upgradeAgent",
+      args: [BigInt(agentId), contestType, t + 1],
+      account,
+      chain: undefined,
+      gasPrice: GAS_PRICE,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: h });
+  }
 }
 
 async function seedHouseInto(contestId: number): Promise<void> {
@@ -236,6 +318,12 @@ async function startDueSweeper(): Promise<void> {
 }
 
 async function startOpenLoop(): Promise<void> {
+  // Build (and tier-upgrade) the house roster once up front. The first-time
+  // upgrade takes longer than a contest window, so warming it here keeps the
+  // first contest from closing before the house can join.
+  await ensureHouseRoster().catch((err) =>
+    console.error("autopilot: house warmup failed:", (err as Error).message),
+  );
   let cycle = 0;
   for (;;) {
     try {
@@ -245,7 +333,7 @@ async function startOpenLoop(): Promise<void> {
         prizePoolUsdc: POOL_USDC,
         durationSecs: WINDOW_S,
         topN: 3,
-        puzzleCount: 4,
+        puzzleCount: 6,
         kind,
       });
       await seedHouseInto(id);

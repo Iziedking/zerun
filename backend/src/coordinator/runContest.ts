@@ -1,7 +1,8 @@
 import { query } from "../db/pool.js";
 import { generatePuzzles } from "../runners/puzzles.js";
 import { solvePuzzle } from "../runners/solver.js";
-import { tierParams } from "../runners/tierConfig.js";
+import { getAgentTraits } from "../runners/traitStore.js";
+import { traitInferencePlan } from "../runners/traits.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
@@ -17,7 +18,7 @@ import {
 // correct count with speed as the tiebreak, then hands the ranked field to the
 // shared settlement. Broadcasts the live feed throughout.
 
-const DEFAULT_PUZZLE_COUNT = 5;
+const DEFAULT_PUZZLE_COUNT = 6;
 // Stay under the 0G Compute rate limits (~30 req/min, ~5 concurrent).
 const AGENT_CONCURRENCY = 3;
 
@@ -89,6 +90,8 @@ export async function runContest(contestId: number): Promise<RunResult> {
   }
 
   const puzzles = generatePuzzles(contestId, await puzzleCountFor(contestId));
+  // Join window has closed; the contest is now running on 0G.
+  await query("update contests_meta set status = 'running' where contest_id = $1", [contestId]);
   broadcast({
     type: "status",
     contestId,
@@ -104,10 +107,13 @@ export async function runContest(contestId: number): Promise<RunResult> {
   // Each agent works through the puzzle set in order; agents run a few at a
   // time. Every answer is persisted and pushed to the live feed immediately.
   await mapLimit(entries, AGENT_CONCURRENCY, async (entry) => {
+    // The agent's tier is the compute budget; its traits decide how that budget
+    // is spent. Together they build the real 0G inference plan for every answer.
     const tier = await readSolverTier(dep.agentRegistry, entry.agentId);
-    const params = tierParams(tier);
+    const traits = await getAgentTraits(entry.agentId);
+    const plan = traitInferencePlan(traits, tier);
     for (const puzzle of puzzles) {
-      const outcome = await solvePuzzle(puzzle, params);
+      const outcome = await solvePuzzle(puzzle, plan);
 
       const score = scores.get(entry.agentId)!;
       if (outcome.verdict === "correct") score.correct += 1;
@@ -115,16 +121,17 @@ export async function runContest(contestId: number): Promise<RunResult> {
 
       await query(
         `insert into solve_runs
-           (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+           (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, agreement)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          on conflict (contest_id, agent_id, puzzle_idx) do update set
            answer = excluded.answer, verdict = excluded.verdict, source = excluded.source,
            provider = excluded.provider, model = excluded.model, chat_id = excluded.chat_id,
-           verified = excluded.verified, latency_ms = excluded.latency_ms`,
+           verified = excluded.verified, latency_ms = excluded.latency_ms,
+           samples = excluded.samples, agreement = excluded.agreement`,
         [
           contestId, entry.agentId, entry.operator, puzzle.idx, puzzle.prompt, puzzle.expected,
           outcome.answer, outcome.verdict, outcome.source, outcome.provider, outcome.model,
-          outcome.chatID, outcome.verified, outcome.latencyMs,
+          outcome.chatID, outcome.verified, outcome.latencyMs, outcome.samples, outcome.agreement,
         ],
       );
 
@@ -145,6 +152,8 @@ export async function runContest(contestId: number): Promise<RunResult> {
           chatID: outcome.chatID,
           verified: outcome.verified,
           latencyMs: outcome.latencyMs,
+          samples: outcome.samples,
+          agreement: outcome.agreement,
         },
       });
 

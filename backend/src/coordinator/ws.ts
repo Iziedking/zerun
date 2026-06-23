@@ -25,6 +25,8 @@ export interface SolvePayload {
   chatID: string | null;
   verified: boolean | null;
   latencyMs: number;
+  samples?: number;
+  agreement?: number;
 }
 
 export interface StandingRow {
