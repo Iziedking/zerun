@@ -59,7 +59,12 @@ export const api = {
     req<unknown>("/api/agents", { method: "POST", body: JSON.stringify(body) }),
 
   // An operator hosted a contest from their own wallet; mirror it in the arena.
-  hostContest: (body: { contestId: number; kind: ContestKind; puzzleCount: number }) =>
+  hostContest: (body: {
+    contestId: number;
+    kind: ContestKind;
+    puzzleCount: number;
+    maxOperators?: number;
+  }) =>
     req<{ ok: boolean; contestId: number; kind: ContestKind }>("/api/contests/host", {
       method: "POST",
       body: JSON.stringify(body),

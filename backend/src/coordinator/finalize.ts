@@ -183,6 +183,55 @@ export async function cancelContest(contestId: number): Promise<void> {
   }
 }
 
+// Finish settling a contest that already has its score root but stalled before
+// the on-chain settle completed (it sits in 'scored'). Reads the stored root and
+// resumes from wherever the chain is: post the root if still open, settle if
+// scoring, or just mark settled if the chain is already there. No recompute, so
+// the result never changes. Best effort.
+export async function resettleFromStored(contestId: number): Promise<void> {
+  const dep = loadDeployment();
+  const { rows } = await query<{ final_root: string | null }>(
+    "select final_root from contests_meta where contest_id = $1",
+    [contestId],
+  );
+  const root = rows[0]?.final_root as `0x${string}` | null | undefined;
+  if (!root) return;
+
+  const c = await publicClient.readContract({
+    address: dep.contestEngine,
+    abi: contestEngineAbi,
+    functionName: "getContest",
+    args: [BigInt(contestId)],
+  });
+  const status = Number(c.status); // 1 OPEN, 2 SCORING, 3 SETTLED, 4 CANCELLED
+
+  if (status === 3) {
+    await query("update contests_meta set status = 'settled', settled_at = now() where contest_id = $1", [contestId]);
+    return;
+  }
+  if (status === 4) {
+    await query("update contests_meta set status = 'cancelled' where contest_id = $1", [contestId]);
+    return;
+  }
+
+  const wallet = coordinatorWallet();
+  const account = coordinatorAccount();
+  if (status === 1) {
+    const postHash = await wallet.writeContract({
+      address: dep.contestEngine, abi: contestEngineAbi, functionName: "postScoreRoot",
+      args: [BigInt(contestId), root], account, chain: undefined, gasPrice: GAS_PRICE,
+    });
+    await publicClient.waitForTransactionReceipt({ hash: postHash });
+  }
+  const settleHash = await wallet.writeContract({
+    address: dep.contestEngine, abi: contestEngineAbi, functionName: "settle",
+    args: [BigInt(contestId)], account, chain: undefined, gasPrice: GAS_PRICE,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: settleHash });
+  await query("update contests_meta set status = 'settled', settled_at = now() where contest_id = $1", [contestId]);
+  console.log(`contest ${contestId} resettled from stored root`);
+}
+
 // Build the audit payload from the persisted solve feed and put it on 0G
 // Storage, then record the root hash on the contest. Never throws.
 async function storeAuditTrail(contestId: number, root: Hex): Promise<void> {

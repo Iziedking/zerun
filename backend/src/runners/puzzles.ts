@@ -30,6 +30,17 @@ function intBetween(rng: () => number, lo: number, hi: number): number {
   return lo + Math.floor(rng() * (hi - lo + 1));
 }
 
+// Deterministic Fisher-Yates shuffle so a contest can draw builders without
+// replacement: no question template repeats until a band is exhausted.
+function shuffled<T>(rng: () => number, xs: T[]): T[] {
+  const a = xs.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
 type Builder = (rng: () => number) => { prompt: string; expected: string };
 
 // Single-step shapes most agents can handle. Every answer is an integer.
@@ -171,22 +182,53 @@ const HARD_BUILDERS: Builder[] = [
   },
 ];
 
-// Builds a contest's puzzle set as a difficulty gradient: it ramps from easy
-// through medium to hard across the set, so weak and strong builds separate
-// (everyone clears the openers, only sharp agents crack the closers). Seeded by
-// contest id, so the same field faces the same questions and it is reproducible.
+// 0G knowledge from the docs, with checkable integer answers. A general model
+// usually does not know these, so they sit in the hard band and reward an agent
+// that actually understands the network it runs on.
+const OG_BUILDERS: Builder[] = [
+  () => ({
+    prompt: `What is the EVM chain id of the 0G Galileo testnet? End with "ANSWER: <number>".`,
+    expected: "16602",
+  }),
+  () => ({
+    prompt: `0G's native gas token uses the same number of decimals as ETH. How many decimals is that? End with "ANSWER: <number>".`,
+    expected: "18",
+  }),
+  () => ({
+    prompt: `The 0G stack has these core layers: 0G Chain, 0G Compute, 0G Storage, and 0G Data Availability. How many core layers is that? End with "ANSWER: <number>".`,
+    expected: "4",
+  }),
+  (rng) => {
+    const calls = intBetween(rng, 3, 6);
+    const puzzles = intBetween(rng, 4, 8);
+    return {
+      prompt: `An agent makes ${calls} inference calls per puzzle on the 0G Compute Network across a ${puzzles}-puzzle contest. How many paid 0G calls is that in total? End with "ANSWER: <number>".`,
+      expected: String(calls * puzzles),
+    };
+  },
+];
+
+// Builds a contest's puzzle set as a difficulty gradient: easy through medium to
+// hard across the set, so weak and strong builds separate (everyone clears the
+// openers, only sharp agents crack the closers, which now include 0G lore). Each
+// band is drawn without replacement, so no question template repeats within a
+// contest. Seeded by contest id, so the field is reproducible.
 export function generatePuzzles(contestId: number, count: number): Puzzle[] {
   const rng = mulberry32(0x5e21 ^ (contestId * 2654435761));
+  const easy = shuffled(rng, EASY_BUILDERS);
+  const medium = shuffled(rng, MEDIUM_BUILDERS);
+  const hard = shuffled(rng, [...HARD_BUILDERS, ...OG_BUILDERS]);
+
   const out: Puzzle[] = [];
-  const idxs = { easy: 0, medium: 0, hard: 0 };
+  const idx = { easy: 0, medium: 0, hard: 0 };
   for (let i = 0; i < count; i++) {
     const frac = count <= 1 ? 0 : i / (count - 1);
     const build =
       frac < 0.4
-        ? EASY_BUILDERS[idxs.easy++ % EASY_BUILDERS.length]!
+        ? easy[idx.easy++ % easy.length]!
         : frac < 0.7
-          ? MEDIUM_BUILDERS[idxs.medium++ % MEDIUM_BUILDERS.length]!
-          : HARD_BUILDERS[idxs.hard++ % HARD_BUILDERS.length]!;
+          ? medium[idx.medium++ % medium.length]!
+          : hard[idx.hard++ % hard.length]!;
     const { prompt, expected } = build(rng);
     out.push({ idx: i, prompt, expected });
   }

@@ -86,6 +86,9 @@ alter table solve_runs add column if not exists agreement int;
 -- countdown and the phase.
 alter table contests_meta add column if not exists ends_at timestamptz;
 
+-- Host-set cap on how many operators can join (app-level; 0 or null = no cap).
+alter table contests_meta add column if not exists max_operators int;
+
 create table if not exists payouts (
   contest_id  bigint not null,
   operator    text not null,

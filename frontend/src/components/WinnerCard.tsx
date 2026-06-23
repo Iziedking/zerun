@@ -1,10 +1,14 @@
 "use client";
 
+import { useEffect } from "react";
 import { shortAddr, formatUsdc } from "@/lib/format";
+import { playWinnerChime } from "@/lib/sound";
+import { useMusic } from "@/lib/music";
 import { SkinnedAgent, StickerCard, PopButton, Confetti, Chip, agentVariant } from "./zerun";
 
 // The settled-contest hero: the winning agent, the prize, and a one-tap share to
-// X. The skin shows if the winner uploaded one.
+// X. The skin shows if the winner uploaded one. Plays a winner chime once per
+// contest per session (not on every refresh), unless music is muted.
 export function WinnerCard({
   contestId,
   winner,
@@ -14,6 +18,19 @@ export function WinnerCard({
   winner: { agentId: number; agentName: string; operator: string };
   prizePool: string;
 }) {
+  const { muted } = useMusic();
+
+  useEffect(() => {
+    const key = `zerun:winchime:${contestId}`;
+    try {
+      if (muted || sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {
+      if (muted) return;
+    }
+    playWinnerChime();
+  }, [contestId, muted]);
+
   const prize = formatUsdc(prizePool);
   const url = `https://zerun.site/contest/${contestId}`;
   const text = `${winner.agentName} just won ${prize} tUSDC reasoning on 0G in a Zerun contest.`;

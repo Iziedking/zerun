@@ -32,9 +32,33 @@ const MusicContext = createContext<MusicState | null>(null);
 export function MusicProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mutedRef = useRef(false);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const tabIdRef = useRef(Math.random().toString(36).slice(2));
   const [muted, setMutedState] = useState(false); // default: sound on
   const [playing, setPlaying] = useState(false);
   const [available, setAvailable] = useState(true);
+
+  // Only one tab streams the music: when this tab starts, it tells the others to
+  // yield, and when another tab starts, this one pauses.
+  const announcePlay = useCallback(() => {
+    channelRef.current?.postMessage({ type: "play", id: tabIdRef.current });
+  }, []);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel("zerun-music");
+    ch.onmessage = (e: MessageEvent) => {
+      if (e.data?.type === "play" && e.data.id !== tabIdRef.current) {
+        const a = audioRef.current;
+        if (a && !a.paused) a.pause();
+      }
+    };
+    channelRef.current = ch;
+    return () => {
+      ch.close();
+      channelRef.current = null;
+    };
+  }, []);
 
   const setMuted = useCallback((m: boolean) => {
     mutedRef.current = m;
@@ -81,7 +105,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const start = () => {
       const a = audioRef.current;
-      if (a && a.paused && !mutedRef.current) a.play().catch(() => {});
+      if (a && a.paused && !mutedRef.current) a.play().then(() => announcePlay()).catch(() => {});
     };
     window.addEventListener("pointerdown", start, { once: true });
     window.addEventListener("keydown", start, { once: true });
@@ -94,8 +118,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const play = useCallback(() => {
     const a = audioRef.current;
     if (!a || mutedRef.current || !a.paused) return;
-    a.play().catch(() => setAvailable(false));
-  }, []);
+    a.play().then(() => announcePlay()).catch(() => setAvailable(false));
+  }, [announcePlay]);
 
   const toggle = useCallback(() => {
     const a = audioRef.current;
@@ -106,8 +130,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       return;
     }
     setMuted(false);
-    a.play().catch(() => setAvailable(false));
-  }, [setMuted]);
+    a.play().then(() => announcePlay()).catch(() => setAvailable(false));
+  }, [setMuted, announcePlay]);
 
   return (
     <MusicContext.Provider value={{ muted, playing, available, toggle, play }}>

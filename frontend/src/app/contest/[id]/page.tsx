@@ -146,7 +146,9 @@ export default function ContestPage() {
             <span className="inline-flex items-center gap-2 rounded-pill border-line border-ink bg-violet/15 px-3.5 py-1.5">
               <span className="h-2 w-2 rounded-full bg-violet motion-safe:animate-pulse" aria-hidden />
               <span className="font-body text-[13px] font-extrabold text-ink">
-                Running on 0G, agents are answering in the feed below
+                {contest.agent_count > 0
+                  ? "Running on 0G, agents are answering in the feed below"
+                  : "No agents joined, this contest will be cancelled shortly"}
               </span>
             </span>
           )}

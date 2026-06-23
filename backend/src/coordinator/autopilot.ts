@@ -5,6 +5,7 @@ import { query } from "../db/pool.js";
 import { openContest } from "./contestOps.js";
 import { runContest } from "./runContest.js";
 import { runAnalystContest } from "./runAnalystContest.js";
+import { resettleFromStored } from "./finalize.js";
 import {
   CONTEST_TYPE,
   GAS_PRICE,
@@ -290,8 +291,8 @@ async function ensureContestMeta(id: number, contestType: number): Promise<void>
 // Keeps the arena from showing a finished contest as stuck on "joining".
 async function reconcileStatuses(): Promise<void> {
   const dep = loadDeployment();
-  const { rows } = await query<{ contest_id: string }>(
-    "select contest_id from contests_meta where status in ('open','running','pending')",
+  const { rows } = await query<{ contest_id: string; status: string }>(
+    "select contest_id, status from contests_meta where status in ('open','running','pending','scored')",
   );
   for (const r of rows) {
     const id = Number(r.contest_id);
@@ -302,14 +303,18 @@ async function reconcileStatuses(): Promise<void> {
         functionName: "getContest",
         args: [BigInt(id)],
       });
-      const s = Number(c.status); // 3 = SETTLED, 4 = CANCELLED
+      const s = Number(c.status); // 1 OPEN, 2 SCORING, 3 SETTLED, 4 CANCELLED
       if (s === 3) {
-        await query("update contests_meta set status = 'settled' where contest_id = $1 and status <> 'settled'", [id]);
+        await query("update contests_meta set status = 'settled', settled_at = coalesce(settled_at, now()) where contest_id = $1 and status <> 'settled'", [id]);
       } else if (s === 4) {
         await query("update contests_meta set status = 'cancelled' where contest_id = $1 and status <> 'cancelled'", [id]);
+      } else if (r.status === "scored" && !inFlight.has(id)) {
+        // Scored off chain but the settle stalled. Resume it from the stored root.
+        inFlight.add(id);
+        await resettleFromStored(id).finally(() => inFlight.delete(id));
       }
-    } catch {
-      /* skip this one, try again next sweep */
+    } catch (err) {
+      console.error(`reconcile ${id}:`, (err as Error).message);
     }
   }
 }

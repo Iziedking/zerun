@@ -7,23 +7,26 @@ import { cx } from "./zerun/cx";
 // context so it stays in step with the track started from "Enter the arena".
 // Hides itself when no track is present.
 export function MusicPlayer({ className = "" }: { className?: string }) {
-  const { muted, available, toggle } = useMusic();
+  const { playing, available, toggle } = useMusic();
 
   if (!available) return null;
 
+  // The icon reflects whether sound is actually playing, not just the
+  // preference, so it never looks on while the browser is still blocking
+  // autoplay before the first interaction.
   return (
     <button
       type="button"
       onClick={toggle}
-      aria-label={muted ? "Turn music on" : "Turn music off"}
-      aria-pressed={!muted}
+      aria-label={playing ? "Turn music off" : "Turn music on"}
+      aria-pressed={playing}
       className={cx(
         "grid h-9 w-9 shrink-0 place-items-center rounded-pill border-line border-ink shadow-pop-press transition hover:-translate-y-px",
-        muted ? "bg-cloud" : "bg-mint",
+        playing ? "bg-mint" : "bg-cloud",
         className,
       )}
     >
-      {muted ? <Note muted /> : <Bars />}
+      {playing ? <Bars /> : <Note muted />}
     </button>
   );
 }

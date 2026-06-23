@@ -14,7 +14,9 @@ export function contestPhase(
   const s = (contest.status || "").toLowerCase();
 
   if (s === "cancelled" || s === "canceled") return "cancelled";
-  if (s === "settled" || Boolean(contest.settled_at)) return "settled";
+  // "scored" means the field is ranked and the root is posted: the winner is
+  // decided, so show the result even while the on-chain settle catches up.
+  if (s === "settled" || s === "scored" || Boolean(contest.settled_at)) return "settled";
 
   const endsAt = contest.ends_at ? Date.parse(contest.ends_at) : NaN;
   const windowOpen =

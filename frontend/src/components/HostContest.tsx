@@ -21,6 +21,14 @@ const METRIC = {
   analyst: keccak256(toHex("PREDICTION")),
 } as const;
 
+// How the pool is split among the top finishers. topN sets how many winners share
+// it (weighted, most to rank 1); cut is the on-chain winner share in bps.
+const SPLITS = [
+  { key: "top3", label: "Top 3 split", topN: 3, cut: 6000, note: "rank 1, 2, 3 share it" },
+  { key: "winner", label: "Winner takes all", topN: 1, cut: 10000, note: "rank 1 takes the pool" },
+  { key: "top5", label: "Top 5 split", topN: 5, cut: 5000, note: "rank 1 through 5 share it" },
+] as const;
+
 // Turn a tUSDC amount (whole + up to 6dp) into a 6-decimal bigint.
 function toSixDp(amount: string): bigint {
   const [whole, frac = ""] = amount.split(".");
@@ -51,8 +59,12 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const [pool, setPool] = useState("25");
   const [minutes, setMinutes] = useState("10");
   const [count, setCount] = useState("5");
+  const [splitKey, setSplitKey] = useState<(typeof SPLITS)[number]["key"]>("top3");
+  const [maxOps, setMaxOps] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  const split = SPLITS.find((s) => s.key === splitKey)!;
 
   const usdcAddr = deployment?.contracts.testUSDC;
   const engineAddr = deployment?.contracts.contestEngine;
@@ -112,21 +124,22 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       });
       const contestId = Number(nextId as bigint);
 
-      // List the contest. cType: solver=2, analyst=1. topN=3, winnerCut 6000bps.
+      // List the contest. cType: solver=2, analyst=1. Split sets topN and the cut.
       setPhase("listing");
       const cType = kind === "solver" ? CONTEST_TYPE.solver : CONTEST_TYPE.analyst;
       const listHash = await writeContractAsync({
         abi: contestEngineAbi,
         address: engineAddr,
         functionName: "listContest",
-        args: [cType, ZERO_ADDRESS, METRIC[kind], prizePool, BigInt(durationSecs), 6000, 3, 0, 4],
+        args: [cType, ZERO_ADDRESS, METRIC[kind], prizePool, BigInt(durationSecs), split.cut, split.topN, 0, 4],
         chainId: zeroGGalileo.id,
       });
       await publicClient.waitForTransactionReceipt({ hash: listHash });
 
       // Mirror it to the backend so it shows in the arena.
       setPhase("saving");
-      await api.hostContest({ contestId, kind, puzzleCount: taskCount });
+      const maxOperators = maxOps.trim() ? Math.max(1, Math.round(Number(maxOps))) : 0;
+      await api.hostContest({ contestId, kind, puzzleCount: taskCount, maxOperators });
       await queryClient.invalidateQueries({ queryKey: ["contests"] });
       await balance.refetch();
 
@@ -147,6 +160,8 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
     minutes,
     count,
     kind,
+    split,
+    maxOps,
     balance,
     writeContractAsync,
     queryClient,
@@ -208,6 +223,36 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
           />
         </Field>
       </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Winners split">
+          <select
+            value={splitKey}
+            onChange={(e) => setSplitKey(e.target.value as (typeof SPLITS)[number]["key"])}
+            disabled={busy}
+            className={inputCx}
+          >
+            {SPLITS.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Max operators (optional)">
+          <input
+            inputMode="numeric"
+            value={maxOps}
+            onChange={(e) => setMaxOps(e.target.value)}
+            placeholder="no limit"
+            disabled={busy}
+            className={inputCx}
+          />
+        </Field>
+      </div>
+      <p className="font-body text-[12px] text-ink-3">
+        {split.note}.{maxOps.trim() ? ` Up to ${maxOps} operators can join.` : " Open to any number of operators."}
+      </p>
 
       <p className="font-body text-[13px] text-ink-2">
         Your balance:{" "}

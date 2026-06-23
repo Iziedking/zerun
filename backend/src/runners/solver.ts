@@ -30,6 +30,25 @@ const SYSTEM_PROMPT =
   "then end your reply with a line in exactly this form: ANSWER: <integer>. " +
   "Give a single whole number with no units or extra words after it.";
 
+// 0G Compute calls occasionally drop a connection or hit the rate limit. A short
+// backoff and retry turns most of those transient failures into real answers
+// instead of error verdicts. The retry budget comes from the agent's Resilience.
+async function callWithRetry(
+  opts: Parameters<typeof callModel>[0],
+  retries: number,
+): Promise<Awaited<ReturnType<typeof callModel>>> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await callModel(opts);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 // Solve one puzzle with self-consistency: run the agent's plan several times and
 // take the majority answer. More passes (high Focus, higher tier) make the agent
 // both more correct and more consistent, so better builds pull ahead instead of
@@ -45,12 +64,15 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
 
   for (let pass = 0; pass < plan.samples; pass++) {
     try {
-      const res = await callModel({
-        systemPrompt: SYSTEM_PROMPT + plan.hint,
-        userPrompt: puzzle.prompt,
-        maxTokens: plan.maxTokens,
-        temperature: plan.temperature,
-      });
+      const res = await callWithRetry(
+        {
+          systemPrompt: SYSTEM_PROMPT + plan.hint,
+          userPrompt: puzzle.prompt,
+          maxTokens: plan.maxTokens,
+          temperature: plan.temperature,
+        },
+        Math.max(1, plan.retries),
+      );
       latencyMs += res.latencyMs;
       anyRes = res;
       const answer = extractAnswer(res.text);

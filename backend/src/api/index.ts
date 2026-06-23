@@ -106,6 +106,7 @@ app.post("/api/contests/host", async (c) => {
   const id = Number(body.contestId);
   const kind = body.kind === "analyst" ? "analyst" : "solver";
   const puzzleCount = Number(body.puzzleCount ?? (kind === "analyst" ? 4 : 5));
+  const maxOperators = Number(body.maxOperators ?? 0) > 0 ? Number(body.maxOperators) : null;
   if (!id) return c.json({ error: "contestId required" }, 400);
 
   const dep = loadDeployment();
@@ -120,12 +121,13 @@ app.post("/api/contests/host", async (c) => {
   }
 
   await query(
-    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at)
-       values ($1, 'open', $2, $3, $4, $5, to_timestamp($6))
+    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at, max_operators)
+       values ($1, 'open', $2, $3, $4, $5, to_timestamp($6), $7)
        on conflict (contest_id) do update set
          puzzle_count = excluded.puzzle_count, kind = excluded.kind,
-         prize_pool = excluded.prize_pool, ends_at = excluded.ends_at`,
-    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime)],
+         prize_pool = excluded.prize_pool, ends_at = excluded.ends_at,
+         max_operators = excluded.max_operators`,
+    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators],
   );
   return c.json({ ok: true, contestId: id, kind });
 });
@@ -137,13 +139,19 @@ app.post("/api/contests/:id/enter", async (c) => {
   const operator = String(body.operator ?? "").toLowerCase();
   if (!agentId || !operator) return c.json({ error: "agentId and operator required" }, 400);
 
-  // Only the join window accepts entries.
-  const meta = await query<{ status: string }>(
-    "select status from contests_meta where contest_id = $1",
+  // Only the join window accepts entries, and only up to the host's cap.
+  const meta = await query<{ status: string; max_operators: number | null; cnt: number }>(
+    `select status, max_operators,
+            (select count(*)::int from contest_entries where contest_id = $1) as cnt
+       from contests_meta where contest_id = $1`,
     [id],
   );
-  if (meta.rows[0] && !["open", "pending"].includes(meta.rows[0].status)) {
+  const m = meta.rows[0];
+  if (m && !["open", "pending"].includes(m.status)) {
     return c.json({ error: "the join window for this contest has closed" }, 409);
+  }
+  if (m && m.max_operators && m.cnt >= m.max_operators) {
+    return c.json({ error: "this contest is full" }, 409);
   }
 
   // One agent per operator per contest. The other agent is for other contests.
