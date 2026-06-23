@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { shortAddr, formatUsdc } from "@/lib/format";
 import { StickerCard, PopButton } from "@/components/zerun";
 
-const TOKEN_KEY = "zerun:admin:token";
 const INPUT =
   "w-full rounded-chunk border-line border-ink bg-cloud px-4 py-2.5 font-body text-[15px] text-ink shadow-pop-press outline-none placeholder:text-ink-3 focus:-translate-y-px";
 const LABEL = "block font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2";
@@ -21,6 +20,7 @@ type ContestInfo = Awaited<ReturnType<typeof api.adminContest>>;
 export default function AdminPage() {
   const [token, setToken] = useState("");
   const [saved, setSaved] = useState("");
+  const [authed, setAuthed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -39,16 +39,29 @@ export default function AdminPage() {
   const [contestId, setContestId] = useState("");
   const [contest, setContest] = useState<ContestInfo | null>(null);
 
-  useEffect(() => {
-    const t = localStorage.getItem(TOKEN_KEY) ?? "";
-    setSaved(t);
-    setToken(t);
-  }, []);
+  // Token lives in memory only: not localStorage, sessionStorage, or cookies.
+  // It is verified against the backend once, then held in state for this tab.
+  const unlock = async () => {
+    const t = token.trim();
+    if (!t) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api.adminCheck(t);
+      setSaved(t);
+      setAuthed(true);
+    } catch {
+      setMsg({ ok: false, text: "That token was not accepted." });
+    } finally {
+      setBusy(false);
+    }
+  };
 
-  const saveToken = () => {
-    localStorage.setItem(TOKEN_KEY, token.trim());
-    setSaved(token.trim());
-    setMsg({ ok: true, text: "Token saved in this browser." });
+  const lock = () => {
+    setSaved("");
+    setToken("");
+    setAuthed(false);
+    setMsg(null);
   };
 
   const run = async (fn: () => Promise<string>) => {
@@ -65,33 +78,57 @@ export default function AdminPage() {
 
   const ready = Boolean(saved) && !busy;
 
-  return (
-    <div className="mx-auto max-w-2xl space-y-6 pt-10">
-      <header>
-        <h1 className="font-display text-4xl text-ink -rotate-1">Support console</h1>
-        <p className="mt-1 font-body text-[15px] text-ink-2">
-          Diagnose and fix operator issues. Gated by the admin token.
-        </p>
-      </header>
-
-      <StickerCard className="space-y-3 p-5">
-        <label className={LABEL}>Admin token</label>
-        <div className="flex flex-wrap gap-2">
+  // Login gate: nothing shows until a valid token unlocks the console.
+  if (!authed) {
+    return (
+      <div className="mx-auto max-w-md space-y-5 pt-24">
+        <header className="text-center">
+          <h1 className="font-display text-4xl text-ink -rotate-1">Support console</h1>
+          <p className="mt-1 font-body text-[15px] text-ink-2">
+            Enter the admin token to continue.
+          </p>
+        </header>
+        <StickerCard className="space-y-3 p-5">
+          <label className={LABEL}>Admin token</label>
           <input
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && unlock()}
             placeholder="paste the admin token"
-            className={INPUT + " flex-1"}
+            className={INPUT}
+            autoFocus
           />
-          <PopButton type="button" onClick={saveToken}>
-            Save
+          <PopButton
+            type="button"
+            onClick={unlock}
+            disabled={busy || !token.trim()}
+            className="w-full"
+          >
+            {busy ? "Checking" : "Unlock"}
           </PopButton>
-        </div>
-        <p className="font-body text-[12px] text-ink-3">
-          {saved ? "Token set for this browser." : "Set the token to use the tools below."}
+          {msg && !msg.ok && (
+            <p className="font-body text-[13px] font-bold text-coral">{msg.text}</p>
+          )}
+        </StickerCard>
+        <p className="text-center font-body text-[12px] text-ink-3">
+          The token is held in memory only, never stored, and cleared when you leave.
         </p>
-      </StickerCard>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-6 pt-10">
+      <header className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-4xl text-ink -rotate-1">Support console</h1>
+          <p className="mt-1 font-body text-[15px] text-ink-2">Diagnose and fix operator issues.</p>
+        </div>
+        <PopButton type="button" variant="ghost" onClick={lock}>
+          Lock
+        </PopButton>
+      </header>
 
       {/* ---- Operator: balances, grant tUSDC (the "cannot host" fix) ---- */}
       <StickerCard className="space-y-4 p-5">

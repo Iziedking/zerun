@@ -16,6 +16,9 @@ export function SiteHeader() {
   const pathname = usePathname();
   const { isConnected, address } = useAccount();
 
+  // The admin console is a standalone, token-gated tool: no app chrome at all.
+  if (pathname.startsWith("/admin")) return null;
+
   // The landing is a marketing page: only the wordmark shows. Everything else
   // (nav, compute badge, balance, music, connect) lives inside the app.
   const isLanding = pathname === "/";

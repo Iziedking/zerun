@@ -179,6 +179,12 @@ app.post("/api/agents/:id/train", async (c) => {
 
 // --- Admin support tools (gated by x-admin-token) ---------------------------
 
+// Verify a token so the console can act as a login gate.
+app.get("/api/admin/check", (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  return c.json({ ok: true });
+});
+
 // Inspect an agent: owner, compute level, and recent training payments.
 app.get("/api/admin/agent/:id", async (c) => {
   if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
