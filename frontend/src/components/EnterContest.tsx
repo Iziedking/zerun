@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
 import { contestEngineAbi } from "@/lib/contracts";
@@ -9,11 +9,27 @@ import { useAgents } from "@/lib/useAgents";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { zeroGGalileo } from "@/lib/chain";
+import type { ContestSummary, Standing } from "@/lib/types";
+import { joinOpen } from "@/lib/phase";
 import { Spinner } from "./ui";
-import { Chip, PopButton } from "./zerun";
+import { agentVariant, Chip, PopButton, SkinnedAgent } from "./zerun";
 
 // registerEntry(contestId, agentId, 0); after receipt POST /enter.
-export function EnterContest({ contestId }: { contestId: number }) {
+//
+// Guards the UI to one agent per operator per contest using the contest's
+// standings: if the connected operator already has an agent in, it shows that
+// agent instead of the picker; otherwise it lists the operator's agents that are
+// not already entered. The form hides once the join window has closed. 409s from
+// POST /enter route through friendlyError.
+export function EnterContest({
+  contestId,
+  contest,
+  standings,
+}: {
+  contestId: number;
+  contest: Pick<ContestSummary, "status" | "ends_at" | "settled_at">;
+  standings: Standing[];
+}) {
   const { address } = useAccount();
   const { data: deployment } = useDeployment();
   const agentsQ = useAgents(address);
@@ -21,13 +37,36 @@ export function EnterContest({ contestId }: { contestId: number }) {
   const { writeContractAsync } = useWriteContract();
   const queryClient = useQueryClient();
 
-  const agents = agentsQ.data?.agents ?? [];
+  const myAgents = agentsQ.data?.agents ?? [];
   const [agentId, setAgentId] = useState<number | "">("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   const engineAddr = deployment?.contracts.contestEngine;
+
+  // Only allow entering while the join window is open.
+  const windowOpen = joinOpen(contest);
+
+  // Which of the operator's agents are already entered, and which are free.
+  const lowerAddr = address?.toLowerCase();
+  const myEntry = useMemo(
+    () => (lowerAddr ? standings.find((s) => s.operator?.toLowerCase() === lowerAddr) : undefined),
+    [standings, lowerAddr],
+  );
+
+  const enteredIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const s of standings) {
+      if (lowerAddr && s.operator?.toLowerCase() === lowerAddr) set.add(s.agentId);
+    }
+    return set;
+  }, [standings, lowerAddr]);
+
+  const available = useMemo(
+    () => myAgents.filter((a) => !enteredIds.has(a.agent_id)),
+    [myAgents, enteredIds],
+  );
 
   const enter = useCallback(async () => {
     setError(null);
@@ -55,6 +94,37 @@ export function EnterContest({ contestId }: { contestId: number }) {
     }
   }, [engineAddr, address, publicClient, agentId, contestId, writeContractAsync, queryClient]);
 
+  // The operator already has an agent in this contest (one per operator). Show it.
+  if (myEntry) {
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <SkinnedAgent
+          agentId={myEntry.agentId}
+          variant={agentVariant(myEntry.agentId)}
+          mood="happy"
+          size={56}
+          name={myEntry.agentName}
+        />
+        <div>
+          <Chip tone="live">your agent is in</Chip>
+          <p className="mt-1 font-body text-[15px] font-bold text-ink">
+            {myEntry.agentName} is in this contest.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Window closed and the operator never entered: nothing to do here.
+  if (!windowOpen) {
+    return (
+      <p className="font-body text-[15px] text-ink-2">
+        Entries are closed for this contest. The agents are competing now.
+      </p>
+    );
+  }
+
+  // Just entered this session.
   if (done) {
     return (
       <div className="inline-block">
@@ -63,10 +133,18 @@ export function EnterContest({ contestId }: { contestId: number }) {
     );
   }
 
-  if (!agents.length) {
+  if (!myAgents.length) {
     return (
       <p className="font-body text-[15px] text-ink-2">
         Claim an agent in the Arena before you can enter.
+      </p>
+    );
+  }
+
+  if (!available.length) {
+    return (
+      <p className="font-body text-[15px] text-ink-2">
+        Both of your agents are already entered elsewhere. Raise a new one to send in.
       </p>
     );
   }
@@ -80,7 +158,7 @@ export function EnterContest({ contestId }: { contestId: number }) {
         className="min-h-[44px] w-full rounded-chunk border-line border-ink bg-cloud px-4 py-2 font-body text-[15px] font-bold text-ink outline-none sm:w-auto"
       >
         <option value="">Select an agent</option>
-        {agents.map((a) => (
+        {available.map((a) => (
           <option key={a.agent_id} value={a.agent_id}>
             {a.name} · #{a.agent_id}
           </option>

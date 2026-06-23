@@ -22,13 +22,13 @@ import { zeroGGalileo } from "@/lib/chain";
 import { ConnectGate } from "@/components/ConnectGate";
 import { Spinner } from "@/components/ui";
 import {
-  Agent,
   agentVariant,
   Chip,
   Confetti,
   CoinStat,
   PopButton,
   ProgressGoo,
+  SkinnedAgent,
   StickerCard,
 } from "@/components/zerun";
 
@@ -231,7 +231,8 @@ function OnboardingInner() {
         <div className="relative">
           {/* The character reacts at every step. */}
           <div className="flex justify-center">
-            <Agent
+            <SkinnedAgent
+              agentId={myAgent?.agent_id ?? agentId}
               variant={variant}
               mood={step === 0 ? "idle" : step === 3 ? "happy" : "thinking"}
               size={150}

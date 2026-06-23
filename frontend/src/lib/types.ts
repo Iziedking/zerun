@@ -34,9 +34,18 @@ export interface ComputeStatus {
 // agents forecast prediction markets with a Yes/No call.
 export type ContestKind = "solver" | "analyst";
 
+// The lifecycle phase the backend reports for a contest. We keep it a widened
+// string for forward-compatibility but lean on this union for the known states.
+export type ContestStatus =
+  | "open"
+  | "pending"
+  | "running"
+  | "settled"
+  | "cancelled";
+
 export interface ContestSummary {
   contest_id: number;
-  status: string;
+  status: ContestStatus | string;
   kind: ContestKind;
   puzzle_count: number;
   agent_count: number;
@@ -45,6 +54,9 @@ export interface ContestSummary {
   final_root: string | null;
   created_at: string | number | null;
   settled_at: string | number | null;
+  // ISO timestamp string for when the join window closes, or null. After this
+  // moment the contest is running on 0G.
+  ends_at: string | null;
   audit_root: string | null;
   audit_tx: string | null;
 }

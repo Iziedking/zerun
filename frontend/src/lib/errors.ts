@@ -6,8 +6,15 @@ export function friendlyError(
   fallback = "Something glitched. Give it another go.",
 ): string {
   const e = err as { code?: number; name?: string; message?: string; shortMessage?: string };
-  const msg = (e?.shortMessage || e?.message || "").toLowerCase();
+  const raw = e?.shortMessage || e?.message || "";
+  const msg = raw.toLowerCase();
   const code = e?.code;
+
+  // Our API helper throws `Error("409 Conflict: {\"error\":\"...\"}")`. When the
+  // backend hands us a short, in-world reason (already entered, window closed),
+  // surface that reason directly rather than a generic fallback.
+  const backend = backendError(raw);
+  if (backend) return backend;
 
   // The operator waved it off in the wallet.
   if (code === 4001 || /user rejected|user denied|rejected the request|request was denied|denied/.test(msg)) {
@@ -30,4 +37,20 @@ export function friendlyError(
     return "The connection hiccuped. Give it another go in a moment.";
   }
   return fallback;
+}
+
+// Pull a `{ "error": "..." }` message out of an API error string, if present.
+// The reason is trusted to already be a short, friendly sentence from our own
+// backend (e.g. an entry-guard 409). Returns null when there is nothing usable.
+function backendError(raw: string): string | null {
+  const start = raw.indexOf("{");
+  if (start === -1) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(start)) as { error?: unknown };
+    const reason = typeof parsed.error === "string" ? parsed.error.trim() : "";
+    if (reason && reason.length <= 160) return reason;
+  } catch {
+    /* not JSON; fall through to pattern matching */
+  }
+  return null;
 }
