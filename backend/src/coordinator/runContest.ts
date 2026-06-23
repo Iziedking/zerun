@@ -80,6 +80,65 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
   await Promise.all(workers);
 }
 
+type Puzzle = ReturnType<typeof generatePuzzles>[number];
+type Outcome = Awaited<ReturnType<typeof solvePuzzle>>;
+
+// Persist one answer, score it, and push it to the live feed. An errored answer
+// contributes nothing (0 correct, 0 latency), so re-running it later and calling
+// this again adds only the real result, never a double count.
+async function recordOutcome(
+  contestId: number,
+  entry: Entry,
+  puzzle: Puzzle,
+  outcome: Outcome,
+  scores: Map<number, AgentScore>,
+  nameOf: Map<number, string>,
+): Promise<void> {
+  const score = scores.get(entry.agentId)!;
+  if (outcome.verdict === "correct") score.correct += 1;
+  score.totalLatencyMs += outcome.latencyMs;
+
+  await query(
+    `insert into solve_runs
+       (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, agreement)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     on conflict (contest_id, agent_id, puzzle_idx) do update set
+       answer = excluded.answer, verdict = excluded.verdict, source = excluded.source,
+       provider = excluded.provider, model = excluded.model, chat_id = excluded.chat_id,
+       verified = excluded.verified, latency_ms = excluded.latency_ms,
+       samples = excluded.samples, agreement = excluded.agreement`,
+    [
+      contestId, entry.agentId, entry.operator, puzzle.idx, puzzle.prompt, puzzle.expected,
+      outcome.answer, outcome.verdict, outcome.source, outcome.provider, outcome.model,
+      outcome.chatID, outcome.verified, outcome.latencyMs, outcome.samples, outcome.agreement,
+    ],
+  );
+
+  broadcast({
+    type: "solve",
+    contestId,
+    payload: {
+      agentId: entry.agentId,
+      agentName: entry.agentName,
+      operator: entry.operator,
+      puzzleIdx: puzzle.idx,
+      prompt: puzzle.prompt,
+      answer: outcome.answer,
+      verdict: outcome.verdict,
+      source: outcome.source,
+      provider: outcome.provider,
+      model: outcome.model,
+      chatID: outcome.chatID,
+      verified: outcome.verified,
+      latencyMs: outcome.latencyMs,
+      samples: outcome.samples,
+      agreement: outcome.agreement,
+    },
+  });
+
+  pushStandings(contestId, rankAgents([...scores.values()]), nameOf);
+}
+
 export async function runContest(contestId: number): Promise<RunResult> {
   const dep = loadDeployment();
 
@@ -120,63 +179,48 @@ export async function runContest(contestId: number): Promise<RunResult> {
   }
   const nameOf = new Map(entries.map((e) => [e.agentId, e.agentName]));
 
+  // Plan per agent, fixed once: its compute level (bought with 0G) builds its 0G
+  // inference plan, where more level means more self-consistency passes and a
+  // bigger token budget.
+  const planOf = new Map<number, ReturnType<typeof computePlan>>();
+  for (const e of entries) planOf.set(e.agentId, computePlan(await getAgentCompute(e.agentId)));
+
+  // Any answer that errored on a transient 0G blip (dropped fetch, slow
+  // provider), to re-run once so it never lands as an unfair loss.
+  const errored: { entry: Entry; puzzle: Puzzle }[] = [];
+
   // Each agent works through the puzzle set in order; agents run a few at a
   // time. Every answer is persisted and pushed to the live feed immediately.
   await mapLimit(entries, AGENT_CONCURRENCY, async (entry) => {
-    // The agent's compute level, bought with 0G, builds its 0G inference plan:
-    // more level means more self-consistency passes and a bigger token budget.
-    const level = await getAgentCompute(entry.agentId);
-    const plan = computePlan(level);
+    const plan = planOf.get(entry.agentId)!;
     for (const puzzle of puzzles) {
       const outcome = await solvePuzzle(puzzle, plan);
-
-      const score = scores.get(entry.agentId)!;
-      if (outcome.verdict === "correct") score.correct += 1;
-      score.totalLatencyMs += outcome.latencyMs;
-
-      await query(
-        `insert into solve_runs
-           (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, agreement)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
-         on conflict (contest_id, agent_id, puzzle_idx) do update set
-           answer = excluded.answer, verdict = excluded.verdict, source = excluded.source,
-           provider = excluded.provider, model = excluded.model, chat_id = excluded.chat_id,
-           verified = excluded.verified, latency_ms = excluded.latency_ms,
-           samples = excluded.samples, agreement = excluded.agreement`,
-        [
-          contestId, entry.agentId, entry.operator, puzzle.idx, puzzle.prompt, puzzle.expected,
-          outcome.answer, outcome.verdict, outcome.source, outcome.provider, outcome.model,
-          outcome.chatID, outcome.verified, outcome.latencyMs, outcome.samples, outcome.agreement,
-        ],
-      );
-
-      broadcast({
-        type: "solve",
-        contestId,
-        payload: {
-          agentId: entry.agentId,
-          agentName: entry.agentName,
-          operator: entry.operator,
-          puzzleIdx: puzzle.idx,
-          prompt: puzzle.prompt,
-          answer: outcome.answer,
-          verdict: outcome.verdict,
-          source: outcome.source,
-          provider: outcome.provider,
-          model: outcome.model,
-          chatID: outcome.chatID,
-          verified: outcome.verified,
-          latencyMs: outcome.latencyMs,
-          samples: outcome.samples,
-          agreement: outcome.agreement,
-        },
-      });
-
-      pushStandings(contestId, rankAgents([...scores.values()]), nameOf);
+      await recordOutcome(contestId, entry, puzzle, outcome, scores, nameOf);
+      if (outcome.verdict === "error") errored.push({ entry, puzzle });
       // Gentle spacing keeps us comfortably under the provider rate limit.
       await sleep(150);
     }
   });
+
+  // Retry sweep: transient infra errors must not cost an agent a puzzle. Re-run
+  // the errored answers, up to a few rounds, until the blip clears.
+  let pending = errored;
+  for (let round = 1; round <= 3 && pending.length > 0; round++) {
+    console.log(`contest ${contestId}: retry round ${round}, ${pending.length} errored answers`);
+    broadcast({
+      type: "status",
+      contestId,
+      payload: { status: "running", detail: `retrying ${pending.length} answers` },
+    });
+    const stillFailed: typeof pending = [];
+    for (const { entry, puzzle } of pending) {
+      const outcome = await solvePuzzle(puzzle, planOf.get(entry.agentId)!);
+      await recordOutcome(contestId, entry, puzzle, outcome, scores, nameOf);
+      if (outcome.verdict === "error") stillFailed.push({ entry, puzzle });
+      await sleep(150);
+    }
+    pending = stillFailed;
+  }
 
   return finalizeContest(contestId, rankAgents([...scores.values()]));
 }
