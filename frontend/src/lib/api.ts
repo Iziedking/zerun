@@ -86,6 +86,16 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  // Where training 0G goes, and the 0G cost ladder per compute level.
+  computeInfo: () =>
+    req<{ coordinator: string; costsOg: number[]; maxLevel: number }>("/api/compute/info"),
+  // Credit a compute level after the owner paid 0G to the coordinator.
+  trainAgent: (id: number | string, body: { owner: string; txHash: string }) =>
+    req<{ ok: boolean; computeLevel: number }>(`/api/agents/${id}/train`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   claim: (id: number | string, operator: string) =>
     req<ClaimInfo>(`/api/contests/${id}/claim?operator=${operator}`),
   claimed: (id: number | string, body: { operator: string }) =>

@@ -1,8 +1,8 @@
 import { query } from "../db/pool.js";
 import { generatePuzzles } from "../runners/puzzles.js";
 import { solvePuzzle } from "../runners/solver.js";
-import { getAgentTraits } from "../runners/traitStore.js";
-import { traitInferencePlan } from "../runners/traits.js";
+import { getAgentCompute } from "../runners/traitStore.js";
+import { computePlan } from "../runners/computeLevels.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
@@ -123,11 +123,10 @@ export async function runContest(contestId: number): Promise<RunResult> {
   // Each agent works through the puzzle set in order; agents run a few at a
   // time. Every answer is persisted and pushed to the live feed immediately.
   await mapLimit(entries, AGENT_CONCURRENCY, async (entry) => {
-    // The agent's tier is the compute budget; its traits decide how that budget
-    // is spent. Together they build the real 0G inference plan for every answer.
-    const tier = await readSolverTier(dep.agentRegistry, entry.agentId);
-    const traits = await getAgentTraits(entry.agentId);
-    const plan = traitInferencePlan(traits, tier);
+    // The agent's compute level, bought with 0G, builds its 0G inference plan:
+    // more level means more self-consistency passes and a bigger token budget.
+    const level = await getAgentCompute(entry.agentId);
+    const plan = computePlan(level);
     for (const puzzle of puzzles) {
       const outcome = await solvePuzzle(puzzle, plan);
 

@@ -25,35 +25,36 @@ keep going.
   `AgentRegistry`. Contests, the prize pool, and pull-based merkle claims live in
   `ContestEngine` and `PrizeEscrow`, all on 0G Galileo.
 - **0G Storage holds the audit trail.** After a contest settles, the full record,
-  every agent's traits, its derived inference plan, every sampled answer with its
+  every agent's compute level, its derived inference plan, every sampled answer with its
   0G provenance, and the scoring, is uploaded to 0G Storage and addressed by a root
   hash. Anyone can read it back by that hash and replay the result. Agent skins
   live on 0G Storage too.
 
 ## What makes agents compete
 
-Agents do not all play the same. Each has a **build**: four traits (Precision,
-Focus, Speed, Resilience) that map directly onto the 0G inference call, plus a
-**tier** bought on chain that sets how much compute it can spend. On every item an
-agent answers several times and takes the majority (self-consistency), so a
-stronger build is both more correct and more consistent and pulls clear of the
-field instead of tying. No two agents are born identical: traits are rolled
-deterministically from the agent id, then raised by training.
+**Every agent is identical when you claim it.** The only thing that separates them
+is **Compute**, a single dial bought with **0G**. Each level adds a self-consistency
+pass and a bigger token budget, so the agent reasons harder on 0G and wins
+measurably more: on every item it answers several times and takes the majority, so
+a higher level is both more correct and more consistent and pulls clear of the
+field.
 
-The full maths, the trait formulas, the genome roll, the scoring, and why the
-outcome is provable rather than random, are in **[docs/agents.md](docs/agents.md)**.
+The 0G you pay *is* the compute: training sends 0G to the coordinator, which funds
+the 0G Compute ledger that pays for every inference. And 0G is scarce (the faucet
+gives about 0.5 a day and also pays gas), so investing it in your agent is the
+whole competitive game. The cost climbs about 2.5x per level (0.8, 2, 5, 12, 30
+0G), so the top is genuinely rare.
 
-Two ways to make an agent better:
-
-- **Train** it in the workshop (paid in test USDC) to raise a trait, so it becomes
-  permanently sharper and more resilient.
-- **Buy compute** (tier, paid in 0G) so it reasons more per answer: more
-  self-consistency passes and a bigger token budget.
+To make an agent stronger, **train its Compute with 0G** in the workshop. Each
+payment is a real on-chain 0G transfer the backend verifies (right sender, right
+amount, never reused) before crediting a level. The full maths, the cost ladder,
+self-consistency, and why the outcome is provable rather than random, are in
+**[docs/agents.md](docs/agents.md)**.
 
 ## The arena
 
 - **A self-driving arena.** An autopilot opens a fresh contest on a cadence,
-  alternating puzzles and predictions, and seeds a house field with a tier spread
+  alternating puzzles and predictions, and seeds a house field with a compute spread
   so there is always a graded match to watch. A sweeper settles every contest when
   its join window closes, and refunds the sponsor if nobody enters.
 - **A join window, then the run.** A contest is open for entries during its window,
@@ -75,7 +76,7 @@ Two ways to make an agent better:
    several times per item and voting on the result, every pass a paid 0G Compute
    call, and the answers stream into the live feed with their 0G provenance.
 4. The field is ranked by correct answers, with total latency as the tiebreak.
-   Builds (traits) and compute (tier) decide performance, not randomness.
+   Compute, bought with 0G, decides performance, not randomness.
 5. The coordinator posts the merkle root and settles. Each winner claims with a
    proof, and the full record is uploaded to 0G Storage.
 
@@ -84,13 +85,14 @@ Two ways to make an agent better:
 - `contracts/` Foundry project (Solidity 0.8.24, EVM version cancun).
   - `TestUSDC` a 6-decimal ERC-20 with an open mint, for testnet funding.
   - `PrizeEscrow` the single custodian for prize pools, namespaced per controller.
-  - `AgentRegistry` agents as ERC-721 NFTs with tiered upgrades paid in test USDC.
+  - `AgentRegistry` agents as ERC-721 NFTs you own. Strength comes from Compute,
+    a 0G-funded level kept off chain and anchored in the 0G Storage audit.
   - `ContestEngine` lists and funds contests, registers entries, posts the score
     root, settles, and pays winners by merkle proof.
 - `backend/` one Node and TypeScript process:
   - the 0G Compute client (`src/compute`), the single seam every agent answer
     passes through,
-  - the trait engine, Solver and Analyst runners, and deterministic scoring
+  - the compute economy, Solver and Analyst runners, and deterministic scoring
     (`src/runners`),
   - the coordinator and the self-driving autopilot that open, run, and settle
     contests (`src/coordinator`),

@@ -103,6 +103,8 @@ export interface AgentRecord {
   matches?: number;
   wins?: number;
   og_calls?: number;
+  compute_level?: number;
+  has_skin?: boolean;
 }
 
 // One recent inference for the landing "live on 0G" strip.

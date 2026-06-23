@@ -1,7 +1,7 @@
 import { callModel } from "../compute/client.js";
 import type { ComputeSource } from "../compute/client.js";
 import { extractProbability, brier, type Market } from "./markets.js";
-import type { TierParams } from "./tierConfig.js";
+import type { InferencePlan } from "./traits.js";
 
 // One agent forecasting one resolved market. The agent reasons on 0G Compute and
 // commits a probability that the market resolves Yes. We grade against the real
@@ -35,8 +35,10 @@ function buildPrompt(market: Market): string {
   return `Question: ${market.question}${ctx}\nWhat is the percent chance this resolves "${market.outcomes[0]}"?`;
 }
 
-export async function predictMarket(market: Market, tier: TierParams): Promise<PredictOutcome> {
-  const attempts = tier.retries + 1;
+export async function predictMarket(market: Market, plan: InferencePlan): Promise<PredictOutcome> {
+  // At least two attempts with a short backoff, so a transient 0G rate-limit or
+  // socket drop does not turn into a permanent error verdict.
+  const attempts = Math.max(2, plan.retries + 1);
   let latencyMs = 0;
   let last: Awaited<ReturnType<typeof callModel>> | null = null;
   let lastErr = "";
@@ -44,10 +46,10 @@ export async function predictMarket(market: Market, tier: TierParams): Promise<P
   for (let i = 0; i < attempts; i++) {
     try {
       const res = await callModel({
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: SYSTEM_PROMPT + plan.hint,
         userPrompt: buildPrompt(market),
-        maxTokens: tier.maxTokens,
-        temperature: tier.temperature,
+        maxTokens: plan.maxTokens,
+        temperature: plan.temperature,
       });
       latencyMs += res.latencyMs;
       last = res;
@@ -74,6 +76,7 @@ export async function predictMarket(market: Market, tier: TierParams): Promise<P
       }
     } catch (err) {
       lastErr = (err as Error).message ?? "error";
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 350 * (i + 1)));
     }
   }
 

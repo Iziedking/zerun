@@ -25,6 +25,20 @@ alter table agents_meta add column if not exists trait_focus int;
 alter table agents_meta add column if not exists trait_speed int;
 alter table agents_meta add column if not exists trait_resilience int;
 
+-- Compute level: the single skill dial, bought with 0G. Every agent starts at 0
+-- (identical at claim); training with 0G raises it for more passes and tokens.
+alter table agents_meta add column if not exists compute_level int not null default 0;
+
+-- 0G training payments already credited, so a transaction can never be reused.
+create table if not exists compute_trainings (
+  tx_hash    text primary key,
+  agent_id   bigint not null,
+  operator   text not null,
+  amount_wei text not null,
+  level_after int not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists contests_meta (
   contest_id    bigint primary key,
   status        text not null default 'open',

@@ -1,18 +1,18 @@
 import { fetchMarkets } from "../runners/markets.js";
 import { predictMarket } from "../runners/analyst.js";
-import { tierParams } from "../runners/tierConfig.js";
+import { computePlan } from "../runners/computeLevels.js";
 
-// Fetch a few resolved markets and have a tier 4 agent forecast each on 0G
+// Fetch a few resolved markets and have a max-compute agent forecast each on 0G
 // Compute, then grade against the real outcome.  pnpm tsx src/scripts/analystCheck.ts
 async function main() {
   const markets = await fetchMarkets(4);
   console.log(`fetched ${markets.length} resolved markets\n`);
-  const tier = tierParams(4);
+  const plan = computePlan(5);
 
   let correct = 0;
   let totalBrier = 0;
   for (const m of markets) {
-    const r = await predictMarket(m, tier);
+    const r = await predictMarket(m, plan);
     if (r.verdict === "correct") correct++;
     totalBrier += r.brier;
     console.log(`Q: ${m.question.slice(0, 70)}`);

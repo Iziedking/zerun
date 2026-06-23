@@ -4,13 +4,12 @@ import Link from "next/link";
 import { useMemo } from "react";
 import type { AgentRecord } from "@/lib/types";
 import { useContests } from "@/lib/useAgents";
-import { useSolverTier } from "@/lib/useChainData";
 import { SkinUpload } from "./SkinUpload";
+import { TrainAgent } from "./TrainAgent";
 import { agentVariant, Chip, PopButton, SkinnedAgent, StickerCard } from "./zerun";
 
-// Costume label for a solver-ladder tier. Tier 0 is a fresh rookie; higher tiers
-// read as "decked out".
-const TIER_NAME = ["Rookie", "Scout", "Adept", "Ace", "Champ"];
+// Compute level names, the single 0G-funded skill dial. Every agent starts at Base.
+const COMPUTE_NAME = ["Base", "Spark", "Sharp", "Deep", "Elite", "Apex"];
 
 // One agent on the shelf: the character in its costume color, its name, its tier,
 // a small win/loss record, and a one-tap way to send it in.
@@ -21,7 +20,7 @@ export function DashboardAgentCard({
   agent: AgentRecord;
   owner?: string;
 }) {
-  const { tier } = useSolverTier(agent.agent_id);
+  const level = agent.compute_level ?? 0;
   const isOwner = Boolean(owner && agent.owner?.toLowerCase() === owner.toLowerCase());
   const { data } = useContests();
 
@@ -38,9 +37,6 @@ export function DashboardAgentCard({
     return [...open].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "solver" ? -1 : 1))[0];
   }, [data]);
 
-  const tierLabel =
-    tier === null ? "Rookie" : TIER_NAME[Math.min(tier, TIER_NAME.length - 1)] ?? `Tier ${tier}`;
-
   return (
     <StickerCard className="flex h-full flex-col p-6 text-center">
       <div className="flex justify-center">
@@ -54,7 +50,9 @@ export function DashboardAgentCard({
       </div>
       <div className="mt-3 font-display text-xl text-ink">{agent.name}</div>
       <div className="mt-1 flex items-center justify-center gap-2">
-        <Chip tone="won">{tierLabel}</Chip>
+        <Chip tone="won">
+          L{level} {COMPUTE_NAME[Math.min(level, COMPUTE_NAME.length - 1)]}
+        </Chip>
         <span className="font-mono text-[11px] text-ink-3">#{agent.agent_id}</span>
       </div>
 
@@ -72,8 +70,11 @@ export function DashboardAgentCard({
       </div>
 
       {isOwner && owner && (
-        <div className="mt-4 flex justify-center">
-          <SkinUpload agentId={agent.agent_id} owner={owner} compact />
+        <div className="mt-4 space-y-3">
+          <div className="flex justify-center">
+            <SkinUpload agentId={agent.agent_id} owner={owner} compact />
+          </div>
+          <TrainAgent agentId={agent.agent_id} level={level} owner={owner} />
         </div>
       )}
 

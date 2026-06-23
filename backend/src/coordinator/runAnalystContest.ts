@@ -1,7 +1,8 @@
 import { query } from "../db/pool.js";
 import { fetchMarkets } from "../runners/markets.js";
 import { predictMarket } from "../runners/analyst.js";
-import { tierParams } from "../runners/tierConfig.js";
+import { getAgentCompute } from "../runners/traitStore.js";
+import { computePlan } from "../runners/computeLevels.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
@@ -117,10 +118,10 @@ export async function runAnalystContest(contestId: number): Promise<RunResult> {
   const nameOf = new Map(entries.map((e) => [e.agentId, e.agentName]));
 
   await mapLimit(entries, AGENT_CONCURRENCY, async (entry) => {
-    const tier = await readAnalystTier(dep.agentRegistry, entry.agentId);
-    const params = tierParams(tier);
+    const level = await getAgentCompute(entry.agentId);
+    const plan = computePlan(level);
     for (const market of markets) {
-      const outcome = await predictMarket(market, params);
+      const outcome = await predictMarket(market, plan);
 
       const score = scores.get(entry.agentId)!;
       if (outcome.verdict === "correct") score.correct += 1;

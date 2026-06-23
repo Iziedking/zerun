@@ -8,7 +8,14 @@ import {
   loadDeployment,
   publicClient,
   contestEngineAbi,
+  coordinatorAddress,
 } from "../chain/contracts.js";
+import {
+  nextLevelCostWei,
+  MAX_COMPUTE_LEVEL,
+  computeLevelClamp,
+  COMPUTE_COSTS_OG,
+} from "../runners/computeLevels.js";
 import { storageConfigured, uploadBytes, downloadBytes } from "../storage/zgStorage.js";
 import { openContest } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
@@ -47,6 +54,63 @@ app.get("/api/stats", async (c) => {
        (select coalesce(sum(prize_pool::numeric), 0)::text from contests_meta where status = 'settled') as settled_pool`,
   );
   return c.json(rows[0] ?? {});
+});
+
+// Where training payments go, and the 0G cost ladder, so the frontend can send
+// the right amount to the right address.
+app.get("/api/compute/info", (c) =>
+  c.json({
+    coordinator: coordinatorAddress(),
+    costsOg: COMPUTE_COSTS_OG,
+    maxLevel: MAX_COMPUTE_LEVEL,
+  }),
+);
+
+// Train an agent: the owner paid 0G to the coordinator (which funds the 0G
+// Compute ledger). We verify that on-chain payment, credit one compute level, and
+// record the transaction so it can never be reused.
+app.post("/api/agents/:id/train", async (c) => {
+  const agentId = Number(c.req.param("id"));
+  const body = await c.req.json().catch(() => ({}));
+  const owner = String(body.owner ?? "").toLowerCase();
+  const txHash = String(body.txHash ?? "");
+  if (!agentId || !owner || !txHash) return c.json({ error: "agentId, owner, and txHash required" }, 400);
+
+  const own = await query<{ owner: string; compute_level: number }>(
+    "select owner, compute_level from agents_meta where agent_id = $1",
+    [agentId],
+  );
+  if (own.rows.length === 0) return c.json({ error: "unknown agent" }, 404);
+  if (own.rows[0]!.owner.toLowerCase() !== owner) return c.json({ error: "not your agent" }, 403);
+  const current = own.rows[0]!.compute_level ?? 0;
+  if (current >= MAX_COMPUTE_LEVEL) return c.json({ error: "this agent is already at max compute" }, 409);
+
+  const used = await query("select 1 from compute_trainings where tx_hash = $1", [txHash]);
+  if (used.rows.length > 0) return c.json({ error: "that payment was already used" }, 409);
+
+  const cost = nextLevelCostWei(current)!;
+  let tx: Awaited<ReturnType<typeof publicClient.getTransaction>>;
+  let receipt: Awaited<ReturnType<typeof publicClient.getTransactionReceipt>>;
+  try {
+    tx = await publicClient.getTransaction({ hash: txHash as `0x${string}` });
+    receipt = await publicClient.getTransactionReceipt({ hash: txHash as `0x${string}` });
+  } catch {
+    return c.json({ error: "could not read that payment yet, give it a moment and retry" }, 400);
+  }
+  if (receipt.status !== "success") return c.json({ error: "that payment did not go through" }, 400);
+  if (tx.from.toLowerCase() !== owner) return c.json({ error: "that payment was not from your wallet" }, 400);
+  if ((tx.to ?? "").toLowerCase() !== coordinatorAddress().toLowerCase()) {
+    return c.json({ error: "that payment went to the wrong address" }, 400);
+  }
+  if (tx.value < cost) return c.json({ error: "that payment was not enough for the next level" }, 400);
+
+  const levelAfter = computeLevelClamp(current + 1);
+  await query("update agents_meta set compute_level = $2 where agent_id = $1", [agentId, levelAfter]);
+  await query(
+    "insert into compute_trainings (tx_hash, agent_id, operator, amount_wei, level_after) values ($1,$2,$3,$4,$5)",
+    [txHash, agentId, owner, tx.value.toString(), levelAfter],
+  );
+  return c.json({ ok: true, computeLevel: levelAfter });
 });
 
 app.get("/api/deployment", (c) => {
@@ -303,7 +367,7 @@ app.get("/api/agents", async (c) => {
   // Each agent with its record: matches entered, wins (placed first), and how
   // many answers it has produced on 0G Compute.
   const { rows } = await query(
-    `select m.agent_id, m.owner, m.name, m.created_at,
+    `select m.agent_id, m.owner, m.name, m.created_at, m.compute_level,
             (m.skin_b64 is not null) as has_skin, m.skin_root,
             count(distinct e.contest_id)::int as matches,
             (sum(case when p.rank = 1 then 1 else 0 end))::int as wins,
