@@ -26,13 +26,15 @@ export interface PredictOutcome {
 }
 
 const SYSTEM_PROMPT =
-  "You are a forecaster in a prediction arena. Read the question, weigh the " +
-  "evidence briefly, then end with a line in exactly this form: PROB: <0-100>, " +
-  "the percent chance the answer is Yes. Give a single number from 0 to 100.";
+  "You are an analyst in a prediction arena. Reason the question out carefully, " +
+  "then end with a line in exactly this form: PROB: <0-100>, the percent chance " +
+  "the answer is Yes. Be decisive: when the answer is clearly Yes give a high " +
+  "number, when clearly No give a low one, and only sit near 50 if it is genuinely " +
+  "uncertain. Give a single number from 0 to 100.";
 
 function buildPrompt(market: Market): string {
   const ctx = market.description ? `\nContext: ${market.description}` : "";
-  return `Question: ${market.question}${ctx}\nWhat is the percent chance this resolves "${market.outcomes[0]}"?`;
+  return `Question: ${market.question}${ctx}\nReason it out, then give the percent chance the answer is Yes.`;
 }
 
 export async function predictMarket(market: Market, plan: InferencePlan): Promise<PredictOutcome> {

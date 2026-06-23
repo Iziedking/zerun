@@ -1,5 +1,5 @@
 import { query } from "../db/pool.js";
-import { fetchMarkets } from "../runners/markets.js";
+import { generateMarkets } from "../runners/markets.js";
 import { predictMarket } from "../runners/analyst.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { computePlan } from "../runners/computeLevels.js";
@@ -79,7 +79,7 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
   await Promise.all(workers);
 }
 
-type Market = Awaited<ReturnType<typeof fetchMarkets>>[number];
+type Market = ReturnType<typeof generateMarkets>[number];
 type Prediction = Awaited<ReturnType<typeof predictMarket>>;
 
 // Persist one prediction, score it, and push it live. An errored call contributes
@@ -156,7 +156,7 @@ export async function runAnalystContest(contestId: number): Promise<RunResult> {
     }
   }
 
-  const markets = await fetchMarkets(await marketCountFor(contestId));
+  const markets = generateMarkets(contestId, await marketCountFor(contestId));
   if (markets.length === 0) {
     broadcast({ type: "status", contestId, payload: { status: "no-markets" } });
     return { contestId, root: null, posted: false, settled: false, payouts: [] };

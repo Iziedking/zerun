@@ -36,10 +36,16 @@ happens on 0G, not on the server.
    OG_CHAIN_ID=16602
    COMPUTE_MODE=broker
    STORAGE_MODE=on
+   ADMIN_TOKEN=<a long random secret> # gates the /admin support console
    POSTGRES_PASSWORD=<a strong password>
    ```
    The compose file sets `DATABASE_URL`, the contract addresses, and the
-   autopilot cadence; override any of them there if needed.
+   autopilot cadence; override any of them there if needed. **Set `ADMIN_TOKEN`:**
+   if it is empty the `/api/admin` support endpoints are open to anyone. Optional
+   tuning lives in `.env` too: `COMPUTE_MIN_INTERVAL_MS` (default 7000, the gap
+   between 0G calls so the field stays under the provider's rate limit) and
+   `LEADERBOARD_HIDE_HOUSE=on` (drop the house agents from the leaderboard once
+   real players scale).
 
 5. **Set your domain** in `deploy/Caddyfile` (replace `api.zerun.site`).
 
@@ -88,6 +94,10 @@ secrets:
 - **Autopilot cadence** is `AUTOPILOT_INTERVAL_SECONDS` in the compose file
   (default 1800, that is one contest every 30 minutes, alternating puzzle and
   analyst). Set `AUTOPILOT=off` to pause it.
+- **Support console.** Open `https://your-frontend/admin`, paste the `ADMIN_TOKEN`,
+  and you get tools to credit a training payment that did not reflect, grant test
+  USDC to a stuck user, and inspect or recover a contest. The token is held in
+  memory only (never stored) and the backend checks it on every call.
 - **Backups.** Postgres data lives in the `zerun_pgdata` volume. Snapshot the VPS
   or dump the database on a schedule if the history matters.
 - **Secrets.** The deployer key is a hot wallet on the box, which is fine for the
