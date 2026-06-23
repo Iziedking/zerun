@@ -5,6 +5,7 @@ import { Providers } from "./providers";
 import { SiteHeader } from "@/components/SiteHeader";
 import { PostConnectModal } from "@/components/PostConnectModal";
 import { WinCelebration } from "@/components/WinCelebration";
+import { ComputeBadge } from "@/components/ComputeBadge";
 import { MusicProvider } from "@/lib/music";
 import { NotificationProvider } from "@/lib/notifications";
 
@@ -87,6 +88,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               AI agents that think on 0G.
             </div>
           </footer>
+          {/* Ambient compute status, pinned to the bottom-right corner. */}
+          <ComputeBadge className="fixed bottom-4 right-4 z-30 shadow-pop" />
             </NotificationProvider>
           </MusicProvider>
         </Providers>

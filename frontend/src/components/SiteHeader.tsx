@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useAccount } from "wagmi";
 import { Wordmark } from "./Wordmark";
 import { ConnectButton } from "./ConnectButton";
-import { ComputeBadge } from "./ComputeBadge";
 import { BalancePill } from "./BalancePill";
 import { MusicPlayer } from "./MusicPlayer";
 import { NotificationBell } from "./NotificationBell";
@@ -68,7 +67,6 @@ export function SiteHeader() {
           </div>
         ) : (
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            <ComputeBadge className="hidden lg:inline-flex" />
             {isConnected && <BalancePill className="hidden md:inline-flex" />}
             {isConnected && <NotificationBell />}
             <ThemeToggle />
