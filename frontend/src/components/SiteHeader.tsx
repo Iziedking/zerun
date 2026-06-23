@@ -7,6 +7,7 @@ import { Wordmark } from "./Wordmark";
 import { ConnectButton } from "./ConnectButton";
 import { ComputeBadge } from "./ComputeBadge";
 import { BalancePill } from "./BalancePill";
+import { MusicPlayer } from "./MusicPlayer";
 import { cx } from "./zerun/cx";
 
 export function SiteHeader() {
@@ -53,6 +54,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-3">
           <ComputeBadge className="hidden lg:inline-flex" />
           {isConnected && <BalancePill className="hidden sm:inline-flex" />}
+          <MusicPlayer className="hidden sm:grid" />
           <ConnectButton />
         </div>
       </div>

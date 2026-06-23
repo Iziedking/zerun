@@ -36,7 +36,7 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
     if (!injected) return;
     setBusy(true);
     try {
-      await connectAsync({ connector: injected });
+      await connectAsync({ connector: injected, chainId: zeroGGalileo.id });
       try {
         const provider = (await injected.getProvider()) as
           | { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }

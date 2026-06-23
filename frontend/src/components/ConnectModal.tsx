@@ -14,7 +14,7 @@ import { ensureGalileo } from "@/lib/network";
 import { useAuth } from "@/lib/auth";
 import { friendlyError } from "@/lib/errors";
 import { Spinner } from "./ui";
-import { Agent, Chip, PopButton, StickerCard } from "./zerun";
+import { Agent, PopButton, StickerCard } from "./zerun";
 
 type EthProvider = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };
 
@@ -35,7 +35,13 @@ export function ConnectModal({
   const chainId = useChainId();
   const { connectAsync, connectors, isPending } = useConnect();
   const { switchChainAsync } = useSwitchChain();
-  const { data: bal } = useBalance({ address, chainId: zeroGGalileo.id });
+  // Poll the native balance while the modal is open so a faucet claim is picked
+  // up automatically when the operator comes back.
+  const { data: bal, refetch: refetchBal } = useBalance({
+    address,
+    chainId: zeroGGalileo.id,
+    query: { refetchInterval: open ? 5000 : false },
+  });
   const { signedIn, signing, error: signError, signIn } = useAuth();
 
   const [busy, setBusy] = useState(false);
@@ -45,7 +51,9 @@ export function ConnectModal({
   const injected = connectors.find((c) => c.id === "injected") ?? connectors[0];
   const wrongChain = isConnected && chainId !== zeroGGalileo.id;
   const onChain = isConnected && !wrongChain;
-  const noGas = bal ? bal.value === 0n : false;
+  const balReady = bal !== undefined;
+  const noGas = balReady && bal.value === 0n;
+  const hasGas = balReady && bal.value > 0n;
   const shownError = localError ?? signError;
 
   const handleConnect = useCallback(async () => {
@@ -53,7 +61,7 @@ export function ConnectModal({
     setLocalError(null);
     setBusy(true);
     try {
-      await connectAsync({ connector: injected });
+      await connectAsync({ connector: injected, chainId: zeroGGalileo.id });
       try {
         const provider = (await injected.getProvider()) as EthProvider | undefined;
         if (provider) await ensureGalileo(provider);
@@ -81,9 +89,9 @@ export function ConnectModal({
     }
   }, [injected, switchChainAsync]);
 
-  // Once signed in on the right chain, give a little hop then move on.
+  // Signed in and holding gas: give a little hop then move on.
   useEffect(() => {
-    if (!open || !onChain || !signedIn || hopped) return;
+    if (!open || !onChain || !signedIn || !hasGas || hopped) return;
     setHopped(true);
     const t = setTimeout(() => {
       onClose();
@@ -91,7 +99,7 @@ export function ConnectModal({
       else router.push("/onboarding");
     }, 900);
     return () => clearTimeout(t);
-  }, [open, onChain, signedIn, hopped, onClose, onReady, router]);
+  }, [open, onChain, signedIn, hasGas, hopped, onClose, onReady, router]);
 
   // Clear any stale error when the step changes.
   useEffect(() => {
@@ -175,11 +183,6 @@ export function ConnectModal({
               Sign a quick message to prove this wallet is yours. No transaction,
               no gas.
             </p>
-            {noGas && (
-              <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="mt-4 inline-block">
-                <Chip tone="won">no 0G yet? grab some gas</Chip>
-              </a>
-            )}
             <PopButton
               type="button"
               onClick={() => void signIn()}
@@ -192,13 +195,41 @@ export function ConnectModal({
           </>
         )}
 
-        {onChain && signedIn && (
+        {onChain && signedIn && noGas && (
+          <>
+            <h2 className="mt-4 font-display text-2xl text-ink">Grab some gas</h2>
+            <p className="mt-2 font-body text-[15px] leading-relaxed text-ink-2">
+              You need a little 0G to play. Claim some from the faucet, then come
+              back here.
+            </p>
+            <a href={FAUCET_URL} target="_blank" rel="noreferrer" className="mt-6 block">
+              <PopButton type="button" variant="secondary" className="w-full">
+                Open the faucet
+              </PopButton>
+            </a>
+            <button
+              type="button"
+              onClick={() => void refetchBal()}
+              className="mt-3 inline-flex items-center gap-2 font-body text-[13px] font-extrabold text-ink-2 transition hover:text-ink"
+            >
+              <Spinner /> watching your balance, recheck now
+            </button>
+          </>
+        )}
+
+        {onChain && signedIn && hasGas && (
           <>
             <h2 className="mt-4 font-display text-2xl text-ink">You are in</h2>
             <p className="mt-2 font-body text-[15px] leading-relaxed text-ink-2">
               Taking you to set up your agent.
             </p>
           </>
+        )}
+
+        {onChain && signedIn && !balReady && (
+          <p className="mt-6 inline-flex items-center gap-2 font-body text-[14px] font-bold text-ink-2">
+            <Spinner /> checking your balance
+          </p>
         )}
 
         {shownError && (
