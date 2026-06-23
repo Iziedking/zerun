@@ -20,13 +20,13 @@ export function CoinStat({
 }) {
   return (
     <StickerCard className={cx("p-5", className)}>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5 sm:gap-3">
         {token !== "none" && <TokenMark token={token} />}
         <div className="min-w-0">
-          <div className="font-display text-4xl leading-none text-ink">
+          <div className="truncate font-display text-3xl leading-none text-ink sm:text-4xl">
             {value}
             {suffix && (
-              <span className="ml-1.5 text-base font-body font-extrabold text-ink-2">
+              <span className="ml-1.5 text-sm font-body font-extrabold text-ink-2 sm:text-base">
                 {suffix}
               </span>
             )}

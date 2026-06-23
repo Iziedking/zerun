@@ -8,7 +8,7 @@ export function AuditTrail({ root, tx }: { root: string; tx: string | null }) {
   const explorer = zeroGGalileo.blockExplorers.default.url;
   return (
     <StickerCard className="p-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-display text-xl text-ink">Audit trail on 0G Storage</h3>
         {tx && (
           <a

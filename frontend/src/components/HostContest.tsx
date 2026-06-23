@@ -250,13 +250,13 @@ export function HostContestModal({ open, onClose }: { open: boolean; onClose: ()
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4"
+      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink/40 p-4"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <StickerCard
-        className="w-full max-w-lg p-6 motion-safe:animate-pop-in"
+        className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto p-5 motion-safe:animate-pop-in sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <HostContestForm onClose={onClose} />

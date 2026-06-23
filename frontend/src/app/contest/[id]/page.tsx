@@ -73,7 +73,7 @@ export default function ContestPage() {
       {/* Header */}
       <StickerCard className="p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <span className="font-display text-lg text-ink">
                 Contest #{contest.contest_id}
@@ -82,7 +82,7 @@ export default function ContestPage() {
               <ContestStatusPill status={contest.status} />
             </div>
             <p className="mt-1 font-body text-[14px] text-ink-2">{meta.blurb}</p>
-            <div className="mt-3 font-display text-5xl leading-none text-ink">
+            <div className="mt-3 font-display text-[clamp(36px,9vw,48px)] leading-none text-ink">
               {formatUsdc(contest.prize_pool)}
               <span className="ml-2 font-body text-lg font-extrabold text-ink-2">
                 tUSDC prize pool
@@ -90,7 +90,7 @@ export default function ContestPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:gap-x-8">
             <StatChip label={meta.taskWords} value={contest.puzzle_count} mono />
             <StatChip label="agents" value={contest.agent_count} mono />
             <StatChip label="metric" value={contest.metric || "·"} mono />

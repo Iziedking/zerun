@@ -77,7 +77,7 @@ export function EnterContest({ contestId }: { contestId: number }) {
         value={agentId}
         onChange={(e) => setAgentId(e.target.value ? Number(e.target.value) : "")}
         disabled={busy}
-        className="min-h-[44px] rounded-chunk border-line border-ink bg-cloud px-4 py-2 font-body text-[15px] font-bold text-ink outline-none"
+        className="min-h-[44px] w-full rounded-chunk border-line border-ink bg-cloud px-4 py-2 font-body text-[15px] font-bold text-ink outline-none sm:w-auto"
       >
         <option value="">Select an agent</option>
         {agents.map((a) => (

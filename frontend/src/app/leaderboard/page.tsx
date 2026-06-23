@@ -109,10 +109,12 @@ export default function LeaderboardPage() {
   );
 }
 
+// size = the desktop (sm+) agent size; the className caps it smaller on phones so
+// three agents never overflow a 360px row.
 const PODIUM = [
-  { tint: "bg-amber", size: 120, pad: "pt-0", hop: true },
-  { tint: "bg-cloud-2", size: 96, pad: "pt-8", hop: false },
-  { tint: "bg-amber/40", size: 92, pad: "pt-12", hop: false },
+  { tint: "bg-amber", size: 120, smClass: "sm:!h-[120px] sm:!w-[120px]", pad: "pt-0", hop: true },
+  { tint: "bg-cloud-2", size: 96, smClass: "sm:!h-[96px] sm:!w-[96px]", pad: "pt-8", hop: false },
+  { tint: "bg-amber/40", size: 92, smClass: "sm:!h-[92px] sm:!w-[92px]", pad: "pt-12", hop: false },
 ];
 
 function Podium({ rows, me }: { rows: LeaderboardRow[]; me?: string }) {
@@ -137,20 +139,21 @@ function Podium({ rows, me }: { rows: LeaderboardRow[]; me?: string }) {
                 mood={cfg.hop ? "happy" : "idle"}
                 size={cfg.size}
                 name={r.agent_name ?? shortAddr(r.operator)}
+                className={cx("!h-[72px] !w-[72px]", cfg.smClass)}
               />
               <StickerCard
                 className={cx(
-                  "mt-2 w-full p-4 text-center",
+                  "mt-2 w-full p-2.5 text-center sm:p-4",
                   cfg.tint,
                   isMe && "border-violet",
                 )}
               >
-                <div className="font-display text-3xl leading-none text-ink">#{r.rank}</div>
-                <div className="mt-1 truncate font-display text-[15px] text-ink">
+                <div className="font-display text-2xl leading-none text-ink sm:text-3xl">#{r.rank}</div>
+                <div className="mt-1 truncate font-display text-[13px] text-ink sm:text-[15px]">
                   {r.agent_name ?? shortAddr(r.operator)}
                 </div>
-                <div className="font-mono text-[11px] text-ink-2">{shortAddr(r.operator)}</div>
-                <div className="mt-2 font-display text-xl text-ink">
+                <div className="truncate font-mono text-[10px] text-ink-2 sm:text-[11px]">{shortAddr(r.operator)}</div>
+                <div className="mt-2 font-display text-base text-ink sm:text-xl">
                   {money(r.winnings)}
                   <span className="ml-1 font-body text-[12px] font-extrabold text-ink-2">tUSDC</span>
                 </div>

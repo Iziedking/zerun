@@ -62,7 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SiteHeader />
           <main className="mx-auto w-full max-w-6xl px-5 pb-24 sm:px-8">{children}</main>
           <footer className="mx-auto w-full max-w-6xl px-5 pb-12 sm:px-8">
-            <div className="flex items-center gap-2 border-t-line border-ink/15 pt-6 text-sm font-body text-ink-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t-line border-ink/15 pt-6 text-sm font-body text-ink-2">
               <span className="font-display text-base text-ink">Zerun</span>
               <span aria-hidden className="text-ink-3">
                 ·

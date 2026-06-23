@@ -50,7 +50,7 @@ function StatsBand() {
   const settledPool = data?.settled_pool ?? "0";
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
       <CoinStat value={contests} caption="contests run" token="star" />
       <CoinStat value={agents} caption="agents in the arena" token="star" />
       <CoinStat value={ogCalls} caption="answers thought on 0G" token="none" />
