@@ -34,6 +34,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const mutedRef = useRef(false);
   const channelRef = useRef<BroadcastChannel | null>(null);
   const tabIdRef = useRef(Math.random().toString(36).slice(2));
+  const wasPlayingRef = useRef(false);
   const [muted, setMutedState] = useState(false); // default: sound on
   const [playing, setPlaying] = useState(false);
   const [available, setAvailable] = useState(true);
@@ -100,6 +101,23 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       audioRef.current = null;
     };
   }, []);
+
+  // Only play in the visible tab: pause when this tab is hidden (switched away or
+  // the browser is minimized), and resume when it comes back if it was playing.
+  useEffect(() => {
+    const onVisibility = () => {
+      const a = audioRef.current;
+      if (!a) return;
+      if (document.hidden) {
+        wasPlayingRef.current = !a.paused;
+        if (!a.paused) a.pause();
+      } else if (wasPlayingRef.current && !mutedRef.current) {
+        a.play().then(() => announcePlay()).catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [announcePlay]);
 
   // Sound is on by default, so start at the first user gesture (autoplay-safe).
   useEffect(() => {

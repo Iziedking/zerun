@@ -22,12 +22,22 @@ const METRIC = {
 } as const;
 
 // How the pool is split among the top finishers. topN sets how many winners share
-// it (weighted, most to rank 1); cut is the on-chain winner share in bps.
+// it; the pool is weighted so rank 1 takes the largest share, descending (the
+// linear weighting the settlement uses). pct is that breakdown, for display.
 const SPLITS = [
-  { key: "top3", label: "Top 3 split", topN: 3, cut: 6000, note: "rank 1, 2, 3 share it" },
-  { key: "winner", label: "Winner takes all", topN: 1, cut: 10000, note: "rank 1 takes the pool" },
-  { key: "top5", label: "Top 5 split", topN: 5, cut: 5000, note: "rank 1 through 5 share it" },
+  { key: "winner", label: "Winner takes all", topN: 1, cut: 10000, pct: [100] },
+  { key: "top2", label: "Top 2 split", topN: 2, cut: 7000, pct: [67, 33] },
+  { key: "top3", label: "Top 3 split", topN: 3, cut: 6000, pct: [50, 33, 17] },
+  { key: "top5", label: "Top 5 split", topN: 5, cut: 5000, pct: [33, 27, 20, 13, 7] },
 ] as const;
+
+const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th"];
+
+// "1st 50%, 2nd 33%, 3rd 17%"
+function splitBreakdown(pct: readonly number[]): string {
+  if (pct.length === 1) return "the winner takes the whole pool";
+  return pct.map((p, i) => `${ORDINALS[i]} ${p}%`).join(", ");
+}
 
 // Turn a tUSDC amount (whole + up to 6dp) into a 6-decimal bigint.
 function toSixDp(amount: string): bigint {
@@ -234,7 +244,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
           >
             {SPLITS.map((s) => (
               <option key={s.key} value={s.key}>
-                {s.label}
+                {s.label} ({s.pct.join("/")})
               </option>
             ))}
           </select>
@@ -251,7 +261,8 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
         </Field>
       </div>
       <p className="font-body text-[12px] text-ink-3">
-        {split.note}.{maxOps.trim() ? ` Up to ${maxOps} operators can join.` : " Open to any number of operators."}
+        Split: {splitBreakdown(split.pct)}.
+        {maxOps.trim() ? ` Up to ${maxOps} operators can join.` : " Open to any number of operators."}
       </p>
 
       <p className="font-body text-[13px] text-ink-2">
