@@ -135,11 +135,13 @@ function Podium({ rows, me }: { rows: LeaderboardRow[]; me?: string }) {
                 name={r.agent_name ?? shortAddr(r.operator)}
                 className={cx("!h-[72px] !w-[72px]", cfg.smClass)}
               />
-              <StickerCard
+              {/* Plain div, not StickerCard: a single bg class makes the fill
+                  reliable (StickerCard's bg-cloud would otherwise fight the tint). */}
+              <div
                 className={cx(
-                  "mt-2 w-full p-2.5 text-center sm:p-4",
+                  "mt-2 w-full rounded-chunk-lg border-line p-2.5 text-center shadow-pop sm:p-4",
                   cfg.tint,
-                  isMe && "border-violet",
+                  isMe ? "border-violet" : "border-ink",
                 )}
               >
                 <div className={cx("font-display text-2xl leading-none sm:text-3xl", cfg.txt)}>#{r.rank}</div>
@@ -151,7 +153,7 @@ function Podium({ rows, me }: { rows: LeaderboardRow[]; me?: string }) {
                   {money(r.winnings)}
                   <span className={cx("ml-1 font-body text-[12px] font-extrabold", cfg.txt2)}>tUSDC</span>
                 </div>
-              </StickerCard>
+              </div>
             </div>
           </Link>
         );

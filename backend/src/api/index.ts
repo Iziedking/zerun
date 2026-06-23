@@ -805,6 +805,10 @@ app.post("/api/admin/contests/:id/run", async (c) => {
 });
 
 async function standingsFor(contestId: number) {
+  // Tiebreak must match the settlement (runners/scoring.rankAgents): most
+  // correct, then higher Compute level (the bigger 0G investment), then faster,
+  // then agent id. Otherwise a high-compute agent that runs slower shows last
+  // here while actually winning the contest.
   const { rows } = await query<{
     agent_id: string;
     operator: string;
@@ -819,8 +823,8 @@ async function standingsFor(contestId: number) {
        left join agents_meta m on m.agent_id = e.agent_id
        left join solve_runs s on s.contest_id = e.contest_id and s.agent_id = e.agent_id
       where e.contest_id = $1
-      group by e.agent_id, e.operator, m.name
-      order by correct desc, total_latency asc, e.agent_id asc`,
+      group by e.agent_id, e.operator, m.name, m.compute_level
+      order by correct desc, coalesce(m.compute_level, 0) desc, total_latency asc, e.agent_id asc`,
     [contestId],
   );
   return rows.map((r, i) => ({

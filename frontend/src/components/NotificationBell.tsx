@@ -17,7 +17,7 @@ export function NotificationBell({ className = "" }: { className?: string }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label="Notifications"
-        className="relative grid h-9 w-9 shrink-0 place-items-center rounded-pill border-line border-ink bg-cloud shadow-pop-press transition hover:-translate-y-px"
+        className="relative grid h-9 w-9 shrink-0 place-items-center rounded-pill border-line border-ink bg-cloud text-ink shadow-pop-press transition hover:-translate-y-px"
       >
         <Bell />
         {unread > 0 && (
@@ -90,9 +90,9 @@ function Bell() {
     <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden>
       <path
         d="M10 2.5a4.5 4.5 0 0 0-4.5 4.5c0 3-1 4.5-1.5 5h12c-.5-.5-1.5-2-1.5-5A4.5 4.5 0 0 0 10 2.5z"
-        fill="#171449"
+        fill="currentColor"
       />
-      <path d="M8 15a2 2 0 0 0 4 0" stroke="#171449" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M8 15a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }
