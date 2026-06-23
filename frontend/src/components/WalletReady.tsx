@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAccount, useBalance } from "wagmi";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { zeroGGalileo, FAUCET_URL } from "@/lib/chain";
 import { useUsdcBalance } from "@/lib/useChainData";
 import { api } from "@/lib/api";
@@ -21,6 +22,13 @@ export function WalletReady() {
     query: { enabled: Boolean(address), refetchInterval: 10_000 },
   });
   const usdc = useUsdcBalance(address);
+  const queryClient = useQueryClient();
+  const statusQ = useQuery({
+    queryKey: ["faucetStatus", address],
+    queryFn: () => api.faucetStatus(address!),
+    enabled: Boolean(address),
+    staleTime: 30_000,
+  });
   const [minting, setMinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,6 +36,7 @@ export function WalletReady() {
 
   const lowGas = gas ? gas.value === 0n : false;
   const gasText = gas ? `${(Number(gas.value) / 1e18).toFixed(3)} 0G` : "·";
+  const capped = statusQ.data?.capped ?? false;
 
   const mint = async () => {
     setError(null);
@@ -35,6 +44,7 @@ export function WalletReady() {
     try {
       await api.faucetUsdc({ owner: address });
       await usdc.refetch();
+      await queryClient.invalidateQueries({ queryKey: ["faucetStatus"] });
     } catch (err) {
       setError(friendlyError(err, "That claim did not go through. Try again."));
     } finally {
@@ -67,20 +77,21 @@ export function WalletReady() {
           </div>
           <PopButton
             type="button"
+            variant={capped ? "ghost" : "primary"}
             onClick={() => void mint()}
-            disabled={minting}
+            disabled={minting || capped}
             icon={minting ? <Spinner /> : undefined}
             className="mt-3"
           >
-            {minting ? "Claiming" : "Claim tUSDC"}
+            {capped ? "Claimed this week" : minting ? "Claiming" : "Get tUSDC"}
           </PopButton>
         </div>
       </div>
       {error && <p className="mt-3 font-body text-[13px] font-bold text-coral">{error}</p>}
       <p className="mt-3 font-body text-[12px] leading-relaxed text-ink-3">
-        tUSDC is the arena's test currency for claiming, training, and hosting. The faucet gives up
-        to 100 tUSDC per wallet each week.
-        0G is the network gas, claimed from the faucet.
+        tUSDC is the prize and hosting currency: you win it in contests and spend it to host your
+        own. Compute training is paid in 0G. The faucet tops you up to 100 tUSDC per wallet each
+        week, and prizes you win are claimed on that contest's page. 0G is the network gas.
       </p>
     </StickerCard>
   );

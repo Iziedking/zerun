@@ -65,17 +65,37 @@ app.get("/api/stats", async (c) => {
 // be farmed. The coordinator mints to the operator and pays the gas.
 const USDC_WEEKLY_CAP = 100_000000n; // 100 tUSDC (6 decimals)
 
+async function usdcClaimedThisWeek(owner: string): Promise<bigint> {
+  const { rows } = await query<{ sum: string }>(
+    `select coalesce(sum(amount_wei::numeric), 0)::text as sum
+       from usdc_claims where lower(operator) = $1 and created_at > now() - interval '7 days'`,
+    [owner],
+  );
+  return BigInt(rows[0]?.sum ?? "0");
+}
+
+// How much of the weekly faucet an operator has left, so the UI can disable the
+// claim button before they try.
+app.get("/api/faucet/usdc", async (c) => {
+  const owner = String(c.req.query("owner") ?? "").toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(owner)) {
+    return c.json({ remainingWei: USDC_WEEKLY_CAP.toString(), capped: false });
+  }
+  const claimed = await usdcClaimedThisWeek(owner);
+  const remaining = USDC_WEEKLY_CAP - claimed;
+  return c.json({
+    claimedWei: claimed.toString(),
+    remainingWei: (remaining > 0n ? remaining : 0n).toString(),
+    capped: remaining <= 0n,
+  });
+});
+
 app.post("/api/faucet/usdc", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const owner = String(body.owner ?? "").toLowerCase();
   if (!/^0x[0-9a-f]{40}$/.test(owner)) return c.json({ error: "a valid wallet is required" }, 400);
 
-  const claimed = await query<{ sum: string }>(
-    `select coalesce(sum(amount_wei::numeric), 0)::text as sum
-       from usdc_claims where lower(operator) = $1 and created_at > now() - interval '7 days'`,
-    [owner],
-  );
-  const claimedWei = BigInt(claimed.rows[0]?.sum ?? "0");
+  const claimedWei = await usdcClaimedThisWeek(owner);
   const remaining = USDC_WEEKLY_CAP - claimedWei;
   if (remaining <= 0n) {
     return c.json(
@@ -452,7 +472,9 @@ app.get("/api/leaderboard", async (c) => {
             (sum(case when p.rank = 1 then 1 else 0 end))::int as wins,
             coalesce(sum(p.amount::numeric), 0)::text as winnings,
             (select name from agents_meta am where lower(am.owner) = lower(e.operator)
-               order by am.agent_id asc limit 1) as agent_name
+               order by am.agent_id asc limit 1) as agent_name,
+            (select am.agent_id from agents_meta am where lower(am.owner) = lower(e.operator)
+               order by am.agent_id asc limit 1)::int as agent_id
        from contest_entries e
        left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
       group by e.operator

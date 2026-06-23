@@ -48,11 +48,26 @@ let readyPromise: Promise<ProviderHandle> | null = null;
 
 // The broker signs single-use headers per request, and those nonces collide if
 // two requests overlap. Run the per-request work one at a time so concurrent
-// agents queue instead of stepping on each other. The provider stays well
-// inside its rate limit this way too.
+// agents queue instead of stepping on each other.
+//
+// Crucially, also pace the queue: the 0G provider rate-limits at roughly 30
+// requests a minute, and a contest fires many calls (agents x items x
+// self-consistency passes), so without a minimum gap the later calls get
+// rejected and fall back to an unfair error verdict. Holding ~2.3s between call
+// starts keeps the whole field under the limit, so every agent gets a real
+// answer. Tunable with COMPUTE_MIN_INTERVAL_MS.
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const MIN_CALL_INTERVAL_MS = Number(process.env.COMPUTE_MIN_INTERVAL_MS ?? "2300");
 let inflight: Promise<unknown> = Promise.resolve();
+let lastCallStart = 0;
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
-  const run = inflight.then(fn, fn);
+  const throttled = async (): Promise<T> => {
+    const wait = lastCallStart + MIN_CALL_INTERVAL_MS - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastCallStart = Date.now();
+    return fn();
+  };
+  const run = inflight.then(throttled, throttled);
   inflight = run.then(
     () => undefined,
     () => undefined,

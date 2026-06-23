@@ -86,6 +86,11 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  // How much of the weekly tUSDC faucet the operator has left.
+  faucetStatus: (owner: string) =>
+    req<{ claimedWei?: string; remainingWei: string; capped: boolean }>(
+      `/api/faucet/usdc?owner=${owner}`,
+    ),
   // Claim tUSDC from the capped faucet (100 per operator per 7 days).
   faucetUsdc: (body: { owner: string }) =>
     req<{ ok: boolean; minted: string; txHash: string }>("/api/faucet/usdc", {

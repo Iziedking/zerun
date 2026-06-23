@@ -44,7 +44,7 @@ const POOL_USDC = Number(process.env.AUTOPILOT_POOL_USDC ?? "30");
 const POOL_CHOICES = [25, 30, 40, 50, 60, 70, 80, 100];
 const HOUSE_SIZE = Number(process.env.AUTOPILOT_HOUSE ?? "4");
 const SWEEP_MS = 30_000;
-const RUN_TIMEOUT_MS = 600_000;
+const RUN_TIMEOUT_MS = 1_200_000; // paced 0G calls make a full field take longer
 
 const HOUSE_NAMES = ["Pixel", "Nova", "Byte", "Echo", "Quark", "Volt"];
 
