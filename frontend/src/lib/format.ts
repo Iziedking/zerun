@@ -2,19 +2,21 @@
 export const USDC_DECIMALS = 6;
 
 export function formatUsdc(raw: string | bigint | number | null | undefined): string {
-  if (raw === null || raw === undefined) return "0";
+  if (raw === null || raw === undefined) return "0.00";
   let v: bigint;
   try {
     v = typeof raw === "bigint" ? raw : BigInt(typeof raw === "number" ? Math.trunc(raw) : raw);
   } catch {
-    return "0";
+    return "0.00";
   }
   const base = 10n ** BigInt(USDC_DECIMALS);
-  const whole = v / base;
-  const frac = v % base;
-  if (frac === 0n) return whole.toString();
-  const fracStr = frac.toString().padStart(USDC_DECIMALS, "0").replace(/0+$/, "");
-  return `${whole.toString()}.${fracStr}`;
+  const neg = v < 0n;
+  if (neg) v = -v;
+  // Round to two decimals.
+  const hundredths = (v * 100n + base / 2n) / base;
+  const whole = hundredths / 100n;
+  const cents = hundredths % 100n;
+  return `${neg ? "-" : ""}${whole.toString()}.${cents.toString().padStart(2, "0")}`;
 }
 
 export function shortAddr(addr: string | null | undefined, head = 6, tail = 4): string {

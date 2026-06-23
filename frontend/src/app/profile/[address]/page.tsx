@@ -16,6 +16,7 @@ import {
   agentVariant,
   Chip,
   CoinStat,
+  cx,
   LoadMore,
   PopButton,
   SkinnedAgent,
@@ -149,11 +150,13 @@ function ProfileBody({
         </div>
         {matches.length ? (
           <>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {visibleMatches.map((m) => (
-                <MatchCard key={m.contest_id} match={m} />
-              ))}
-            </div>
+            <StickerCard className="overflow-hidden p-0">
+              <ul>
+                {visibleMatches.map((m, i) => (
+                  <MatchRow key={m.contest_id} match={m} alt={i % 2 === 1} />
+                ))}
+              </ul>
+            </StickerCard>
             <LoadMore
               className="mt-6"
               remaining={matches.length - visibleMatches.length}
@@ -249,39 +252,52 @@ function Workshop({ address }: { address: string }) {
   );
 }
 
-function MatchCard({ match }: { match: OperatorProfile["matches"][number] }) {
+function MatchRow({
+  match,
+  alt,
+}: {
+  match: OperatorProfile["matches"][number];
+  alt: boolean;
+}) {
   const meta = kindMeta(match.kind);
   const won = match.rank === 1;
-  const placed = match.amount && Number(match.amount) > 0;
+  const placed = Boolean(match.amount && Number(match.amount) > 0);
 
   return (
-    <Link href={`/contest/${match.contest_id}`} className="block">
-      <StickerCard interactive className="flex items-center gap-4 p-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="font-display text-lg text-ink">#{match.contest_id}</span>
-            <Chip tone={meta.tone}>{meta.label}</Chip>
-          </div>
-          <div className="mt-1 font-body text-[13px] font-bold text-ink-2">
-            pool {formatUsdc(match.prize_pool)} tUSDC
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          {won ? (
-            <Chip tone="won">won</Chip>
-          ) : placed ? (
-            <Chip tone="live">paid</Chip>
-          ) : (
-            <Chip tone="neutral">played</Chip>
-          )}
-          {placed && (
-            <div className="mt-1 font-display text-base text-ink">
+    <li
+      className={cx(
+        "border-ink/15 first:border-t-0",
+        alt ? "bg-cloud-2" : "bg-cloud",
+      )}
+    >
+      <Link
+        href={`/contest/${match.contest_id}`}
+        className="flex items-center gap-3 border-t-line border-ink/10 px-4 py-3 transition hover:bg-violet/5"
+      >
+        <span className="font-display text-base text-ink">#{match.contest_id}</span>
+        <Chip tone={meta.tone}>{meta.label}</Chip>
+        <span className="hidden font-body text-[12px] font-bold text-ink-2 sm:inline">
+          pool {formatUsdc(match.prize_pool)} tUSDC
+        </span>
+        <span className="flex-1" />
+        {won ? (
+          <Chip tone="won">won</Chip>
+        ) : placed ? (
+          <Chip tone="live">paid</Chip>
+        ) : (
+          <Chip tone="neutral">played</Chip>
+        )}
+        <span className="w-24 shrink-0 text-right font-display text-[15px] text-ink">
+          {placed ? (
+            <>
               {formatUsdc(match.amount)}
               <span className="ml-1 font-body text-[11px] font-extrabold text-ink-2">tUSDC</span>
-            </div>
+            </>
+          ) : (
+            <span className="text-ink-3">—</span>
           )}
-        </div>
-      </StickerCard>
-    </Link>
+        </span>
+      </Link>
+    </li>
   );
 }

@@ -66,7 +66,7 @@ export function DashboardAgentCard({
         <span aria-hidden className="font-display text-lg text-ink-3">
           ·
         </span>
-        <Record label="on 0G" value={agent.og_calls ?? 0} />
+        <Record label="0G calls" value={agent.og_calls ?? 0} />
       </div>
 
       {isOwner && owner && (
