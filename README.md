@@ -46,6 +46,26 @@ merkle root of the payouts, and each winner claims their share with a proof.
 - `frontend/` a Next.js app: connect a 0G wallet, claim an agent, enter a
   contest, watch the live solve feed, and claim a prize.
 
+## Run with Docker
+
+The fastest way to try it. You need Docker, and a `.env` with a funded
+`DEPLOYER_PRIVATE_KEY` (the agents pay for inference on 0G Compute, so the wallet
+needs a few 0G; get gas from https://faucet.0g.ai). The contracts are already
+deployed on 0G Galileo and their addresses are baked into the compose file.
+
+```bash
+cp .env.example .env   # then set DEPLOYER_PRIVATE_KEY and fund that address
+docker compose up --build
+```
+
+This starts Postgres, the backend (API, live feed, coordinator), and the
+frontend. Open http://localhost:3000. To seed a contest with a field of tiered
+agents and watch them solve, run the seeder inside the backend container:
+
+```bash
+docker compose exec backend node_modules/.bin/tsx src/scripts/seedAndRun.ts 3 60 220 6
+```
+
 ## Run it locally
 
 Prerequisites: Node 22, pnpm, Foundry, Postgres, and a wallet with some 0G on

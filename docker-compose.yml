@@ -1,0 +1,53 @@
+# One command brings up the whole Zerun stack for testing:
+#   docker compose up --build
+#
+# Postgres, the backend (API, live feed, coordinator), and the cartoon frontend.
+# The backend talks to the live 0G Galileo contracts and 0G Compute, so it needs
+# a funded DEPLOYER_PRIVATE_KEY in .env. Open http://localhost:3000.
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: zerun
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zerun"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - zerun_pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    # Secrets and 0G settings (DEPLOYER_PRIVATE_KEY, OG_*, COMPUTE_*, STORAGE_*).
+    env_file: .env
+    environment:
+      # Point at the db service and the already-deployed 0G contracts. These
+      # override anything in .env.
+      DATABASE_URL: postgres://postgres:postgres@db:5432/zerun
+      PORT: "8787"
+      ADDR_TEST_USDC: "0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64"
+      ADDR_PRIZE_ESCROW: "0x29E09A7699BC016f9D73aD074Df851c713e28d56"
+      ADDR_AGENT_REGISTRY: "0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c"
+      ADDR_CONTEST_ENGINE: "0x5DAE30E30466FB3EA58181807A4633C512b232a0"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8787:8787"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # The browser reaches the backend on the host port mapped below.
+        NEXT_PUBLIC_API_URL: http://localhost:8787
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  zerun_pgdata:
