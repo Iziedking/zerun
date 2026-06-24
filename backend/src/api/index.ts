@@ -381,6 +381,78 @@ app.post("/api/admin/contest/:id/resettle", async (c) => {
   return c.json({ ok: true });
 });
 
+// Repair a contest whose stored proofs no longer match the immutable on-chain
+// root (a pre-idempotency re-settle recomputed and overwrote them). The on-chain
+// root cannot change, so those proofs are unclaimable. For each winner: if they
+// already claimed on chain, just sync the DB flag; otherwise credit the owed
+// amount directly and mark it claimed so the broken claim button settles. Safe by
+// default (dry run: reports the plan, mints nothing); pass ?credit=true to act.
+app.post("/api/admin/contest/:id/repair-claims", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const id = Number(c.req.param("id"));
+  if (!id) return c.json({ error: "contest id required" }, 400);
+  const doCredit = c.req.query("credit") === "true";
+
+  const engine = loadDeployment().contestEngine;
+  const contest = await publicClient.readContract({
+    address: engine,
+    abi: contestEngineAbi,
+    functionName: "getContest",
+    args: [BigInt(id)],
+  });
+  const chainRoot = String(contest.finalRoot).toLowerCase();
+  const { rows: meta } = await query<{ final_root: string | null }>(
+    "select final_root from contests_meta where contest_id = $1",
+    [id],
+  );
+  const dbRoot = (meta[0]?.final_root ?? "").toLowerCase();
+  if (!dbRoot) return c.json({ error: "no stored root for this contest" }, 400);
+  if (dbRoot === chainRoot) {
+    return c.json({ ok: true, note: "roots match; proofs are valid, no repair needed", chainRoot });
+  }
+
+  const { rows: payouts } = await query<{ operator: string; amount: string; claimed: boolean }>(
+    "select operator, amount, claimed from payouts where contest_id = $1 order by rank asc",
+    [id],
+  );
+  const results: { operator: string; amountWei: string; action: string; tx?: string }[] = [];
+  for (const p of payouts) {
+    const op = p.operator.toLowerCase() as `0x${string}`;
+    const onchainClaimed = await publicClient.readContract({
+      address: engine,
+      abi: contestEngineAbi,
+      functionName: "prizeClaimed",
+      args: [BigInt(id), op],
+    });
+    if (onchainClaimed) {
+      if (doCredit) await query("update payouts set claimed = true where contest_id = $1 and lower(operator) = $2", [id, op]);
+      results.push({ operator: op, amountWei: p.amount, action: "already-claimed-on-chain (sync only)" });
+      continue;
+    }
+    if (p.claimed) {
+      results.push({ operator: op, amountWei: p.amount, action: "db-already-claimed (skip)" });
+      continue;
+    }
+    if (!doCredit) {
+      results.push({ operator: op, amountWei: p.amount, action: "WOULD credit (dry run)" });
+      continue;
+    }
+    const hash = await coordinatorWallet().writeContract({
+      address: loadDeployment().testUSDC,
+      abi: testUsdcAbi,
+      functionName: "mint",
+      args: [op, BigInt(p.amount)],
+      account: coordinatorAccount(),
+      chain: undefined,
+      gasPrice: GAS_PRICE,
+    });
+    await waitReceipt(hash);
+    await query("update payouts set claimed = true where contest_id = $1 and lower(operator) = $2", [id, op]);
+    results.push({ operator: op, amountWei: p.amount, action: "credited", tx: hash });
+  }
+  return c.json({ ok: true, contestId: id, dryRun: !doCredit, chainRoot, dbRoot, results });
+});
+
 app.post("/api/admin/contest/:id/cancel", async (c) => {
   if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
   const id = Number(c.req.param("id"));

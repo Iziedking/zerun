@@ -58,6 +58,28 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
     functionName: "getContest",
     args: [BigInt(contestId)],
   });
+
+  // Idempotency guard. The on-chain root is immutable once posted, but the DB
+  // payouts/proofs below are written before that post. If this ever re-runs on an
+  // already-settled contest (a retry, a manual re-run), recomputing would overwrite
+  // the stored proofs with a freshly-computed root that no longer matches the
+  // immutable on-chain root, so every claim then reverts with InvalidProof. Never
+  // recompute a contest the chain has already resolved.
+  const onchainStatus = Number(contest.status); // 3 SETTLED, 4 CANCELLED
+  if (onchainStatus === 3 || onchainStatus === 4) {
+    await query("update contests_meta set status = $2 where contest_id = $1", [
+      contestId,
+      onchainStatus === 3 ? "settled" : "cancelled",
+    ]);
+    return {
+      contestId,
+      root: contest.finalRoot,
+      posted: true,
+      settled: onchainStatus === 3,
+      payouts: [],
+    };
+  }
+
   const prizePool = contest.prizePool;
   const platformFeeBps = contest.platformFeeBps;
   const topN = contest.topN;
