@@ -12,19 +12,21 @@ export const MAX_COMPUTE_LEVEL = 5;
 // an easy on-ramp, then a real wall, then genuinely rare at the top.
 export const COMPUTE_COSTS_OG = [0.8, 2, 5, 12, 30] as const;
 
-// Each level's real 0G inference plan. Level 0 is the weak baseline (one hot
-// pass, high variance), where the house sits. Training adds self-consistency
-// passes (the real accuracy lever: more passes vote down a wrong answer), a
-// bigger token budget, and a steadier temperature, so a trained agent reliably
-// out-scores the baseline. Passes are 0G calls and the provider caps at 10/min,
-// so the climb is deliberate and the gradient stays clear.
+// Each level's real 0G inference plan. The accuracy lever is self-consistency:
+// take several independent reasoning attempts and keep the majority answer. That
+// only works if the attempts are DIVERSE, so the temperature stays moderate at
+// every level (cold sampling makes the passes identical and voting pointless).
+// Training buys more passes and a bigger token budget, so a higher level votes
+// across more diverse attempts and reliably out-scores the baseline. Level 0 is
+// one hot single shot, where the house sits. Passes are 0G calls and the provider
+// caps at 10/min, so the climb is deliberate.
 const LEVELS: InferencePlan[] = [
-  { maxTokens: 240, temperature: 0.5, samples: 1, retries: 1, hint: "" },
-  { maxTokens: 420, temperature: 0.45, samples: 2, retries: 1, hint: " Check your work before the final answer." },
-  { maxTokens: 600, temperature: 0.35, samples: 3, retries: 1, hint: " Check your work before the final answer." },
-  { maxTokens: 760, temperature: 0.28, samples: 3, retries: 1, hint: " Check your work before the final answer." },
-  { maxTokens: 900, temperature: 0.22, samples: 4, retries: 1, hint: " Reason step by step and verify before the final answer." },
-  { maxTokens: 1024, temperature: 0.18, samples: 5, retries: 1, hint: " Reason step by step and verify before the final answer." },
+  { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "" },
+  { maxTokens: 440, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step." },
+  { maxTokens: 620, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer." },
+  { maxTokens: 760, temperature: 0.6, samples: 5, retries: 1, hint: " Think step by step, then check your answer." },
+  { maxTokens: 900, temperature: 0.58, samples: 6, retries: 1, hint: " Reason step by step, then verify your answer before committing." },
+  { maxTokens: 1024, temperature: 0.58, samples: 7, retries: 1, hint: " Reason step by step, then verify your answer before committing." },
 ];
 
 export function computeLevelClamp(level: number): number {

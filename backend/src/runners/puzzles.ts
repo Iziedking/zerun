@@ -138,6 +138,43 @@ const MEDIUM_BUILDERS: Builder[] = [
       expected: String(expected),
     };
   },
+  // Two rates combining: work done by two helpers over a time.
+  (rng) => {
+    const a = intBetween(rng, 3, 9);
+    const b = intBetween(rng, 3, 9);
+    const hours = intBetween(rng, 2, 6);
+    const expected = (a + b) * hours;
+    return {
+      prompt: `One worker makes ${a} parts an hour and another makes ${b} parts an hour. Working together for ${hours} hours, how many parts do they make in total?`,
+      expected: String(expected),
+    };
+  },
+  // Change from a purchase: total cost then subtract from an amount paid.
+  (rng) => {
+    const qty = intBetween(rng, 3, 9);
+    const price = intBetween(rng, 3, 12);
+    const paid = qty * price + intBetween(rng, 5, 40);
+    const expected = paid - qty * price;
+    return {
+      prompt: `You buy ${qty} items at ${price} dollars each and pay with ${paid} dollars. How much change do you get back?`,
+      expected: String(expected),
+    };
+  },
+  // Average of a small set, where missing the division loses it.
+  (rng) => {
+    const k = 4;
+    const base = intBetween(rng, 5, 20);
+    const nums = [base, base + intBetween(rng, 1, 8), base + intBetween(rng, 1, 8), base + intBetween(rng, 1, 8)];
+    const sum = nums.reduce((a, b) => a + b, 0);
+    // keep the average a whole number by adjusting the last term
+    const rem = sum % k;
+    if (rem !== 0) nums[3]! += k - rem;
+    const expected = nums.reduce((a, b) => a + b, 0) / k;
+    return {
+      prompt: `What is the average of these numbers: ${nums.join(", ")}?`,
+      expected: String(expected),
+    };
+  },
 ];
 
 // Multi-step puzzles where a bigger reasoning budget pays off. A low tier agent
@@ -178,6 +215,43 @@ const HARD_BUILDERS: Builder[] = [
     return {
       prompt: `${names[0]} is 4 times as old as ${names[1]}. In ${y} years, ${names[0]} will be twice as old as ${names[1]}. How old is ${names[1]} now? End with "ANSWER: <number>".`,
       expected: String(t),
+    };
+  },
+  // Hard: two tanks, one filling and one draining, net over time. A single pass
+  // often drops the sign or the net rate; voting across passes recovers it.
+  (rng) => {
+    const fill = intBetween(rng, 8, 20);
+    const drain = intBetween(rng, 2, 7);
+    const start = intBetween(rng, 10, 40);
+    const mins = intBetween(rng, 3, 9);
+    const expected = start + (fill - drain) * mins;
+    return {
+      prompt: `A tank holds ${start} litres. A pipe adds ${fill} litres a minute while a drain removes ${drain} litres a minute. After ${mins} minutes, how many litres are in the tank? End with "ANSWER: <number>".`,
+      expected: String(expected),
+    };
+  },
+  // Hard: discount then sales tax, in that order. Order and the two-step percent
+  // both trip a quick single pass.
+  (rng) => {
+    const base = intBetween(rng, 2, 12) * 50;
+    const disc = pick(rng, [10, 20, 25, 40]);
+    const tax = pick(rng, [5, 8, 10]);
+    const afterDisc = (base * (100 - disc)) / 100;
+    const expected = Math.round((afterDisc * (100 + tax)) / 100);
+    return {
+      prompt: `An item costs ${base} dollars. Take ${disc}% off, then add ${tax}% sales tax on the discounted price. What is the final price in whole dollars? Round to the nearest whole number. End with "ANSWER: <number>".`,
+      expected: String(expected),
+    };
+  },
+  // Hard: total then split unevenly. Setting up the parts is the slip point.
+  (rng) => {
+    const parts = intBetween(rng, 2, 5);
+    const unit = intBetween(rng, 6, 18);
+    const total = parts * unit + 2 * unit; // shared as parts:2
+    const expected = 2 * unit;
+    return {
+      prompt: `${total} dollars is split between two people in the ratio ${parts} to 2. How many dollars does the person with the smaller share get? End with "ANSWER: <number>".`,
+      expected: String(expected),
     };
   },
 ];
@@ -228,14 +302,18 @@ export function generatePuzzles(contestId: number, count: number): Puzzle[] {
   const medium = shuffled(rng, MEDIUM_BUILDERS);
   const hard = shuffled(rng, [...HARD_BUILDERS, ...OG_BUILDERS]);
 
+  // Weighted toward the medium band: that is the sweet spot where a single hot
+  // pass slips but self-consistency voting reliably recovers, so Compute separates
+  // the field. Too-easy puzzles everyone aces; too-hard ones everyone misses;
+  // neither rewards training. One easy opener, mostly medium, a couple of hard.
   const out: Puzzle[] = [];
   const idx = { easy: 0, medium: 0, hard: 0 };
   for (let i = 0; i < count; i++) {
     const frac = count <= 1 ? 0 : i / (count - 1);
     const build =
-      frac < 0.4
+      frac < 0.2
         ? easy[idx.easy++ % easy.length]!
-        : frac < 0.7
+        : frac < 0.5
           ? medium[idx.medium++ % medium.length]!
           : hard[idx.hard++ % hard.length]!;
     const { prompt, expected } = build(rng);
