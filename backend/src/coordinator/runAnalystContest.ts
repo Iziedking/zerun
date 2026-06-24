@@ -10,6 +10,8 @@ import { onchainEntryCount, syncEntriesFromChain } from "./contestOps.js";
 import {
   CONTEST_TYPE,
   agentRegistryAbi,
+  contestEngineAbi,
+  coordinatorAddress,
   loadDeployment,
   publicClient,
 } from "../chain/contracts.js";
@@ -26,13 +28,14 @@ interface Entry {
   agentId: number;
   operator: string;
   agentName: string;
+  isHouse: boolean;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function readEntries(contestId: number): Promise<Entry[]> {
-  const { rows } = await query<{ agent_id: string; operator: string; name: string | null }>(
-    `select e.agent_id, e.operator, m.name
+  const { rows } = await query<{ agent_id: string; operator: string; name: string | null; is_house: boolean | null }>(
+    `select e.agent_id, e.operator, m.name, m.is_house
        from contest_entries e
        left join agents_meta m on m.agent_id = e.agent_id
       where e.contest_id = $1
@@ -43,6 +46,7 @@ async function readEntries(contestId: number): Promise<Entry[]> {
     agentId: Number(r.agent_id),
     operator: r.operator,
     agentName: r.name ?? `Agent #${r.agent_id}`,
+    isHouse: Boolean(r.is_house),
   }));
 }
 
@@ -93,10 +97,14 @@ async function recordPrediction(
   scores: Map<number, AgentScore>,
   nameOf: Map<number, string>,
 ): Promise<void> {
-  const score = scores.get(entry.agentId)!;
-  if (outcome.verdict === "correct") score.correct += 1;
-  score.totalLatencyMs += outcome.latencyMs;
-  score.passes = (score.passes ?? 0) + (outcome.samples ?? 0);
+  // House agents have no score entry: they still forecast (persisted and broadcast
+  // below for feed activity) but contribute nothing to standings or payouts.
+  const score = scores.get(entry.agentId);
+  if (score) {
+    if (outcome.verdict === "correct") score.correct += 1;
+    score.totalLatencyMs += outcome.latencyMs;
+    score.passes = (score.passes ?? 0) + (outcome.samples ?? 0);
+  }
 
   await query(
     `insert into solve_runs
@@ -136,7 +144,7 @@ async function recordPrediction(
     },
   });
 
-  pushStandings(contestId, rankAgents([...scores.values()]), nameOf);
+  if (score) pushStandings(contestId, rankAgents([...scores.values()]), nameOf);
 }
 
 export async function runAnalystContest(contestId: number): Promise<RunResult> {
@@ -186,8 +194,27 @@ export async function runAnalystContest(contestId: number): Promise<RunResult> {
   const planOf = new Map<number, ReturnType<typeof computePlan>>();
   for (const e of entries) planOf.set(e.agentId, computePlan(levelOf.get(e.agentId)!));
 
+  // House agents forecast for the feed (activity) but are never scored, ranked, or
+  // paid: they only fill space, so the prize goes to real operators. They are kept
+  // only for an autopilot house-only demo (no real player, coordinator sponsor), so
+  // it still settles; a hosted contest with no real player refunds its host instead.
+  const hasReal = entries.some((e) => !e.isHouse);
+  let excludeHouse = hasReal;
+  if (!excludeHouse) {
+    const sponsor = (
+      await publicClient.readContract({
+        address: dep.contestEngine,
+        abi: contestEngineAbi,
+        functionName: "getContest",
+        args: [BigInt(contestId)],
+      })
+    ).sponsor;
+    excludeHouse = sponsor.toLowerCase() !== coordinatorAddress().toLowerCase();
+  }
+
   const scores = new Map<number, AgentScore>();
   for (const e of entries) {
+    if (e.isHouse && excludeHouse) continue;
     scores.set(e.agentId, {
       agentId: e.agentId,
       operator: e.operator,

@@ -204,7 +204,7 @@ async function upgradeHouseTier(
   }
 }
 
-async function seedHouseInto(contestId: number): Promise<void> {
+export async function seedHouseInto(contestId: number): Promise<void> {
   const dep = loadDeployment();
   const house = await ensureHouseRoster();
   for (const h of house) {

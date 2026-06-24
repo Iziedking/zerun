@@ -26,6 +26,7 @@ import { openContest, onchainEntryCount } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
+import { seedHouseInto } from "../coordinator/autopilot.js";
 
 // Read API plus the admin/demo triggers. The live feed itself goes over the
 // WebSocket; these endpoints serve initial loads, lookups, and the proofs
@@ -541,6 +542,16 @@ app.post("/api/contests/host", async (c) => {
          max_operators = excluded.max_operators`,
     [id, puzzleCount, kind === "analyst" ? "PREDICTION" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators],
   );
+
+  // Give the hosted contest a field so it does not sit empty and cancel, the way
+  // the autopilot seeds its own. Only for uncapped contests: a host who set an
+  // operator cap wants specific entrants, so leave those for real players. The
+  // house joins in the background; the open window gives them time to register.
+  if (maxOperators === null) {
+    void seedHouseInto(id).catch((e) =>
+      console.error(`host ${id}: house seed failed:`, (e as Error).message),
+    );
+  }
   return c.json({ ok: true, contestId: id, kind });
 });
 
@@ -937,6 +948,10 @@ async function standingsFor(contestId: number) {
        left join agents_meta m on m.agent_id = e.agent_id
        left join solve_runs s on s.contest_id = e.contest_id and s.agent_id = e.agent_id
       where e.contest_id = $1
+        and (not coalesce(m.is_house, false)
+             or not exists (select 1 from contest_entries re
+                              join agents_meta rm on rm.agent_id = re.agent_id
+                             where re.contest_id = $1 and not coalesce(rm.is_house, false)))
       group by e.agent_id, e.operator, m.name, m.compute_level
       order by correct desc, coalesce(m.compute_level, 0) desc, total_latency asc, e.agent_id asc`,
     [contestId],
