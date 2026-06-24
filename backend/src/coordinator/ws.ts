@@ -27,6 +27,7 @@ export interface SolvePayload {
   latencyMs: number;
   samples?: number;
   agreement?: number;
+  sources?: number;
 }
 
 export interface StandingRow {

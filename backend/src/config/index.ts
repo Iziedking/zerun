@@ -43,6 +43,12 @@ export const config = {
     routerBaseUrl: process.env.COMPUTE_ROUTER_BASE_URL ?? "",
     routerApiKey: process.env.COMPUTE_ROUTER_API_KEY ?? "",
   },
+  intel: {
+    // Exa (exa.ai) search key. When set, high-Compute agents research a market
+    // before forecasting, so the Analyst becomes a real competition. Without it,
+    // every agent forecasts from its prior (the old behavior).
+    exaKey: process.env.EXA_API_KEY ?? "",
+  },
   storage: {
     // 0G Storage indexer (Galileo turbo). The flow contract is auto-discovered.
     indexerRpc: optional("STORAGE_INDEXER_RPC", "https://indexer-storage-testnet-turbo.0g.ai"),

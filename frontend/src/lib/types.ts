@@ -94,6 +94,7 @@ export interface FeedItem {
   verified: boolean | null;
   latency_ms: number;
   samples?: number;
+  sources?: number;
   created_at: string | number | null;
   agentName?: string;
 }
@@ -183,6 +184,7 @@ export interface WsSolvePayload {
   verified: boolean | null;
   latencyMs: number;
   samples?: number;
+  sources?: number;
 }
 
 export interface WsStandingPayload {

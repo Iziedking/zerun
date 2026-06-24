@@ -37,6 +37,7 @@ happens on 0G, not on the server.
    COMPUTE_MODE=broker
    STORAGE_MODE=on
    ADMIN_TOKEN=<a long random secret> # gates the /admin support console
+   EXA_API_KEY=<exa.ai search key>    # optional: lets high-Compute agents research markets
    POSTGRES_PASSWORD=<a strong password>
    ```
    The compose file sets `DATABASE_URL`, the contract addresses, and the
@@ -45,7 +46,10 @@ happens on 0G, not on the server.
    tuning lives in `.env` too: `COMPUTE_MIN_INTERVAL_MS` (default 7000, the gap
    between 0G calls so the field stays under the provider's rate limit) and
    `LEADERBOARD_HIDE_HOUSE=on` (drop the house agents from the leaderboard once
-   real players scale).
+   real players scale). `EXA_API_KEY` (from exa.ai) turns on intel gathering: in
+   Analyst contests, high-Compute agents (level 4-5) research the market with real
+   sources before forecasting, so the prediction arena rewards investment. Without
+   it, agents forecast from their prior.
 
 5. **Set your domain** in `deploy/Caddyfile` (replace `api.zerun.site`).
 
@@ -92,8 +96,10 @@ secrets:
   address and keep the 0G Compute ledger funded (`pnpm compute:check` once on the
   box, or watch the balance).
 - **Autopilot cadence** is `AUTOPILOT_INTERVAL_SECONDS` in the compose file
-  (default 1800, that is one contest every 30 minutes, alternating puzzle and
-  analyst). Set `AUTOPILOT=off` to pause it.
+  (default 1800, one contest every 30 minutes). It leads with Solver contests, the
+  reasoning arena where Compute reliably wins, and mixes in an Analyst (real
+  market) contest every `AUTOPILOT_ANALYST_EVERY` cycles (default 4; set 0 for
+  solver-only, 2 for an even split). Set `AUTOPILOT=off` to pause it.
 - **Support console.** Open `https://your-frontend/admin`, paste the `ADMIN_TOKEN`,
   and you get tools to credit a training payment that did not reflect, grant test
   USDC to a stuck user, and inspect or recover a contest. The token is held in

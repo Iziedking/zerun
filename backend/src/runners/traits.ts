@@ -42,6 +42,10 @@ export interface InferencePlan {
   samples: number; // self-consistency passes; the majority answer wins
   retries: number; // extra attempts on an errored pass
   hint: string; // appended to the system prompt
+  // Analyst only: how many sources the agent researches before forecasting. A
+  // top-tier perk, so reaching level 4-5 unlocks real research power. Solver
+  // contests ignore it.
+  intel?: number;
 }
 
 // Self-consistency passes allowed by the compute budget (tier). Kept small so a

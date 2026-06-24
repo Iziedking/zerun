@@ -37,6 +37,7 @@ function feedItemToRow(f: FeedItem): SolveRow {
     verified: f.verified,
     source: f.source,
     samples: f.samples,
+    sources: f.sources,
   };
 }
 
@@ -95,6 +96,7 @@ export function ContestLive({
         verified: p.verified,
         source: p.source,
         samples: p.samples,
+        sources: p.sources,
         fresh: true,
       };
       setRows((prev) => [row, ...prev].slice(0, MAX_ROWS));

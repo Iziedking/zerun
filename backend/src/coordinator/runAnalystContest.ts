@@ -96,19 +96,21 @@ async function recordPrediction(
   const score = scores.get(entry.agentId)!;
   if (outcome.verdict === "correct") score.correct += 1;
   score.totalLatencyMs += outcome.latencyMs;
+  score.passes = (score.passes ?? 0) + (outcome.samples ?? 0);
 
   await query(
     `insert into solve_runs
-       (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, sources)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      on conflict (contest_id, agent_id, puzzle_idx) do update set
        answer = excluded.answer, verdict = excluded.verdict, source = excluded.source,
        provider = excluded.provider, model = excluded.model, chat_id = excluded.chat_id,
-       verified = excluded.verified, latency_ms = excluded.latency_ms`,
+       verified = excluded.verified, latency_ms = excluded.latency_ms,
+       samples = excluded.samples, sources = excluded.sources`,
     [
       contestId, entry.agentId, entry.operator, market.idx, market.question, market.winnerLabel,
       outcome.prediction, outcome.verdict, outcome.source, outcome.provider, outcome.model,
-      outcome.chatID, outcome.verified, outcome.latencyMs,
+      outcome.chatID, outcome.verified, outcome.latencyMs, outcome.samples, outcome.sources,
     ],
   );
 
@@ -129,6 +131,8 @@ async function recordPrediction(
       chatID: outcome.chatID,
       verified: outcome.verified,
       latencyMs: outcome.latencyMs,
+      samples: outcome.samples,
+      sources: outcome.sources,
     },
   });
 

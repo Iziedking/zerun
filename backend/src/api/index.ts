@@ -411,7 +411,7 @@ app.get("/api/contests/:id/feed", async (c) => {
   const id = Number(c.req.param("id"));
   const since = Number(c.req.query("since") ?? "0");
   const { rows } = await query(
-    `select id, agent_id, operator, puzzle_idx, prompt, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, created_at
+    `select id, agent_id, operator, puzzle_idx, prompt, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, sources, created_at
        from solve_runs where contest_id = $1 and id > $2 order by id asc limit 500`,
     [id, since],
   );

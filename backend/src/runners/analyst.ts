@@ -1,12 +1,14 @@
 import { callModel } from "../compute/client.js";
 import type { ComputeSource } from "../compute/client.js";
 import { extractProbability, brier, type Market } from "./markets.js";
+import { gatherIntel } from "./intel.js";
 import type { InferencePlan } from "./traits.js";
 
-// One agent forecasting one resolved market. The agent reasons on 0G Compute and
-// commits a probability that the market resolves Yes. We grade against the real
-// outcome with a Brier score, so both being right and being well calibrated
-// matter. The tier sets the reasoning budget, same as the Solver.
+// One agent forecasting one resolved market. A high-Compute agent first researches
+// the market (its `intel` budget pulls real sources via Exa), then reasons on 0G
+// Compute across several passes and commits an averaged probability. An untrained
+// agent forecasts blind from its prior. We grade against the real outcome, so the
+// agent that researched and grounded its call beats the one that guessed.
 
 export interface PredictOutcome {
   marketIdx: number;
@@ -23,70 +25,96 @@ export interface PredictOutcome {
   chatID: string | null;
   verified: boolean | null;
   latencyMs: number;
+  samples: number; // reasoning passes averaged
+  sources: number; // research sources gathered before forecasting
 }
 
 const SYSTEM_PROMPT =
-  "You are a forecaster in a real prediction-market arena. Read the market, weigh " +
-  "what you know about it, reason briefly, then end with a line in exactly this " +
-  "form: PROB: <0-100>, the percent chance it resolves Yes. Use the full 0 to 100 " +
-  "range and be decisive when the evidence is clear. Give a single number.";
+  "You are an analyst in a real prediction-market arena, forecasting whether a " +
+  "market resolves Yes. If research snippets are provided, base your answer on " +
+  "them, as they may state the outcome directly; do not contradict them. Reason " +
+  "briefly, then end with a line in exactly this form: PROB: <0-100>, the percent " +
+  "chance it resolves Yes. Use the full 0 to 100 range and be decisive when the " +
+  "evidence is clear. Give a single number.";
 
-function buildPrompt(market: Market): string {
-  const ctx = market.description ? `\nContext: ${market.description.slice(0, 400)}` : "";
+function buildPrompt(market: Market, research: string): string {
+  const ctx = research
+    ? `\n\nResearch (recent sources):\n${research}\n`
+    : market.description
+      ? `\nContext: ${market.description.slice(0, 300)}`
+      : "";
   return `Market: ${market.question}${ctx}\nWhat is the percent chance this resolves "${market.outcomes[0]}"?`;
 }
 
 export async function predictMarket(market: Market, plan: InferencePlan): Promise<PredictOutcome> {
-  // At least two attempts with a short backoff, so a transient 0G rate-limit or
-  // socket drop does not turn into a permanent error verdict.
-  const attempts = Math.max(2, plan.retries + 1);
+  // Research first (a top-tier perk): pull real sources about the market so a
+  // trained agent grounds its call instead of guessing. Untrained agents get none.
+  const sources = (plan.intel ?? 0) > 0 ? await gatherIntel(market.question, plan.intel!) : [];
+  const research = sources
+    .map((s, i) => `[${i + 1}] ${s.title}: ${s.text}`)
+    .join("\n")
+    .slice(0, 2400);
+
+  // Then forecast across a few passes and average, capped so the Analyst stays
+  // snappier than the Solver (research, not passes, is the Analyst's lever).
+  const passes = Math.max(1, Math.min(plan.samples, 3));
+  const probs: number[] = [];
   let latencyMs = 0;
   let last: Awaited<ReturnType<typeof callModel>> | null = null;
   let lastErr = "";
 
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const res = await callModel({
-        systemPrompt: SYSTEM_PROMPT + plan.hint,
-        userPrompt: buildPrompt(market),
-        maxTokens: plan.maxTokens,
-        temperature: plan.temperature,
-      });
-      latencyMs += res.latencyMs;
-      last = res;
-      const prob = extractProbability(res.text);
-      if (prob !== null) {
-        const predictedYes = prob >= 0.5;
-        const correct = predictedYes === (market.winnerIndex === 0);
-        return {
-          marketIdx: market.idx,
-          question: market.question,
-          winnerLabel: market.winnerLabel,
-          prediction: `${predictedYes ? market.outcomes[0] : market.outcomes[1]} ${Math.round(prob * 100)}%`,
-          probYes: prob,
-          brier: brier(prob, market.winnerIndex),
-          verdict: correct ? "correct" : "wrong",
-          raw: res.text,
-          source: res.source,
-          provider: res.provider,
-          model: res.model,
-          chatID: res.chatID,
-          verified: res.verified,
-          latencyMs,
-        };
+  for (let i = 0; i < passes; i++) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await callModel({
+          systemPrompt: SYSTEM_PROMPT + plan.hint,
+          userPrompt: buildPrompt(market, research),
+          maxTokens: plan.maxTokens,
+          temperature: plan.temperature,
+        });
+        latencyMs += res.latencyMs;
+        last = res;
+        const p = extractProbability(res.text);
+        if (p !== null) probs.push(p);
+        break;
+      } catch (err) {
+        lastErr = (err as Error).message ?? "error";
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 350));
       }
-    } catch (err) {
-      lastErr = (err as Error).message ?? "error";
-      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 350 * (i + 1)));
     }
   }
 
-  // No parseable probability, or every attempt errored. Worst Brier either way.
+  const base = {
+    marketIdx: market.idx,
+    question: market.question,
+    winnerLabel: market.winnerLabel,
+    latencyMs,
+    samples: passes,
+    sources: sources.length,
+  };
+
+  if (probs.length > 0 && last) {
+    const avg = probs.reduce((a, b) => a + b, 0) / probs.length;
+    const predictedYes = avg >= 0.5;
+    const correct = predictedYes === (market.winnerIndex === 0);
+    return {
+      ...base,
+      prediction: `${predictedYes ? market.outcomes[0] : market.outcomes[1]} ${Math.round(avg * 100)}%`,
+      probYes: avg,
+      brier: brier(avg, market.winnerIndex),
+      verdict: correct ? "correct" : "wrong",
+      raw: last.text,
+      source: last.source,
+      provider: last.provider,
+      model: last.model,
+      chatID: last.chatID,
+      verified: last.verified,
+    };
+  }
+
   if (last) {
     return {
-      marketIdx: market.idx,
-      question: market.question,
-      winnerLabel: market.winnerLabel,
+      ...base,
       prediction: "no call",
       probYes: null,
       brier: 1,
@@ -97,13 +125,11 @@ export async function predictMarket(market: Market, plan: InferencePlan): Promis
       model: last.model,
       chatID: last.chatID,
       verified: last.verified,
-      latencyMs,
     };
   }
+
   return {
-    marketIdx: market.idx,
-    question: market.question,
-    winnerLabel: market.winnerLabel,
+    ...base,
     prediction: "error",
     probYes: null,
     brier: 1,
@@ -114,6 +140,5 @@ export async function predictMarket(market: Market, plan: InferencePlan): Promis
     model: "error",
     chatID: null,
     verified: null,
-    latencyMs,
   };
 }

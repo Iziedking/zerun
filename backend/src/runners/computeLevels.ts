@@ -20,13 +20,16 @@ export const COMPUTE_COSTS_OG = [0.8, 2, 5, 12, 30] as const;
 // across more diverse attempts and reliably out-scores the baseline. Level 0 is
 // one hot single shot, where the house sits. Passes are 0G calls and the provider
 // caps at 10/min, so the climb is deliberate.
+// `intel` is the Analyst research perk, gated to the top tiers so reaching level
+// 4-5 unlocks real research power: low levels forecast blind, the top tiers pull
+// and reason over real sources. Solver contests ignore it.
 const LEVELS: InferencePlan[] = [
-  { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "" },
-  { maxTokens: 440, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step." },
-  { maxTokens: 620, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer." },
-  { maxTokens: 760, temperature: 0.6, samples: 5, retries: 1, hint: " Think step by step, then check your answer." },
-  { maxTokens: 900, temperature: 0.58, samples: 6, retries: 1, hint: " Reason step by step, then verify your answer before committing." },
-  { maxTokens: 1024, temperature: 0.58, samples: 7, retries: 1, hint: " Reason step by step, then verify your answer before committing." },
+  { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "", intel: 0 },
+  { maxTokens: 440, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step.", intel: 0 },
+  { maxTokens: 620, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer.", intel: 0 },
+  { maxTokens: 760, temperature: 0.6, samples: 5, retries: 1, hint: " Think step by step, then check your answer.", intel: 2 },
+  { maxTokens: 900, temperature: 0.58, samples: 6, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 5 },
+  { maxTokens: 1024, temperature: 0.58, samples: 7, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 8 },
 ];
 
 export function computeLevelClamp(level: number): number {

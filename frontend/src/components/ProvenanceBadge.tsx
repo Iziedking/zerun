@@ -12,6 +12,9 @@ interface Props {
   // Self-consistency passes: how many 0G inference calls this one answer took.
   // A higher-Compute agent runs more, so this is the visible "more compute" signal.
   samples?: number;
+  // Analyst research: sources the agent gathered before forecasting (a top-tier
+  // Compute perk). The clearest "this agent did the work" signal in a market.
+  sources?: number;
 }
 
 // The 0G provenance for one answer, reframed for the cartoon look: a small inset
@@ -25,6 +28,7 @@ export function ProvenanceBadge({
   verified,
   source,
   samples,
+  sources,
 }: Props) {
   const isVerified = verified === true;
 
@@ -55,6 +59,9 @@ export function ProvenanceBadge({
         <Field label="latency" value={formatLatency(latencyMs)} />
         {samples != null && samples > 0 && (
           <Field label="0G passes" value={`${samples}`} accent />
+        )}
+        {sources != null && sources > 0 && (
+          <Field label="researched" value={`${sources} sources`} accent />
         )}
       </dl>
 

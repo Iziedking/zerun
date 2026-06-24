@@ -18,6 +18,7 @@ export interface SolveRow {
   verified: boolean | null;
   source: string;
   samples?: number;
+  sources?: number;
   fresh?: boolean;
 }
 
@@ -95,6 +96,7 @@ export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: Cont
           verified={row.verified}
           source={row.source}
           samples={row.samples}
+          sources={row.sources}
         />
       </div>
     </StickerCard>

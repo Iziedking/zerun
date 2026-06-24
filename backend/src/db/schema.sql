@@ -108,6 +108,8 @@ create index if not exists solve_runs_contest_idx on solve_runs (contest_id, id)
 -- the winning one. Part of the provable audit (better builds vote more tightly).
 alter table solve_runs add column if not exists samples int;
 alter table solve_runs add column if not exists agreement int;
+-- Analyst research: sources the agent gathered (via Exa) before forecasting.
+alter table solve_runs add column if not exists sources int;
 
 -- When the join window closes (on-chain endTime), so the contest page can show a
 -- countdown and the phase.

@@ -20,8 +20,9 @@ import {
   waitReceipt,
 } from "../chain/contracts.js";
 
-// The self-driving arena. On a cadence it opens a contest, alternating puzzle
-// and analyst, and seeds a small house roster so there is always a field to
+// The self-driving arena. On a cadence it opens a contest, leading with Solver
+// (reasoning) and mixing in an Analyst (real markets) every Nth cycle, and seeds
+// a small house roster so there is always a field to
 // watch. A due-sweeper settles any open contest whose window has closed,
 // including ones hosted by other operators, so hosting and autopilot share one
 // settlement path. An in-flight guard and a watchdog keep two runs from ever
@@ -361,10 +362,16 @@ async function startOpenLoop(): Promise<void> {
   await ensureHouseRoster().catch((err) =>
     console.error("autopilot: house warmup failed:", (err as Error).message),
   );
+  // Lead with Solver contests: that is the reasoning arena where Compute reliably
+  // wins. Analyst contests forecast real markets, which is knowledge-bound (the
+  // model cannot out-forecast an event it has no data on), so they run only every
+  // Nth cycle. Set AUTOPILOT_ANALYST_EVERY=0 for solver-only, 2 for an even split.
+  const analystEvery = Number(process.env.AUTOPILOT_ANALYST_EVERY ?? "4");
   let cycle = 0;
   for (;;) {
     try {
-      const kind = cycle % 2 === 0 ? "solver" : "analyst";
+      const kind =
+        analystEvery > 0 && cycle % analystEvery === analystEvery - 1 ? "analyst" : "solver";
       // Vary the pool so the arena does not look canned.
       const pool = POOL_CHOICES[Math.floor(Math.random() * POOL_CHOICES.length)]!;
       console.log(`autopilot: opening a ${kind} contest (${pool} tUSDC)`);
