@@ -10,7 +10,7 @@ import {
   useWriteContract,
 } from "wagmi";
 import { useQueryClient } from "@tanstack/react-query";
-import { agentRegistryAbi, contestEngineAbi, testUsdcAbi } from "@/lib/contracts";
+import { agentRegistryAbi, contestEngineAbi } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
 import { useAgents, useContests } from "@/lib/useAgents";
 import { useUsdcBalance } from "@/lib/useChainData";
@@ -32,9 +32,6 @@ import {
   SkinnedAgent,
   StickerCard,
 } from "@/components/zerun";
-
-// 100 tUSDC in 6 decimals.
-const MINT_AMOUNT = 100_000000n;
 
 // At most two agents per operator (the contract caps it there).
 const MAX_AGENTS = 2;
@@ -170,24 +167,21 @@ function OnboardingInner() {
     }
   }, [name, address, agentId, queryClient]);
 
-  // Step c: mint 100 tUSDC so the agent can enter.
+  // Step c: top up test USDC via the CAPPED backend faucet (100 tUSDC per wallet
+  // per week), not a direct contract mint. This is what stops claiming several
+  // agents from stacking free tUSDC. If already topped up this week, the wallet
+  // already holds its tUSDC, so just continue.
   const mint = useCallback(async () => {
     setError(null);
-    if (!usdcAddr || !address || !publicClient) return;
+    if (!address) return;
     setBusy(true);
     try {
-      const hash = await walletAction.run(
-        () =>
-          writeContractAsync({
-            abi: testUsdcAbi,
-            address: usdcAddr,
-            functionName: "mint",
-            args: [address, MINT_AMOUNT],
-            chainId: zeroGGalileo.id,
-          }),
-        "Approve in your wallet to claim your test USDC.",
-      );
-      await publicClient.waitForTransactionReceipt({ hash });
+      try {
+        await api.faucetUsdc({ owner: address });
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? "");
+        if (!/claimed your|this week|429/i.test(msg)) throw e;
+      }
       await balance.refetch();
       setStep(3);
     } catch (e) {
@@ -195,7 +189,7 @@ function OnboardingInner() {
     } finally {
       setBusy(false);
     }
-  }, [usdcAddr, address, publicClient, writeContractAsync, balance]);
+  }, [address, balance]);
 
   // Step d: send the agent into the easiest open contest.
   const sendIn = useCallback(async () => {
@@ -313,7 +307,7 @@ function OnboardingInner() {
           {step === 2 && (
             <Stage
               title="Grab some test USDC"
-              body="Mints 100 test USDC to your wallet so your agent can enter."
+              body="Tops up your wallet from the faucet, 100 tUSDC per wallet each week, so your agent can enter."
             >
               <div className="flex justify-center">
                 <CoinStat value={balance.formatted} suffix="tUSDC" caption="your balance" />
@@ -326,7 +320,7 @@ function OnboardingInner() {
                 icon={busy ? <Spinner /> : undefined}
                 className="w-full"
               >
-                Get 100 tUSDC
+                Get test USDC
               </PopButton>
             </Stage>
           )}

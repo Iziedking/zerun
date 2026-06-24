@@ -66,6 +66,11 @@ app.get("/api/stats", async (c) => {
 // be farmed. The coordinator mints to the operator and pays the gas.
 const USDC_WEEKLY_CAP = 100_000000n; // 100 tUSDC (6 decimals)
 
+// Serialize faucet claims per operator within this process, so two concurrent
+// requests cannot both pass the cap check before either records its claim and
+// each mint the full remaining amount.
+const faucetInFlight = new Set<string>();
+
 async function usdcClaimedThisWeek(owner: string): Promise<bigint> {
   const { rows } = await query<{ sum: string }>(
     `select coalesce(sum(amount_wei::numeric), 0)::text as sum
@@ -96,28 +101,38 @@ app.post("/api/faucet/usdc", async (c) => {
   const owner = String(body.owner ?? "").toLowerCase();
   if (!/^0x[0-9a-f]{40}$/.test(owner)) return c.json({ error: "a valid wallet is required" }, 400);
 
-  const claimedWei = await usdcClaimedThisWeek(owner);
-  const remaining = USDC_WEEKLY_CAP - claimedWei;
-  if (remaining <= 0n) {
-    return c.json(
-      { error: "you have claimed your 100 tUSDC for this week. It resets in a few days." },
-      429,
-    );
+  if (faucetInFlight.has(owner)) {
+    return c.json({ error: "a claim is already in progress for this wallet" }, 429);
   }
+  faucetInFlight.add(owner);
+  try {
+    const claimedWei = await usdcClaimedThisWeek(owner);
+    const remaining = USDC_WEEKLY_CAP - claimedWei;
+    if (remaining <= 0n) {
+      return c.json(
+        { error: "you have claimed your 100 tUSDC for this week. It resets in a few days." },
+        429,
+      );
+    }
 
-  const dep = loadDeployment();
-  const hash = await coordinatorWallet().writeContract({
-    address: dep.testUSDC,
-    abi: testUsdcAbi,
-    functionName: "mint",
-    args: [owner as `0x${string}`, remaining],
-    account: coordinatorAccount(),
-    chain: undefined,
-    gasPrice: GAS_PRICE,
-  });
-  await waitReceipt(hash);
-  await query("insert into usdc_claims (operator, amount_wei) values ($1, $2)", [owner, remaining.toString()]);
-  return c.json({ ok: true, minted: remaining.toString(), txHash: hash });
+    // Record the claim before minting, so even a retry after a slow mint cannot
+    // double-spend the weekly allowance.
+    await query("insert into usdc_claims (operator, amount_wei) values ($1, $2)", [owner, remaining.toString()]);
+    const dep = loadDeployment();
+    const hash = await coordinatorWallet().writeContract({
+      address: dep.testUSDC,
+      abi: testUsdcAbi,
+      functionName: "mint",
+      args: [owner as `0x${string}`, remaining],
+      account: coordinatorAccount(),
+      chain: undefined,
+      gasPrice: GAS_PRICE,
+    });
+    await waitReceipt(hash);
+    return c.json({ ok: true, minted: remaining.toString(), txHash: hash });
+  } finally {
+    faucetInFlight.delete(owner);
+  }
 });
 
 // Where training payments go, and the 0G cost ladder, so the frontend can send
