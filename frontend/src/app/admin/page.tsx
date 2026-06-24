@@ -40,6 +40,7 @@ export default function AdminPage() {
   const [contestId, setContestId] = useState("");
   const [contest, setContest] = useState<ContestInfo | null>(null);
   const [repair, setRepair] = useState<RepairInfo | null>(null);
+  const [confirmCredit, setConfirmCredit] = useState(false);
 
   // Token lives in memory only: not localStorage, sessionStorage, or cookies.
   // It is verified against the backend once, then held in state for this tab.
@@ -76,6 +77,18 @@ export default function AdminPage() {
     } finally {
       setBusy(false);
     }
+  };
+
+  // Actually credit the owed winners, after the in-app confirm.
+  const creditRepair = () => {
+    setConfirmCredit(false);
+    void run(async () => {
+      const r = await api.adminRepairClaims(Number(contestId), true, saved);
+      setRepair(r);
+      if (r.note) return r.note;
+      const credited = r.results?.filter((x) => x.action === "credited").length ?? 0;
+      return `Repaired #${contestId}: credited ${credited} winner(s).`;
+    });
   };
 
   const ready = Boolean(saved) && !busy;
@@ -388,23 +401,9 @@ export default function AdminPage() {
             <PopButton
               type="button"
               disabled={!ready || !contestId}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Credit owed winners for contest #${contestId}? This mints tUSDC and cannot be undone.`,
-                  )
-                )
-                  return;
-                void run(async () => {
-                  const r = await api.adminRepairClaims(Number(contestId), true, saved);
-                  setRepair(r);
-                  if (r.note) return r.note;
-                  const credited = r.results?.filter((x) => x.action === "credited").length ?? 0;
-                  return `Repaired #${contestId}: credited ${credited} winner(s).`;
-                });
-              }}
+              onClick={() => setConfirmCredit(true)}
             >
-              Repair + credit
+              Repair and credit
             </PopButton>
           </div>
 
@@ -439,6 +438,32 @@ export default function AdminPage() {
         <p className={"font-body text-[14px] font-bold " + (msg.ok ? "text-ink" : "text-coral")}>
           {msg.text}
         </p>
+      )}
+
+      {/* In-app confirm for the irreversible credit (no browser alert). */}
+      {confirmCredit && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/55 p-4"
+          onClick={() => setConfirmCredit(false)}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <StickerCard className="max-w-sm space-y-4 p-6">
+              <h3 className="font-display text-xl text-ink">Credit owed winners?</h3>
+              <p className="font-body text-[14px] leading-relaxed text-ink-2">
+                This credits the owed winners for contest #{contestId || "—"} by minting tUSDC to
+                their wallets. It cannot be undone. Run a dry-run check first if you have not.
+              </p>
+              <div className="flex justify-end gap-2">
+                <PopButton type="button" variant="ghost" onClick={() => setConfirmCredit(false)}>
+                  Cancel
+                </PopButton>
+                <PopButton type="button" onClick={creditRepair}>
+                  Credit
+                </PopButton>
+              </div>
+            </StickerCard>
+          </div>
+        </div>
       )}
     </div>
   );
