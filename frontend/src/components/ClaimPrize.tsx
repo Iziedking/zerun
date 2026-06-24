@@ -74,7 +74,17 @@ export function ClaimPrize({ contestId }: { contestId: number }) {
       setClaimTx(hash);
       setClaimed(true);
     } catch (e) {
-      setError(friendlyError(e, "Could not claim that one. Try again."));
+      // The tx can succeed on chain while a later step (receipt wait or the DB
+      // update) fails, so a retry then reverts with AlreadyClaimed. That means the
+      // prize is already in the winner's wallet: treat it as claimed, not an error,
+      // and sync the DB so the button settles to Claimed.
+      const msg = String((e as Error)?.message ?? "");
+      if (/AlreadyClaimed|already claimed/i.test(msg)) {
+        await api.claimed(contestId, { operator: address }).catch(() => {});
+        setClaimed(true);
+      } else {
+        setError(friendlyError(e, "Could not claim that one. Try again."));
+      }
     } finally {
       setBusy(false);
     }

@@ -755,12 +755,35 @@ app.get("/api/contests/:id/claim", async (c) => {
   const id = Number(c.req.param("id"));
   const operator = String(c.req.query("operator") ?? "").toLowerCase();
   if (!operator) return c.json({ error: "operator required" }, 400);
-  const { rows } = await query(
+  const { rows } = await query<{ claimed: boolean }>(
     "select operator, amount, leaf_index, proof, rank, claimed from payouts where contest_id = $1 and lower(operator) = $2",
     [id, operator],
   );
   if (rows.length === 0) return c.json({ eligible: false });
-  return c.json({ eligible: true, ...rows[0] });
+  const row = rows[0]!;
+
+  // The chain is the source of truth for "claimed", not the DB flag. The flag is
+  // set by a post-claim POST that can be missed if the receipt wait times out, so
+  // a prize claimed on chain can still read unclaimed in the DB, which makes the UI
+  // show a claim button that then reverts with AlreadyClaimed. Reconcile here: read
+  // prizeClaimed on chain and, if claimed, self-heal the DB so the UI shows Claimed.
+  if (!row.claimed) {
+    try {
+      const onchain = await publicClient.readContract({
+        address: loadDeployment().contestEngine,
+        abi: contestEngineAbi,
+        functionName: "prizeClaimed",
+        args: [BigInt(id), operator as `0x${string}`],
+      });
+      if (onchain) {
+        row.claimed = true;
+        await query("update payouts set claimed = true where contest_id = $1 and lower(operator) = $2", [id, operator]);
+      }
+    } catch {
+      /* RPC blip: fall back to the DB flag */
+    }
+  }
+  return c.json({ eligible: true, ...row });
 });
 
 app.post("/api/contests/:id/claimed", async (c) => {
