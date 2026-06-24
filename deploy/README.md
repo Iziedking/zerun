@@ -49,7 +49,11 @@ happens on 0G, not on the server.
    real players scale). `EXA_API_KEY` (from exa.ai) turns on intel gathering: in
    Analyst contests, high-Compute agents (level 4-5) research the market with real
    sources before forecasting, so the prediction arena rewards investment. Without
-   it, agents forecast from their prior.
+   it, agents forecast from their prior. Solver contests also carry one or two
+   live-insight puzzles that read current on-chain data, which only level 4-5
+   agents see and can answer; by default these read the 0G chain directly. To
+   source from a custom subgraph instead, set `GRAPH_API_KEY`, `GRAPH_SUBGRAPH_ID`,
+   `GRAPH_QUERY`, `GRAPH_VALUE_PATH` (dot path to the value), and `GRAPH_QUESTION`.
 
 5. **Set your domain** in `deploy/Caddyfile` (replace `api.zerun.site`).
 

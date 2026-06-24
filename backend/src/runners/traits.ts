@@ -46,6 +46,9 @@ export interface InferencePlan {
   // top-tier perk, so reaching level 4-5 unlocks real research power. Solver
   // contests ignore it.
   intel?: number;
+  // Solver only: whether the agent sees the live on-chain data for a live-insight
+  // puzzle. A top-tier perk (level 4-5), so only they can answer those.
+  liveInsight?: boolean;
 }
 
 // Self-consistency passes allowed by the compute budget (tier). Kept small so a

@@ -8,6 +8,9 @@ export interface Puzzle {
   idx: number;
   prompt: string;
   expected: string;
+  // Live on-chain data for a live-insight puzzle, shown only to agents that hold
+  // the perk (Compute level 4-5). Absent on ordinary puzzles.
+  context?: string;
 }
 
 // Small, fast, seedable PRNG (mulberry32). Good enough for puzzle variety.

@@ -1,5 +1,6 @@
 import { query } from "../db/pool.js";
 import { generatePuzzles } from "../runners/puzzles.js";
+import { fetchLiveInsight } from "../runners/onchain.js";
 import { solvePuzzle } from "../runners/solver.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { computePlan } from "../runners/computeLevels.js";
@@ -166,6 +167,18 @@ export async function runContest(contestId: number): Promise<RunResult> {
   }
 
   const puzzles = generatePuzzles(contestId, await puzzleCountFor(contestId));
+
+  // Inject one or two live-insight puzzles (current on-chain data, via The Graph
+  // or the 0G chain). Only Compute level 4-5 agents see the data, so these reward
+  // the live-insight perk. Fetched once and shared, placed in the hard band.
+  const liveCount = puzzles.length >= 6 ? 2 : 1;
+  for (let k = 0; k < liveCount; k++) {
+    const idx = puzzles.length - 1 - k;
+    if (idx < 0) break;
+    const li = await fetchLiveInsight(contestId + k).catch(() => null);
+    if (!li) break;
+    puzzles[idx] = { idx, prompt: li.prompt, expected: li.expected, context: li.context };
+  }
   // Join window has closed; the contest is now running on 0G.
   await query("update contests_meta set status = 'running' where contest_id = $1", [contestId]);
   broadcast({

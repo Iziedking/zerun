@@ -62,12 +62,18 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
   let errors = 0;
   const maxErrors = plan.retries + 1;
 
+  // Live-insight puzzles carry current on-chain data. Only an agent with the perk
+  // (Compute level 4-5) sees it; everyone else gets the bare question and has to
+  // guess a value they cannot know.
+  const userPrompt =
+    plan.liveInsight && puzzle.context ? `${puzzle.prompt}\n\n${puzzle.context}` : puzzle.prompt;
+
   for (let pass = 0; pass < plan.samples; pass++) {
     try {
       const res = await callWithRetry(
         {
           systemPrompt: SYSTEM_PROMPT + plan.hint,
-          userPrompt: puzzle.prompt,
+          userPrompt,
           maxTokens: plan.maxTokens,
           temperature: plan.temperature,
         },

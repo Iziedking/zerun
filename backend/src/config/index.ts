@@ -48,6 +48,14 @@ export const config = {
     // before forecasting, so the Analyst becomes a real competition. Without it,
     // every agent forecasts from its prior (the old behavior).
     exaKey: process.env.EXA_API_KEY ?? "",
+    // The Graph: live on-chain insight for Solver "live data" puzzles. Wired but
+    // optional; when unconfigured the puzzles use live 0G chain data directly.
+    // For a custom subgraph set all four (richer use comes in v2).
+    graphKey: process.env.GRAPH_API_KEY ?? "",
+    graphSubgraph: process.env.GRAPH_SUBGRAPH_ID ?? "",
+    graphQuery: process.env.GRAPH_QUERY ?? "",
+    graphValuePath: process.env.GRAPH_VALUE_PATH ?? "", // dot path into the JSON result
+    graphQuestion: process.env.GRAPH_QUESTION ?? "", // the puzzle prompt for that value
   },
   storage: {
     // 0G Storage indexer (Galileo turbo). The flow contract is auto-discovered.
