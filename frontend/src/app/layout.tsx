@@ -8,6 +8,7 @@ import { WinCelebration } from "@/components/WinCelebration";
 import { ComputeBadge } from "@/components/ComputeBadge";
 import { MusicProvider } from "@/lib/music";
 import { NotificationProvider } from "@/lib/notifications";
+import { WalletActionProvider } from "@/lib/walletAction";
 
 // Display and wordmark: bouncy, hand-drawn cartoon. Grandstander gives the
 // headings their playful character.
@@ -74,6 +75,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen antialiased">
         <Providers>
           <MusicProvider>
+            <WalletActionProvider>
             <NotificationProvider>
             <PostConnectModal />
             <WinCelebration />
@@ -91,6 +93,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Ambient compute status, pinned to the bottom-right corner. */}
           <ComputeBadge className="fixed bottom-4 right-4 z-30 shadow-pop" />
             </NotificationProvider>
+            </WalletActionProvider>
           </MusicProvider>
         </Providers>
       </body>

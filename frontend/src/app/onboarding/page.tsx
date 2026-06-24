@@ -18,6 +18,7 @@ import { kindMeta } from "@/lib/kind";
 import { api } from "@/lib/api";
 import { formatUsdc } from "@/lib/format";
 import { friendlyError } from "@/lib/errors";
+import { useWalletAction } from "@/lib/walletAction";
 import { zeroGGalileo } from "@/lib/chain";
 import { ConnectGate } from "@/components/ConnectGate";
 import { Spinner } from "@/components/ui";
@@ -60,6 +61,7 @@ function OnboardingInner() {
   const { data: deployment } = useDeployment();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const walletAction = useWalletAction();
   const queryClient = useQueryClient();
 
   const agentsQ = useAgents(address);
@@ -106,13 +108,17 @@ function OnboardingInner() {
     setBusy(true);
     try {
       const metadataURI = `zerun:agent:${Date.now()}`;
-      const hash = await writeContractAsync({
-        abi: agentRegistryAbi,
-        address: registryAddr,
-        functionName: "createAgent",
-        args: [metadataURI],
-        chainId: zeroGGalileo.id,
-      });
+      const hash = await walletAction.run(
+        () =>
+          writeContractAsync({
+            abi: agentRegistryAbi,
+            address: registryAddr,
+            functionName: "createAgent",
+            args: [metadataURI],
+            chainId: zeroGGalileo.id,
+          }),
+        "Approve in your wallet to claim your agent.",
+      );
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
       let newId: bigint | null = null;
@@ -170,13 +176,17 @@ function OnboardingInner() {
     if (!usdcAddr || !address || !publicClient) return;
     setBusy(true);
     try {
-      const hash = await writeContractAsync({
-        abi: testUsdcAbi,
-        address: usdcAddr,
-        functionName: "mint",
-        args: [address, MINT_AMOUNT],
-        chainId: zeroGGalileo.id,
-      });
+      const hash = await walletAction.run(
+        () =>
+          writeContractAsync({
+            abi: testUsdcAbi,
+            address: usdcAddr,
+            functionName: "mint",
+            args: [address, MINT_AMOUNT],
+            chainId: zeroGGalileo.id,
+          }),
+        "Approve in your wallet to claim your test USDC.",
+      );
       await publicClient.waitForTransactionReceipt({ hash });
       await balance.refetch();
       setStep(3);
@@ -193,13 +203,17 @@ function OnboardingInner() {
     if (!engineAddr || !address || !publicClient || agentId === null || !easiest) return;
     setBusy(true);
     try {
-      const hash = await writeContractAsync({
-        abi: contestEngineAbi,
-        address: engineAddr,
-        functionName: "registerEntry",
-        args: [BigInt(easiest.contest_id), BigInt(agentId), 0n],
-        chainId: zeroGGalileo.id,
-      });
+      const hash = await walletAction.run(
+        () =>
+          writeContractAsync({
+            abi: contestEngineAbi,
+            address: engineAddr,
+            functionName: "registerEntry",
+            args: [BigInt(easiest.contest_id), BigInt(agentId), 0n],
+            chainId: zeroGGalileo.id,
+          }),
+        "Approve in your wallet to send your agent in.",
+      );
       await publicClient.waitForTransactionReceipt({ hash });
       await api.enter(easiest.contest_id, { agentId, operator: address });
       router.push("/arena");

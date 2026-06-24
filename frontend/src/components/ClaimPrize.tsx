@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useWalletAction } from "@/lib/walletAction";
 import type { Hex } from "viem";
 import { contestEngineAbi } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
@@ -19,6 +20,7 @@ export function ClaimPrize({ contestId }: { contestId: number }) {
   const { data: deployment } = useDeployment();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const walletAction = useWalletAction();
 
   const [info, setInfo] = useState<ClaimInfo | null>(null);
   const [busy, setBusy] = useState(false);
@@ -54,13 +56,17 @@ export function ClaimPrize({ contestId }: { contestId: number }) {
     if (!engineAddr || !address || !publicClient || !info) return;
     setBusy(true);
     try {
-      const hash = await writeContractAsync({
-        abi: contestEngineAbi,
-        address: engineAddr,
-        functionName: "claimPrize",
-        args: [BigInt(contestId), BigInt(info.amount), info.proof as Hex[]],
-        chainId: zeroGGalileo.id,
-      });
+      const hash = await walletAction.run(
+        () =>
+          writeContractAsync({
+            abi: contestEngineAbi,
+            address: engineAddr,
+            functionName: "claimPrize",
+            args: [BigInt(contestId), BigInt(info.amount), info.proof as Hex[]],
+            chainId: zeroGGalileo.id,
+          }),
+        "Approve in your wallet to claim your prize.",
+      );
       await publicClient.waitForTransactionReceipt({ hash });
       await api.claimed(contestId, { operator: address });
       setClaimed(true);

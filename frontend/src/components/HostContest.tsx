@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { keccak256, toHex } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useWalletAction } from "@/lib/walletAction";
 import { useQueryClient } from "@tanstack/react-query";
 import { contestEngineAbi, testUsdcAbi, CONTEST_TYPE } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
@@ -62,6 +63,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const { data: deployment } = useDeployment();
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const walletAction = useWalletAction();
   const queryClient = useQueryClient();
   const balance = useUsdcBalance(address);
 
@@ -117,13 +119,17 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
     try {
       // Approve the escrow to pull the prize pool.
       setPhase("approving");
-      const approveHash = await writeContractAsync({
-        abi: testUsdcAbi,
-        address: usdcAddr,
-        functionName: "approve",
-        args: [escrowAddr, prizePool],
-        chainId: zeroGGalileo.id,
-      });
+      const approveHash = await walletAction.run(
+        () =>
+          writeContractAsync({
+            abi: testUsdcAbi,
+            address: usdcAddr,
+            functionName: "approve",
+            args: [escrowAddr, prizePool],
+            chainId: zeroGGalileo.id,
+          }),
+        "Step 1 of 2: approve the prize pool in your wallet.",
+      );
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
 
       // The new id is the next contest id before we list.
@@ -137,13 +143,17 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       // List the contest. cType: solver=2, analyst=1. Split sets topN and the cut.
       setPhase("listing");
       const cType = kind === "solver" ? CONTEST_TYPE.solver : CONTEST_TYPE.analyst;
-      const listHash = await writeContractAsync({
-        abi: contestEngineAbi,
-        address: engineAddr,
-        functionName: "listContest",
-        args: [cType, ZERO_ADDRESS, METRIC[kind], prizePool, BigInt(durationSecs), split.cut, split.topN, 0, 4],
-        chainId: zeroGGalileo.id,
-      });
+      const listHash = await walletAction.run(
+        () =>
+          writeContractAsync({
+            abi: contestEngineAbi,
+            address: engineAddr,
+            functionName: "listContest",
+            args: [cType, ZERO_ADDRESS, METRIC[kind], prizePool, BigInt(durationSecs), split.cut, split.topN, 0, 4],
+            chainId: zeroGGalileo.id,
+          }),
+        "Step 2 of 2: confirm listing the contest in your wallet.",
+      );
       await publicClient.waitForTransactionReceipt({ hash: listHash });
 
       // Mirror it to the backend so it shows in the arena.

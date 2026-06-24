@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAccount, usePublicClient, useSendTransaction } from "wagmi";
+import { useWalletAction } from "@/lib/walletAction";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseEther } from "viem";
 import { api } from "@/lib/api";
@@ -27,6 +28,7 @@ export function TrainAgent({
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { sendTransactionAsync } = useSendTransaction();
+  const walletAction = useWalletAction();
   const queryClient = useQueryClient();
   const infoQ = useQuery({ queryKey: ["computeInfo"], queryFn: () => api.computeInfo(), staleTime: 60_000 });
   const [busy, setBusy] = useState(false);
@@ -45,11 +47,15 @@ export function TrainAgent({
     setError(null);
     setBusy(true);
     try {
-      const hash = await sendTransactionAsync({
-        to: info.coordinator as `0x${string}`,
-        value: parseEther(String(cost)),
-        chainId: zeroGGalileo.id,
-      });
+      const hash = await walletAction.run(
+        () =>
+          sendTransactionAsync({
+            to: info.coordinator as `0x${string}`,
+            value: parseEther(String(cost)),
+            chainId: zeroGGalileo.id,
+          }),
+        "Approve the 0G payment in your wallet to train your agent.",
+      );
       await publicClient.waitForTransactionReceipt({ hash });
       await api.trainAgent(agentId, { owner: address, txHash: hash });
       await queryClient.invalidateQueries({ queryKey: ["agents"] });

@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useWalletAction } from "@/lib/walletAction";
 import { useQueryClient } from "@tanstack/react-query";
 import { contestEngineAbi } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
@@ -35,6 +36,7 @@ export function EnterContest({
   const agentsQ = useAgents(address);
   const publicClient = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const walletAction = useWalletAction();
   const queryClient = useQueryClient();
 
   const myAgents = agentsQ.data?.agents ?? [];
@@ -77,13 +79,17 @@ export function EnterContest({
     }
     setBusy(true);
     try {
-      const hash = await writeContractAsync({
-        abi: contestEngineAbi,
-        address: engineAddr,
-        functionName: "registerEntry",
-        args: [BigInt(contestId), BigInt(agentId), 0n],
-        chainId: zeroGGalileo.id,
-      });
+      const hash = await walletAction.run(
+        () =>
+          writeContractAsync({
+            abi: contestEngineAbi,
+            address: engineAddr,
+            functionName: "registerEntry",
+            args: [BigInt(contestId), BigInt(agentId), 0n],
+            chainId: zeroGGalileo.id,
+          }),
+        "Approve in your wallet to send your agent in.",
+      );
       await publicClient.waitForTransactionReceipt({ hash });
       await api.enter(contestId, { agentId: Number(agentId), operator: address });
       setDone(true);
