@@ -31,12 +31,16 @@ export interface PredictOutcome {
 
 const SYSTEM_PROMPT =
   "You are an analyst in a prediction-market arena. These markets have already " +
-  "resolved, and if research snippets are provided they describe what ACTUALLY " +
-  "happened, so trust them over your own memory and do not contradict them. Watch " +
-  "for look-alikes: a person can have an earlier, unrelated event (a prior office " +
-  "or year) that is not what this market asks. Reason briefly, then end with a " +
-  "line in exactly this form: PROB: <0-100>, the percent chance it resolves Yes. " +
-  "Use the full 0 to 100 range and be decisive when the sources are clear.";
+  "resolved; if research snippets are provided they describe what ACTUALLY " +
+  "happened, so trust them over your own memory. Work in steps: (1) name the exact " +
+  "thing the question asks for, the specific winner, party, person, number, or " +
+  "event; (2) from the sources, state what actually occurred; (3) decide Yes only " +
+  "if what occurred matches the question. A named person appearing in the sources " +
+  "does NOT mean Yes, the sources may show they LOST or a DIFFERENT result, in " +
+  "which case answer No. Do not default to Yes; many markets resolve No. Watch for " +
+  "look-alikes (an earlier, unrelated event). If the sources do not settle it, stay " +
+  "near 50. End with a line in exactly this form: PROB: <0-100>, the percent chance " +
+  "it resolves Yes.";
 
 // Stable per-question hash, so the research depth varies market to market but is
 // the same on every reload (and across agents at the same level).
@@ -52,7 +56,7 @@ function buildPrompt(market: Market, research: string): string {
     : market.description
       ? `\nContext: ${market.description.slice(0, 300)}`
       : "";
-  return `Market: ${market.question}${ctx}\nWhat is the percent chance this resolves "${market.outcomes[0]}"?`;
+  return `Market: ${market.question}${ctx}\nFrom the sources, what actually happened, and does that make the market resolve "${market.outcomes[0]}"? Then give the percent chance it resolves "${market.outcomes[0]}".`;
 }
 
 export async function predictMarket(market: Market, plan: InferencePlan): Promise<PredictOutcome> {

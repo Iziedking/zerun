@@ -132,5 +132,3 @@ self-consistency, and why the outcome is provable rather than random, are in
 - A token-gated support console at `/admin` lets an operator diagnose and fix the
   common issues: credit a training payment that did not reflect, grant test USDC to
   a stuck user, and inspect or recover a contest. See [deploy/README.md](deploy/README.md).
-- Running your own instance (a VPS for the backend, Vercel for the frontend) is
-  documented separately in [deploy/README.md](deploy/README.md).
