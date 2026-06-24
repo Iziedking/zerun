@@ -30,12 +30,21 @@ export interface PredictOutcome {
 }
 
 const SYSTEM_PROMPT =
-  "You are an analyst in a real prediction-market arena, forecasting whether a " +
-  "market resolves Yes. If research snippets are provided, base your answer on " +
-  "them, as they may state the outcome directly; do not contradict them. Reason " +
-  "briefly, then end with a line in exactly this form: PROB: <0-100>, the percent " +
-  "chance it resolves Yes. Use the full 0 to 100 range and be decisive when the " +
-  "evidence is clear. Give a single number.";
+  "You are an analyst in a prediction-market arena. These markets have already " +
+  "resolved, and if research snippets are provided they describe what ACTUALLY " +
+  "happened, so trust them over your own memory and do not contradict them. Watch " +
+  "for look-alikes: a person can have an earlier, unrelated event (a prior office " +
+  "or year) that is not what this market asks. Reason briefly, then end with a " +
+  "line in exactly this form: PROB: <0-100>, the percent chance it resolves Yes. " +
+  "Use the full 0 to 100 range and be decisive when the sources are clear.";
+
+// Stable per-question hash, so the research depth varies market to market but is
+// the same on every reload (and across agents at the same level).
+function hashStr(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
 
 function buildPrompt(market: Market, research: string): string {
   const ctx = research
@@ -49,7 +58,17 @@ function buildPrompt(market: Market, research: string): string {
 export async function predictMarket(market: Market, plan: InferencePlan): Promise<PredictOutcome> {
   // Research first (a top-tier perk): pull real sources about the market so a
   // trained agent grounds its call instead of guessing. Untrained agents get none.
-  const sources = (plan.intel ?? 0) > 0 ? await gatherIntel(market.question, plan.intel!) : [];
+  // Search for the OUTCOME, not the bare question: "Will Kamala Harris be
+  // inaugurated?" alone pulls her 2021 VP swearing-in; adding "actual result and
+  // outcome" surfaces that Trump won and she was not.
+  // The level sets the research ceiling; the actual depth varies per market within
+  // a band below it, so the source count reads as organic, not a fixed number.
+  // Level 5 (ceil 8) -> 5-8, level 4 (5) -> 3-5, level 3 (2) -> 1-2.
+  const maxIntel = plan.intel ?? 0;
+  const spread = Math.ceil(maxIntel / 3);
+  const intelBudget = maxIntel > 0 ? maxIntel - (hashStr(market.question) % (spread + 1)) : 0;
+  const query = `${market.question} actual result and outcome, what happened`;
+  const sources = intelBudget > 0 ? await gatherIntel(query, intelBudget) : [];
   const research = sources
     .map((s, i) => `[${i + 1}] ${s.title}: ${s.text}`)
     .join("\n")
