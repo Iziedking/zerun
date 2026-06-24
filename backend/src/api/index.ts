@@ -695,13 +695,13 @@ app.get("/api/leaderboard", async (c) => {
        from contest_entries e
        left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
       group by e.operator
-      order by is_house asc, winnings desc, wins desc, matches desc
+      order by coalesce(sum(p.amount::numeric), 0) desc, wins desc, matches desc
       limit 100`,
   );
-  // Real operators always rank above the autopilot's house agents. Once real
-  // players scale, set LEADERBOARD_HIDE_HOUSE=on to drop the house entirely.
-  const hideHouse = (process.env.LEADERBOARD_HIDE_HOUSE ?? "off").toLowerCase() === "on";
-  const visible = (hideHouse ? rows.filter((r) => !r.is_house) : rows).slice(0, 50);
+  // The board is real players only: the autopilot's house agents are contest
+  // filler, never ranked, so they are dropped here regardless of their winnings.
+  // Order by the numeric winnings, not the text column (else "63" beats "228").
+  const visible = rows.filter((r) => !r.is_house).slice(0, 50);
   return c.json({ leaderboard: visible.map((r, i) => ({ rank: i + 1, ...r })) });
 });
 
