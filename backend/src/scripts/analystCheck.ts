@@ -1,12 +1,12 @@
-import { generateMarkets } from "../runners/markets.js";
+import { fetchMarkets } from "../runners/markets.js";
 import { predictMarket } from "../runners/analyst.js";
 import { computePlan } from "../runners/computeLevels.js";
 
-// Generate a few reasoning markets and have a max-compute agent forecast each on
-// 0G Compute, then grade against the answer.  pnpm tsx src/scripts/analystCheck.ts
+// Pull a few real resolved markets and have a max-compute agent forecast each on
+// 0G Compute, then grade against the outcome.  pnpm tsx src/scripts/analystCheck.ts
 async function main() {
-  const markets = generateMarkets(1, 6);
-  console.log(`generated ${markets.length} markets\n`);
+  const markets = await fetchMarkets(1, 6);
+  console.log(`fetched ${markets.length} resolved markets\n`);
   const plan = computePlan(5);
 
   let correct = 0;

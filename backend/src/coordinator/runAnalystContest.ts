@@ -1,5 +1,5 @@
 import { query } from "../db/pool.js";
-import { generateMarkets } from "../runners/markets.js";
+import { fetchMarkets } from "../runners/markets.js";
 import { predictMarket } from "../runners/analyst.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { computePlan } from "../runners/computeLevels.js";
@@ -79,7 +79,7 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
   await Promise.all(workers);
 }
 
-type Market = ReturnType<typeof generateMarkets>[number];
+type Market = Awaited<ReturnType<typeof fetchMarkets>>[number];
 type Prediction = Awaited<ReturnType<typeof predictMarket>>;
 
 // Persist one prediction, score it, and push it live. An errored call contributes
@@ -156,9 +156,17 @@ export async function runAnalystContest(contestId: number): Promise<RunResult> {
     }
   }
 
-  const markets = generateMarkets(contestId, await marketCountFor(contestId));
+  let markets: Market[] = [];
+  try {
+    markets = await fetchMarkets(contestId, await marketCountFor(contestId));
+  } catch (err) {
+    console.warn(`contest ${contestId}: Polymarket fetch failed: ${(err as Error).message}`);
+  }
+  // Real markets only. If Polymarket is unreachable, cancel and refund rather than
+  // run a contest on filler, so the prediction feed is always genuine.
   if (markets.length === 0) {
     broadcast({ type: "status", contestId, payload: { status: "no-markets" } });
+    await cancelContest(contestId);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
   broadcast({

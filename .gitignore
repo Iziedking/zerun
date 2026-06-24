@@ -32,3 +32,6 @@ contracts/lib/
 .DS_Store
 coverage/
 *.tsbuildinfo
+
+# Brand/demo assets (local only)
+brand/

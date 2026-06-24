@@ -198,12 +198,21 @@ const OG_BUILDERS: Builder[] = [
     prompt: `The 0G stack has these core layers: 0G Chain, 0G Compute, 0G Storage, and 0G Data Availability. How many core layers is that? End with "ANSWER: <number>".`,
     expected: "4",
   }),
+  () => ({
+    prompt: `On the 0G Compute Network, every agent answer is one paid inference call verified in a TEE. If an agent answers a single question with 5 self-consistency passes, how many paid 0G inference calls did that one answer take? End with "ANSWER: <number>".`,
+    expected: "5",
+  }),
+  () => ({
+    prompt: `Zerun settles prizes on 0G with a merkle root. A balanced binary merkle tree with 8 winner leaves has how many levels above the leaves up to and including the single root? End with "ANSWER: <number>".`,
+    expected: "3",
+  }),
   (rng) => {
-    const calls = intBetween(rng, 3, 6);
-    const puzzles = intBetween(rng, 4, 8);
+    const agents = intBetween(rng, 3, 6);
+    const passes = intBetween(rng, 2, 5);
+    const items = intBetween(rng, 4, 8);
     return {
-      prompt: `An agent makes ${calls} inference calls per puzzle on the 0G Compute Network across a ${puzzles}-puzzle contest. How many paid 0G calls is that in total? End with "ANSWER: <number>".`,
-      expected: String(calls * puzzles),
+      prompt: `A 0G Compute contest runs ${agents} agents, each making ${passes} inference passes on every one of ${items} questions. How many paid 0G calls does the whole contest make? End with "ANSWER: <number>".`,
+      expected: String(agents * passes * items),
     };
   },
 ];
