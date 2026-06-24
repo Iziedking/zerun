@@ -13,6 +13,7 @@ const LABEL = "block font-body text-[12px] font-extrabold uppercase tracking-[0.
 type AgentInfo = Awaited<ReturnType<typeof api.adminAgent>>;
 type OpInfo = Awaited<ReturnType<typeof api.adminOperator>>;
 type ContestInfo = Awaited<ReturnType<typeof api.adminContest>>;
+type RepairInfo = Awaited<ReturnType<typeof api.adminRepairClaims>>;
 
 // Internal support console. Diagnose and fix the common operator issues: a
 // training payment that did not reflect, a user who cannot host or enter for
@@ -38,6 +39,7 @@ export default function AdminPage() {
   // contest tools
   const [contestId, setContestId] = useState("");
   const [contest, setContest] = useState<ContestInfo | null>(null);
+  const [repair, setRepair] = useState<RepairInfo | null>(null);
 
   // Token lives in memory only: not localStorage, sessionStorage, or cookies.
   // It is verified against the backend once, then held in state for this tab.
@@ -311,6 +313,7 @@ export default function AdminPage() {
             disabled={!ready || !contestId}
             onClick={() =>
               run(async () => {
+                setRepair(null);
                 const r = await api.adminContest(Number(contestId), saved);
                 setContest(r);
                 return `Loaded contest #${r.contest.contest_id} (${r.contest.status}).`;
@@ -359,6 +362,76 @@ export default function AdminPage() {
           >
             Cancel contest
           </PopButton>
+        </div>
+
+        {/* Repair claims: fix winners blocked by a stored-proof vs on-chain-root
+            mismatch. Check first (dry run), then credit. */}
+        <div className="space-y-2 border-t-line border-ink/10 pt-3">
+          <label className={LABEL}>Repair claims (proof / on-chain root mismatch)</label>
+          <div className="flex flex-wrap gap-2">
+            <PopButton
+              type="button"
+              variant="ghost"
+              disabled={!ready || !contestId}
+              onClick={() =>
+                run(async () => {
+                  const r = await api.adminRepairClaims(Number(contestId), false, saved);
+                  setRepair(r);
+                  if (r.note) return r.note;
+                  const would = r.results?.filter((x) => x.action.includes("WOULD")).length ?? 0;
+                  return `Dry run for #${contestId}: ${would} winner(s) would be credited.`;
+                })
+              }
+            >
+              Check claims
+            </PopButton>
+            <PopButton
+              type="button"
+              disabled={!ready || !contestId}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    `Credit owed winners for contest #${contestId}? This mints tUSDC and cannot be undone.`,
+                  )
+                )
+                  return;
+                void run(async () => {
+                  const r = await api.adminRepairClaims(Number(contestId), true, saved);
+                  setRepair(r);
+                  if (r.note) return r.note;
+                  const credited = r.results?.filter((x) => x.action === "credited").length ?? 0;
+                  return `Repaired #${contestId}: credited ${credited} winner(s).`;
+                });
+              }}
+            >
+              Repair + credit
+            </PopButton>
+          </div>
+
+          {repair?.results && (
+            <div className="rounded-chunk border-line border-ink/15 bg-cloud-2 p-4 text-[13px]">
+              <div className="font-body text-ink-2">
+                chain root {repair.chainRoot?.slice(0, 12)}…{" "}
+                {repair.dbRoot === repair.chainRoot
+                  ? "matches db"
+                  : `≠ db ${repair.dbRoot?.slice(0, 12)}…`}
+                {repair.dryRun ? " · dry run" : " · credited"}
+              </div>
+              <ul className="mt-2 space-y-1">
+                {repair.results.map((x) => (
+                  <li
+                    key={x.operator}
+                    className="flex flex-wrap items-center justify-between gap-2"
+                  >
+                    <span className="font-mono text-[12px] text-ink">{shortAddr(x.operator)}</span>
+                    <span className="font-body text-ink-2">
+                      {formatUsdc(x.amountWei)} tUSDC · {x.action}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </StickerCard>
 

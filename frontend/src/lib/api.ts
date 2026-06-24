@@ -185,4 +185,16 @@ export const api = {
       method: "POST",
       headers: { "x-admin-token": token },
     }),
+  adminRepairClaims: (id: number, credit: boolean, token: string) =>
+    req<{
+      ok: boolean;
+      note?: string;
+      dryRun?: boolean;
+      chainRoot?: string;
+      dbRoot?: string;
+      results?: { operator: string; amountWei: string; action: string; tx?: string }[];
+    }>(`/api/admin/contest/${id}/repair-claims${credit ? "?credit=true" : ""}`, {
+      method: "POST",
+      headers: { "x-admin-token": token },
+    }),
 };
