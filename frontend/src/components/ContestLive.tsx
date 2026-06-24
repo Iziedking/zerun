@@ -97,6 +97,7 @@ export function ContestLive({
         source: p.source,
         samples: p.samples,
         sources: p.sources,
+        liveInsight: p.liveInsight,
         fresh: true,
       };
       setRows((prev) => [row, ...prev].slice(0, MAX_ROWS));

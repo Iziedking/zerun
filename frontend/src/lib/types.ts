@@ -185,6 +185,7 @@ export interface WsSolvePayload {
   latencyMs: number;
   samples?: number;
   sources?: number;
+  liveInsight?: boolean;
 }
 
 export interface WsStandingPayload {

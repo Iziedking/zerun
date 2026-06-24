@@ -135,6 +135,7 @@ async function recordOutcome(
       latencyMs: outcome.latencyMs,
       samples: outcome.samples,
       agreement: outcome.agreement,
+      liveInsight: outcome.liveInsight,
     },
   });
 

@@ -19,6 +19,7 @@ export interface SolveRow {
   source: string;
   samples?: number;
   sources?: number;
+  liveInsight?: boolean;
   fresh?: boolean;
 }
 
@@ -36,6 +37,13 @@ export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: Cont
   const variant = agentVariant(row.agentId ?? row.agentName);
   const meta = kindMeta(kind);
   const answer = row.answer || "·";
+  // A quiet tell that this agent used a level 4-5 perk on this answer.
+  const perk =
+    kind === "analyst" && (row.sources ?? 0) > 0
+      ? "researched"
+      : kind === "solver" && row.liveInsight
+        ? "live insight"
+        : null;
 
   return (
     <StickerCard
@@ -55,11 +63,20 @@ export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: Cont
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-display text-lg text-ink">{row.agentName}</span>
               <span className="font-mono text-[11px] text-ink-3">
                 {meta.taskWord} {row.puzzleIdx + 1}
               </span>
+              {perk && (
+                <span
+                  title="Used a Compute level 4-5 perk on this answer"
+                  className="inline-flex items-center gap-1 rounded-pill border border-ink/20 bg-cyan/15 px-2 py-0.5 font-body text-[10px] font-extrabold uppercase tracking-[0.03em] text-ink-2"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-cyan" aria-hidden />
+                  {perk}
+                </span>
+              )}
             </div>
             <Chip tone={v.tone}>{v.label}</Chip>
           </div>

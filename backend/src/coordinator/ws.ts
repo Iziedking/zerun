@@ -28,6 +28,7 @@ export interface SolvePayload {
   samples?: number;
   agreement?: number;
   sources?: number;
+  liveInsight?: boolean;
 }
 
 export interface StandingRow {

@@ -23,6 +23,9 @@ export interface SolveOutcome {
   /// How many self-consistency passes ran and how many backed the winning answer.
   samples: number;
   agreement: number;
+  /// Whether this answer used the live-insight perk (level 4-5 saw live on-chain
+  /// data). Surfaced as a small badge so the top-tier advantage is visible.
+  liveInsight?: boolean;
 }
 
 const SYSTEM_PROMPT =
@@ -65,8 +68,8 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
   // Live-insight puzzles carry current on-chain data. Only an agent with the perk
   // (Compute level 4-5) sees it; everyone else gets the bare question and has to
   // guess a value they cannot know.
-  const userPrompt =
-    plan.liveInsight && puzzle.context ? `${puzzle.prompt}\n\n${puzzle.context}` : puzzle.prompt;
+  const usedLiveInsight = Boolean(plan.liveInsight && puzzle.context);
+  const userPrompt = usedLiveInsight ? `${puzzle.prompt}\n\n${puzzle.context}` : puzzle.prompt;
 
   for (let pass = 0; pass < plan.samples; pass++) {
     try {
@@ -99,12 +102,12 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
     for (const [a, n] of votes) if (n > bestN) ((best = a), (bestN = n));
     const res = repByAnswer.get(best)!;
     const verdict = isCorrect(best, puzzle.expected) ? "correct" : "wrong";
-    return outcome(puzzle, res, best, verdict, latencyMs, plan.samples, bestN);
+    return outcome(puzzle, res, best, verdict, latencyMs, plan.samples, bestN, usedLiveInsight);
   }
 
   if (anyRes) {
     // The model answered but never with a parseable number.
-    return outcome(puzzle, anyRes, null, "wrong", latencyMs, plan.samples, 0);
+    return outcome(puzzle, anyRes, null, "wrong", latencyMs, plan.samples, 0, usedLiveInsight);
   }
   return {
     puzzleIdx: puzzle.idx,
@@ -121,6 +124,7 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
     latencyMs,
     samples: plan.samples,
     agreement: 0,
+    liveInsight: usedLiveInsight,
   };
 }
 
@@ -132,6 +136,7 @@ function outcome(
   latencyMs: number,
   samples: number,
   agreement: number,
+  liveInsight: boolean,
 ): SolveOutcome {
   return {
     puzzleIdx: puzzle.idx,
@@ -148,5 +153,6 @@ function outcome(
     latencyMs,
     samples,
     agreement,
+    liveInsight,
   };
 }
