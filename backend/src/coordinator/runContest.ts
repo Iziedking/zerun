@@ -97,6 +97,7 @@ async function recordOutcome(
   const score = scores.get(entry.agentId)!;
   if (outcome.verdict === "correct") score.correct += 1;
   score.totalLatencyMs += outcome.latencyMs;
+  score.passes = (score.passes ?? 0) + (outcome.samples ?? 0);
 
   await query(
     `insert into solve_runs

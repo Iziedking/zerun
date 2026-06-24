@@ -68,6 +68,8 @@ export interface Standing {
   operator: string;
   correct: number;
   totalLatencyMs: number;
+  computeLevel?: number;
+  passes?: number;
 }
 
 export interface ContestDetail {
@@ -91,6 +93,7 @@ export interface FeedItem {
   chat_id: string;
   verified: boolean | null;
   latency_ms: number;
+  samples?: number;
   created_at: string | number | null;
   agentName?: string;
 }
@@ -179,6 +182,7 @@ export interface WsSolvePayload {
   chatID: string;
   verified: boolean | null;
   latencyMs: number;
+  samples?: number;
 }
 
 export interface WsStandingPayload {
@@ -188,6 +192,8 @@ export interface WsStandingPayload {
   correct: number;
   totalLatencyMs: number;
   rank: number;
+  computeLevel?: number;
+  passes?: number;
 }
 
 export interface WsStatusPayload {

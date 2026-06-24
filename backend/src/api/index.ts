@@ -411,7 +411,7 @@ app.get("/api/contests/:id/feed", async (c) => {
   const id = Number(c.req.param("id"));
   const since = Number(c.req.query("since") ?? "0");
   const { rows } = await query(
-    `select id, agent_id, operator, puzzle_idx, prompt, answer, verdict, source, provider, model, chat_id, verified, latency_ms, created_at
+    `select id, agent_id, operator, puzzle_idx, prompt, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, created_at
        from solve_runs where contest_id = $1 and id > $2 order by id asc limit 500`,
     [id, since],
   );
@@ -815,10 +815,14 @@ async function standingsFor(contestId: number) {
     name: string | null;
     correct: string;
     total_latency: string;
+    compute_level: string;
+    passes: string;
   }>(
     `select e.agent_id, e.operator, m.name,
             coalesce(sum(case when s.verdict = 'correct' then 1 else 0 end), 0) as correct,
-            coalesce(sum(s.latency_ms), 0) as total_latency
+            coalesce(sum(s.latency_ms), 0) as total_latency,
+            coalesce(m.compute_level, 0) as compute_level,
+            coalesce(sum(s.samples), 0) as passes
        from contest_entries e
        left join agents_meta m on m.agent_id = e.agent_id
        left join solve_runs s on s.contest_id = e.contest_id and s.agent_id = e.agent_id
@@ -834,5 +838,7 @@ async function standingsFor(contestId: number) {
     operator: r.operator,
     correct: Number(r.correct),
     totalLatencyMs: Number(r.total_latency),
+    computeLevel: Number(r.compute_level),
+    passes: Number(r.passes),
   }));
 }

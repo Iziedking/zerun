@@ -8,6 +8,9 @@ interface Props {
   latencyMs: number;
   verified: boolean | null;
   source?: string;
+  // Self-consistency passes: how many 0G inference calls this one answer took.
+  // A higher-Compute agent runs more, so this is the visible "more compute" signal.
+  samples?: number;
 }
 
 // The 0G provenance for one answer, reframed for the cartoon look: a small inset
@@ -20,6 +23,7 @@ export function ProvenanceBadge({
   latencyMs,
   verified,
   source,
+  samples,
 }: Props) {
   const isVerified = verified === true;
 
@@ -32,11 +36,14 @@ export function ProvenanceBadge({
         <VerificationBadge verified={verified} />
       </div>
 
-      <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+      <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
         <Field label="provider" value={shortAddr(provider, 6, 4)} title={provider} />
         <Field label="model" value={model || "·"} title={model} />
         <Field label="request id" value={shortId(chatId, 7, 5)} title={chatId} />
         <Field label="latency" value={formatLatency(latencyMs)} />
+        {samples != null && samples > 0 && (
+          <Field label="0G passes" value={`${samples}`} accent />
+        )}
       </dl>
 
       {source && (
@@ -58,17 +65,22 @@ function Field({
   label,
   value,
   title,
+  accent = false,
 }: {
   label: string;
   value: string;
   title?: string;
+  accent?: boolean;
 }) {
   return (
     <div className="min-w-0">
       <dt className="font-body text-[10px] font-extrabold uppercase tracking-[0.02em] text-ink-3">
         {label}
       </dt>
-      <dd className="truncate font-mono text-[12px] text-ink" title={title}>
+      <dd
+        className={`truncate font-mono text-[12px] ${accent ? "font-bold text-violet" : "text-ink"}`}
+        title={title}
+      >
         {value}
       </dd>
     </div>

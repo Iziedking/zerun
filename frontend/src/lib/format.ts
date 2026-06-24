@@ -36,6 +36,23 @@ export function ordinal(n: number): string {
   }
 }
 
+// Whole tUSDC with thousands separators, no decimals. For big "total" stats where
+// the cents are noise and the full number needs to fit a narrow card.
+export function formatUsdcWhole(raw: string | bigint | number | null | undefined): string {
+  if (raw === null || raw === undefined) return "0";
+  let v: bigint;
+  try {
+    v = typeof raw === "bigint" ? raw : BigInt(typeof raw === "number" ? Math.trunc(raw) : raw);
+  } catch {
+    return "0";
+  }
+  const base = 10n ** BigInt(USDC_DECIMALS);
+  const neg = v < 0n;
+  if (neg) v = -v;
+  const whole = (v + base / 2n) / base; // round to the nearest whole tUSDC
+  return `${neg ? "-" : ""}${whole.toLocaleString("en-US")}`;
+}
+
 export function shortAddr(addr: string | null | undefined, head = 6, tail = 4): string {
   if (!addr) return "";
   if (addr.length <= head + tail + 2) return addr;

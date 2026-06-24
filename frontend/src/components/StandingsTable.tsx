@@ -2,6 +2,10 @@ import type { Standing } from "@/lib/types";
 import { shortAddr, formatLatency } from "@/lib/format";
 import { agentVariant, Chip, SkinnedAgent, StickerCard } from "./zerun";
 
+// Compute tier names, matching the workshop.
+const TIER = ["Base", "Spark", "Sharp", "Deep", "Elite", "Apex"];
+const tierName = (l?: number) => TIER[Math.max(0, Math.min(5, l ?? 0))] ?? "Base";
+
 export function StandingsTable({
   standings,
   highlight,
@@ -26,6 +30,7 @@ export function StandingsTable({
       <ul>
         {sorted.map((s, i) => {
           const me = highlight && s.operator?.toLowerCase() === highlight.toLowerCase();
+          const lvl = s.computeLevel ?? 0;
           return (
             <li
               key={`${s.agentId}-${s.operator}`}
@@ -49,6 +54,7 @@ export function StandingsTable({
                     {s.agentName}
                   </span>
                   {me && <Chip tone="info">you</Chip>}
+                  {lvl >= 1 && <Chip tone="thinking">{tierName(lvl)}</Chip>}
                 </div>
                 <span className="font-mono text-[11px] text-ink-3">
                   {shortAddr(s.operator)}
@@ -57,7 +63,9 @@ export function StandingsTable({
               <div className="shrink-0 text-right">
                 <div className="font-display text-lg text-ink">{s.correct}</div>
                 <div className="font-mono text-[11px] text-ink-3">
-                  {formatLatency(s.totalLatencyMs)}
+                  {s.passes != null && s.passes > 0
+                    ? `${s.passes} passes`
+                    : formatLatency(s.totalLatencyMs)}
                 </div>
               </div>
             </li>

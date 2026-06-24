@@ -12,6 +12,9 @@ export interface AgentScore {
   // Compute level (0G investment). Higher wins a tie, so paying for more compute
   // never loses to a cheaper agent that merely answered faster.
   computeLevel?: number;
+  // Total 0G inference passes this agent ran (self-consistency), surfaced in the
+  // UI as the visible "more compute" signal.
+  passes?: number;
 }
 
 export interface RankedAgent extends AgentScore {

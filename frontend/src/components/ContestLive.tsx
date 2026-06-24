@@ -36,6 +36,7 @@ function feedItemToRow(f: FeedItem): SolveRow {
     latencyMs: f.latency_ms,
     verified: f.verified,
     source: f.source,
+    samples: f.samples,
   };
 }
 
@@ -93,6 +94,7 @@ export function ContestLive({
         latencyMs: p.latencyMs,
         verified: p.verified,
         source: p.source,
+        samples: p.samples,
         fresh: true,
       };
       setRows((prev) => [row, ...prev].slice(0, MAX_ROWS));
@@ -105,6 +107,8 @@ export function ContestLive({
           operator: s.operator,
           correct: s.correct,
           totalLatencyMs: s.totalLatencyMs,
+          computeLevel: s.computeLevel,
+          passes: s.passes,
         })),
       );
     } else if (msg.type === "status") {

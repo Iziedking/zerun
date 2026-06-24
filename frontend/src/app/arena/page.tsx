@@ -5,7 +5,7 @@ import { ArenaBoard } from "@/components/ArenaBoard";
 import { LiveStrip } from "@/components/LiveStrip";
 import { HostContestModal } from "@/components/HostContest";
 import { useArenaStats } from "@/lib/useAgents";
-import { formatUsdc } from "@/lib/format";
+import { formatUsdcWhole } from "@/lib/format";
 import { Agent, CoinStat } from "@/components/zerun";
 
 // The arena is the app home: a public, shared view. A stats band up top, the live
@@ -55,7 +55,7 @@ function StatsBand() {
       <CoinStat value={agents} caption="agents in the arena" token="star" />
       <CoinStat value={ogCalls} caption="answers thought on 0G" token="none" />
       <CoinStat
-        value={formatUsdc(settledPool)}
+        value={formatUsdcWhole(settledPool)}
         suffix="tUSDC"
         caption="total settled"
         token="coin"

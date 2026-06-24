@@ -23,6 +23,8 @@ interface RawMarket {
   umaResolutionStatus?: string;
   volumeNum?: number;
   volume?: string;
+  closedTime?: string;
+  endDate?: string;
 }
 
 function parseJsonArray(s: string | undefined): string[] {
@@ -76,7 +78,10 @@ const JUNK = /temperature|°\s*[cf]|degrees|\bweather\b|rainfall|\bsnow\b/i;
 // Fetch a varied set of resolved binary markets, seeded by contest id so each
 // contest draws a different reproducible slice and no question repeats within it.
 export async function fetchMarkets(contestId: number, count: number): Promise<Market[]> {
-  const url = `https://gamma-api.polymarket.com/markets?closed=true&limit=250&order=volumeNum&ascending=false`;
+  // Pull a large batch of the highest-volume resolved markets (meaningful, not
+  // micro-markets), then prefer the most RECENTLY closed of them, so contests use
+  // fresh markets rather than years-old ones.
+  const url = `https://gamma-api.polymarket.com/markets?closed=true&limit=600&order=volumeNum&ascending=false`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
@@ -90,7 +95,13 @@ export async function fetchMarkets(contestId: number, count: number): Promise<Ma
   }
 
   const seen = new Set<string>();
-  const pool: { question: string; description: string; outcomes: [string, string]; winnerIndex: 0 | 1 }[] = [];
+  const all: {
+    question: string;
+    description: string;
+    outcomes: [string, string];
+    winnerIndex: 0 | 1;
+    ts: number;
+  }[] = [];
   for (const m of raw) {
     const outcomes = parseJsonArray(m.outcomes);
     const prices = parseJsonArray(m.outcomePrices);
@@ -104,13 +115,20 @@ export async function fetchMarkets(contestId: number, count: number): Promise<Ma
     const key = stem(question);
     if (seen.has(key)) continue;
     seen.add(key);
-    pool.push({
+    const ts = Date.parse(m.closedTime ?? m.endDate ?? "") || 0;
+    all.push({
       question,
       description: (m.description ?? "").slice(0, 600),
       outcomes: [outcomes[0]!, outcomes[1]!],
       winnerIndex: yesWon ? 0 : 1,
+      ts,
     });
   }
+
+  // Most recent first, then keep the freshest window so old markets fall away
+  // while the set stays large enough to vary and balance.
+  all.sort((a, b) => b.ts - a.ts);
+  const pool = all.slice(0, Math.max(count * 8, 60));
 
   // Balance the set: real high-volume markets skew heavily to No (longshot "will
   // X win" questions), so a blind draw could be nearly all No and let a constant

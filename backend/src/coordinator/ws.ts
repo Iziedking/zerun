@@ -36,6 +36,8 @@ export interface StandingRow {
   correct: number;
   totalLatencyMs: number;
   rank: number;
+  computeLevel?: number;
+  passes?: number;
 }
 
 export interface SettledPayout {

@@ -42,6 +42,8 @@ export function pushStandings(
     correct: r.correct,
     totalLatencyMs: r.totalLatencyMs,
     rank: r.rank,
+    computeLevel: r.computeLevel ?? 0,
+    passes: r.passes ?? 0,
   }));
   broadcast({ type: "standings", contestId, payload: rows });
 }

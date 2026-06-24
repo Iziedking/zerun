@@ -23,7 +23,7 @@ export function CoinStat({
       <div className="flex items-center gap-2.5 sm:gap-3">
         {token !== "none" && <TokenMark token={token} />}
         <div className="min-w-0">
-          <div className="truncate font-display text-3xl leading-none text-ink sm:text-4xl">
+          <div className="break-words font-display text-[26px] leading-none text-ink sm:text-4xl">
             {value}
             {suffix && (
               <span className="ml-1.5 text-sm font-body font-extrabold text-ink-2 sm:text-base">

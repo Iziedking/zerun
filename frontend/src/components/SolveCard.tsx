@@ -17,6 +17,7 @@ export interface SolveRow {
   latencyMs: number;
   verified: boolean | null;
   source: string;
+  samples?: number;
   fresh?: boolean;
 }
 
@@ -93,6 +94,7 @@ export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: Cont
           latencyMs={row.latencyMs}
           verified={row.verified}
           source={row.source}
+          samples={row.samples}
         />
       </div>
     </StickerCard>
