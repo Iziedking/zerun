@@ -1,5 +1,6 @@
 import { shortAddr, shortId, formatLatency } from "@/lib/format";
 import { Chip } from "./zerun/Chip";
+import { ExplorerLink } from "./ExplorerLink";
 
 interface Props {
   provider: string;
@@ -37,7 +38,18 @@ export function ProvenanceBadge({
       </div>
 
       <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-        <Field label="provider" value={shortAddr(provider, 6, 4)} title={provider} />
+        <div className="min-w-0">
+          <dt className="font-body text-[10px] font-extrabold uppercase tracking-[0.02em] text-ink-3">
+            provider
+          </dt>
+          <dd className="truncate text-[12px]">
+            {provider ? (
+              <ExplorerLink kind="address" value={provider} label={shortAddr(provider, 6, 4)} />
+            ) : (
+              <span className="font-mono text-ink">·</span>
+            )}
+          </dd>
+        </div>
         <Field label="model" value={model || "·"} title={model} />
         <Field label="request id" value={shortId(chatId, 7, 5)} title={chatId} />
         <Field label="latency" value={formatLatency(latencyMs)} />

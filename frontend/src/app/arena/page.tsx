@@ -7,6 +7,7 @@ import { HostContestModal } from "@/components/HostContest";
 import { useArenaStats } from "@/lib/useAgents";
 import { formatUsdcWhole } from "@/lib/format";
 import { Agent, CoinStat } from "@/components/zerun";
+import { VerifyOnChain } from "@/components/VerifyOnChain";
 
 // The arena is the app home: a public, shared view. A stats band up top, the live
 // "on 0G" strip, and the full board of contests. Personal agent controls live on
@@ -38,6 +39,9 @@ export default function ArenaPage() {
       <section>
         <ArenaBoard onHost={() => setHosting(true)} />
       </section>
+
+      {/* Click-to-verify the live 0G contracts. */}
+      <VerifyOnChain />
     </div>
   );
 }

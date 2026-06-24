@@ -13,6 +13,7 @@ import { zeroGGalileo } from "@/lib/chain";
 import type { ClaimInfo } from "@/lib/types";
 import { Spinner } from "./ui";
 import { Chip, PopButton, StickerCard } from "./zerun";
+import { ExplorerLink } from "./ExplorerLink";
 
 // Checks claim eligibility, then claimPrize(contestId, amount, proof) and POST /claimed.
 export function ClaimPrize({ contestId }: { contestId: number }) {
@@ -26,6 +27,7 @@ export function ClaimPrize({ contestId }: { contestId: number }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [claimed, setClaimed] = useState(false);
+  const [claimTx, setClaimTx] = useState<string | null>(null);
 
   const engineAddr = deployment?.contracts.contestEngine;
 
@@ -69,6 +71,7 @@ export function ClaimPrize({ contestId }: { contestId: number }) {
       );
       await publicClient.waitForTransactionReceipt({ hash });
       await api.claimed(contestId, { operator: address });
+      setClaimTx(hash);
       setClaimed(true);
     } catch (e) {
       setError(friendlyError(e, "Could not claim that one. Try again."));
@@ -92,7 +95,12 @@ export function ClaimPrize({ contestId }: { contestId: number }) {
           </div>
         </div>
         {claimed ? (
-          <Chip tone="won">Claimed</Chip>
+          <div className="flex flex-col items-end gap-1">
+            <Chip tone="won">Claimed</Chip>
+            {claimTx && (
+              <ExplorerLink kind="tx" value={claimTx} label="view payout on 0G" className="text-[11px]" />
+            )}
+          </div>
         ) : (
           <PopButton
             type="button"
