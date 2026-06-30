@@ -25,7 +25,9 @@ function isSettled(c: ContestSummary): boolean {
 // Duels coming-soon. Shared by the landing and the dashboard.
 export function ArenaBoard({ onHost }: { onHost?: () => void }) {
   const { data, isLoading } = useContests();
-  const [tab, setTab] = useState<Tab>("live");
+  // Null until the visitor picks a tab, so the board can open on Live or fall
+  // back to Recent on its own depending on what the arena currently holds.
+  const [picked, setPicked] = useState<Tab | null>(null);
   const [recentShown, setRecentShown] = useState(RECENT_PAGE);
 
   const contests = data?.contests ?? [];
@@ -38,6 +40,11 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
     [contests],
   );
   const recentVisible = recent.slice(0, recentShown);
+
+  // Open on Live, but show Recent results when nothing is live so the arena
+  // never greets a visitor with an empty board between contests.
+  const tab: Tab = picked ?? (live.length === 0 && recent.length > 0 ? "recent" : "live");
+  const setTab = setPicked;
 
   return (
     <div>
