@@ -5,7 +5,7 @@ import { query } from "../db/pool.js";
 import { openContest } from "./contestOps.js";
 import { runContest } from "./runContest.js";
 import { runAnalystContest } from "./runAnalystContest.js";
-import { resettleFromStored } from "./finalize.js";
+import { resettleFromStored, cancelContest } from "./finalize.js";
 import {
   CONTEST_TYPE,
   GAS_PRICE,
@@ -30,14 +30,35 @@ import {
 //
 // Env (all optional):
 //   AUTOPILOT=on                     turn it on (off by default)
-//   AUTOPILOT_INTERVAL_SECONDS=1800  gap between opens (30 min default; lower for a demo)
+//   AUTOPILOT_PER_DAY=5              opens spread across a day (default 5)
+//   AUTOPILOT_JITTER=0.35            how much each gap swings from the average
+//   AUTOPILOT_INTERVAL_SECONDS=      fixed gap override (set this for a demo cadence)
+//   AUTOPILOT_MAX_OPEN=1             most contests allowed open at once
 //   AUTOPILOT_WINDOW_SECONDS=300     how long each contest stays open
+//   AUTOPILOT_STALE_AFTER_SECONDS=3600  refund a contest left open this long past close
 //   AUTOPILOT_POOL_USDC=30           prize pool per contest
 //   AUTOPILOT_HOUSE=4                house agents seeded into each contest
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const INTERVAL_MS = Number(process.env.AUTOPILOT_INTERVAL_SECONDS ?? "1800") * 1000;
+// A handful of opens a day, spaced across the clock rather than on a fixed timer,
+// so the arena surfaces at different local times for different timezones instead
+// of always landing in the same slots. A fixed gap still wins if set, for demos.
+const PER_DAY = Number(process.env.AUTOPILOT_PER_DAY ?? "5");
+const GAP_JITTER = Number(process.env.AUTOPILOT_JITTER ?? "0.35");
+const FIXED_INTERVAL_MS = process.env.AUTOPILOT_INTERVAL_SECONDS
+  ? Number(process.env.AUTOPILOT_INTERVAL_SECONDS) * 1000
+  : null;
+const BASE_GAP_MS = Math.floor(86_400_000 / Math.max(1, PER_DAY));
+// Most contests allowed open at once. Stops the loop from stacking the feed when
+// settlement lags; it resumes opening as soon as the open one resolves.
+const MAX_OPEN = Number(process.env.AUTOPILOT_MAX_OPEN ?? "1");
+// Short re-check while holding off because a contest is still open, so the next
+// one opens soon after it resolves rather than a full gap later.
+const HOLD_RETRY_MS = 60_000;
+// A contest still open this long after its window closed was abandoned (the
+// autopilot was down through its run). Refund the sponsor rather than run it late.
+const STALE_AFTER_SEC = Number(process.env.AUTOPILOT_STALE_AFTER_SECONDS ?? "3600");
 const WINDOW_S = Number(process.env.AUTOPILOT_WINDOW_SECONDS ?? "300");
 const POOL_USDC = Number(process.env.AUTOPILOT_POOL_USDC ?? "30");
 // Pools the autopilot picks from at random, so prizes vary contest to contest.
@@ -45,6 +66,23 @@ const POOL_CHOICES = [25, 30, 40, 50, 60, 70, 80, 100];
 const HOUSE_SIZE = Number(process.env.AUTOPILOT_HOUSE ?? "4");
 const SWEEP_MS = 30_000;
 const RUN_TIMEOUT_MS = 1_200_000; // paced 0G calls make a full field take longer
+
+// The wait before the next open: the fixed override, or a jittered draw around
+// the per-day average so gaps differ and drift across the clock day to day.
+function nextGapMs(): number {
+  if (FIXED_INTERVAL_MS) return FIXED_INTERVAL_MS;
+  const swing = 1 + (Math.random() * 2 - 1) * GAP_JITTER;
+  return Math.max(60_000, Math.floor(BASE_GAP_MS * swing));
+}
+
+// How many contests the database still considers live. Used to hold off opening
+// when one is already up, so the feed does not stack.
+async function openContestCount(): Promise<number> {
+  const { rows } = await query<{ n: string }>(
+    "select count(*)::int as n from contests_meta where status in ('open','running')",
+  );
+  return Number(rows[0]?.n ?? 0);
+}
 
 const HOUSE_NAMES = ["Pixel", "Nova", "Byte", "Echo", "Quark", "Volt"];
 
@@ -238,6 +276,7 @@ export async function seedHouseInto(contestId: number): Promise<void> {
 interface DueContest {
   id: number;
   contestType: number;
+  overdueSec: number; // seconds since the entry window closed
 }
 async function findDueContests(lookback = 100): Promise<DueContest[]> {
   const dep = loadDeployment();
@@ -250,8 +289,22 @@ async function findDueContests(lookback = 100): Promise<DueContest[]> {
   const floor = Math.max(1, latest - lookback + 1);
   const nowSec = Math.floor(Date.now() / 1000);
 
+  // Candidate ids: the recent on-chain window (covers contests not yet mirrored to
+  // the database, like one just hosted) plus every id the database still considers
+  // open or running. The database pass is what catches contests older than the
+  // lookback window, which the recent scan alone would miss and leave open forever.
+  const ids = new Set<number>();
+  for (let id = latest; id >= floor; id--) ids.add(id);
+  const { rows } = await query<{ contest_id: string }>(
+    "select contest_id from contests_meta where status in ('open','running')",
+  );
+  for (const r of rows) {
+    const id = Number(r.contest_id);
+    if (id >= 1 && id <= latest) ids.add(id);
+  }
+
   const due: DueContest[] = [];
-  for (let id = latest; id >= floor; id--) {
+  for (const id of ids) {
     const c = await publicClient.readContract({
       address: dep.contestEngine,
       abi: contestEngineAbi,
@@ -259,10 +312,10 @@ async function findDueContests(lookback = 100): Promise<DueContest[]> {
       args: [BigInt(id)],
     });
     if (Number(c.status) === 1 && Number(c.endTime) <= nowSec) {
-      due.push({ id, contestType: Number(c.contestType) });
+      due.push({ id, contestType: Number(c.contestType), overdueSec: nowSec - Number(c.endTime) });
     }
   }
-  return due.reverse(); // oldest first
+  return due.sort((a, b) => a.id - b.id); // oldest first
 }
 
 // Make sure a contests_meta row exists for an on-chain contest, so the runner
@@ -342,6 +395,18 @@ async function startDueSweeper(): Promise<void> {
     try {
       for (const d of await findDueContests()) {
         if (inFlight.has(d.id)) continue;
+        if (d.overdueSec > STALE_AFTER_SEC) {
+          // Window closed long ago and it never ran (the autopilot was down through
+          // it). Running it now would score a stale field, so refund the sponsor and
+          // let it leave the open state.
+          console.log(
+            `autopilot: contest ${d.id} abandoned ${Math.round(d.overdueSec / 60)}m past close, refunding`,
+          );
+          await cancelContest(d.id).catch((err) =>
+            console.error(`autopilot: cancel ${d.id} failed:`, (err as Error).message),
+          );
+          continue;
+        }
         console.log(`autopilot: settling due contest ${d.id}`);
         await runOnce(d.id, d.contestType).catch((err) =>
           console.error(`autopilot: settle ${d.id} failed:`, (err as Error).message),
@@ -369,26 +434,36 @@ async function startOpenLoop(): Promise<void> {
   const analystEvery = Number(process.env.AUTOPILOT_ANALYST_EVERY ?? "4");
   let cycle = 0;
   for (;;) {
+    let held = false;
     try {
-      const kind =
-        analystEvery > 0 && cycle % analystEvery === analystEvery - 1 ? "analyst" : "solver";
-      // Vary the pool so the arena does not look canned.
-      const pool = POOL_CHOICES[Math.floor(Math.random() * POOL_CHOICES.length)]!;
-      console.log(`autopilot: opening a ${kind} contest (${pool} tUSDC)`);
-      const id = await openContest({
-        prizePoolUsdc: pool,
-        durationSecs: WINDOW_S,
-        topN: 3,
-        puzzleCount: 6,
-        kind,
-      });
-      await seedHouseInto(id);
-      console.log(`autopilot: contest ${id} (${kind}) open with the house field`);
-      cycle++;
+      const open = await openContestCount().catch(() => 0);
+      if (open >= MAX_OPEN) {
+        // One is still up. Skip this slot rather than stack the feed, and re-check
+        // soon (not a full gap later) so a contest opens shortly after the sweeper
+        // resolves the current one.
+        held = true;
+        console.log(`autopilot: ${open} contest(s) still open, holding this slot`);
+      } else {
+        const kind =
+          analystEvery > 0 && cycle % analystEvery === analystEvery - 1 ? "analyst" : "solver";
+        // Vary the pool so the arena does not look canned.
+        const pool = POOL_CHOICES[Math.floor(Math.random() * POOL_CHOICES.length)]!;
+        console.log(`autopilot: opening a ${kind} contest (${pool} tUSDC)`);
+        const id = await openContest({
+          prizePoolUsdc: pool,
+          durationSecs: WINDOW_S,
+          topN: 3,
+          puzzleCount: 6,
+          kind,
+        });
+        await seedHouseInto(id);
+        console.log(`autopilot: contest ${id} (${kind}) open with the house field`);
+        cycle++;
+      }
     } catch (err) {
       console.error("autopilot open failed:", (err as Error).message);
     }
-    await sleep(INTERVAL_MS);
+    await sleep(held ? HOLD_RETRY_MS : nextGapMs());
   }
 }
 
@@ -398,8 +473,11 @@ export function autopilotEnabled(): boolean {
 
 export function startAutopilot(): void {
   if (!autopilotEnabled()) return;
+  const cadence = FIXED_INTERVAL_MS
+    ? `every ${FIXED_INTERVAL_MS / 1000}s`
+    : `~${PER_DAY}/day (±${Math.round(GAP_JITTER * 100)}%)`;
   console.log(
-    `autopilot: on. opening every ${INTERVAL_MS / 1000}s, ${WINDOW_S}s window, ${POOL_USDC} tUSDC pool.`,
+    `autopilot: on. opening ${cadence}, ${WINDOW_S}s window, ${POOL_USDC} tUSDC pool, max ${MAX_OPEN} open.`,
   );
   void startOpenLoop();
   void startDueSweeper();
