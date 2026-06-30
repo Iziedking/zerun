@@ -131,6 +131,32 @@ export async function onchainEntryCount(contestId: number): Promise<number> {
   return Number(n);
 }
 
+// Keep only the entries whose operator actually registered on chain. The contract
+// is the source of truth for who is in a contest: registerEntry checks agent
+// ownership and records operatorEntered, so a row that reached contest_entries
+// without a matching on-chain entry (a forged or unverified POST /enter) must
+// never be scored or paid. Dropping it here, before scoring, keeps such an
+// operator out of the payout root. Throws on a read failure so the run aborts and
+// retries rather than settle on an unverified field.
+export async function keepOnchainEntrants<T extends { operator: string }>(
+  contestId: number,
+  entries: T[],
+): Promise<T[]> {
+  if (entries.length === 0) return entries;
+  const dep = loadDeployment();
+  const entered = await Promise.all(
+    entries.map((e) =>
+      publicClient.readContract({
+        address: dep.contestEngine,
+        abi: contestEngineAbi,
+        functionName: "operatorEntered",
+        args: [BigInt(contestId), e.operator as `0x${string}`],
+      }),
+    ),
+  );
+  return entries.filter((_, i) => entered[i] === true);
+}
+
 // Rebuild a contest's entries in the database from the on-chain EntryRegistered
 // events, so a lagged or missed POST /enter mirror cannot drop an entrant.
 // Best effort: returns how many entries it reconciled.

@@ -7,7 +7,7 @@ import { computePlan } from "../runners/computeLevels.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
-import { onchainEntryCount, syncEntriesFromChain } from "./contestOps.js";
+import { onchainEntryCount, syncEntriesFromChain, keepOnchainEntrants } from "./contestOps.js";
 import {
   CONTEST_TYPE,
   agentRegistryAbi,
@@ -173,6 +173,16 @@ export async function runContest(contestId: number): Promise<RunResult> {
       await cancelContest(contestId);
       return { contestId, root: null, posted: false, settled: false, payouts: [] };
     }
+  }
+
+  // Only operators that registered on chain may be scored or paid. Drop any entry
+  // with no matching on-chain registerEntry, so the payout root can hold only real
+  // entrants. If that leaves no field, cancel and refund the sponsor.
+  entries = await keepOnchainEntrants(contestId, entries);
+  if (entries.length === 0) {
+    broadcast({ type: "status", contestId, payload: { status: "no-entries" } });
+    await cancelContest(contestId);
+    return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
 
   const puzzles = generatePuzzles(contestId, await puzzleCountFor(contestId));

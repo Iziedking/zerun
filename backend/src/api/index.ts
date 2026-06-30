@@ -37,7 +37,9 @@ app.use("/*", cors());
 
 const adminToken = process.env.ADMIN_TOKEN ?? "";
 function adminOk(c: { req: { header: (k: string) => string | undefined } }): boolean {
-  if (!adminToken) return true; // open on the testnet MVP if no token set
+  // Fail closed: with no token set, every admin and money route is denied rather
+  // than left open. Production must set ADMIN_TOKEN for the support console to work.
+  if (!adminToken) return false;
   return c.req.header("x-admin-token") === adminToken;
 }
 
@@ -511,6 +513,15 @@ app.get("/api/contests/:id/standings", async (c) => {
   return c.json({ standings: await standingsFor(id) });
 });
 
+// Keep a contest's puzzle or market count in a sane range, so a host cannot make
+// every agent run thousands of paid 0G calls. Falls back to the kind's default for
+// a missing or non-numeric value.
+function clampPuzzleCount(raw: unknown, fallback: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(1, Math.floor(n)), 12);
+}
+
 // Register a contest an operator hosted on chain (they ran mint, approve, and
 // listContest from their own wallet). We confirm it on chain and mirror it so it
 // shows in the arena; the due-sweeper settles it when the window closes.
@@ -518,7 +529,7 @@ app.post("/api/contests/host", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const id = Number(body.contestId);
   const kind = body.kind === "analyst" ? "analyst" : "solver";
-  const puzzleCount = Number(body.puzzleCount ?? (kind === "analyst" ? 4 : 5));
+  const puzzleCount = clampPuzzleCount(body.puzzleCount, kind === "analyst" ? 4 : 5);
   const maxOperators = Number(body.maxOperators ?? 0) > 0 ? Number(body.maxOperators) : null;
   if (!id) return c.json({ error: "contestId required" }, 400);
 
@@ -597,6 +608,23 @@ app.post("/api/contests/:id/enter", async (c) => {
   );
   if (busy.rows.length > 0) {
     return c.json({ error: "this agent is already competing in another open contest" }, 409);
+  }
+
+  // The chain is the source of truth for the field. Only mirror an entry the
+  // operator actually registered on chain (registerEntry checks agent ownership),
+  // so a forged enter request can never reach scoring or a payout. The frontend
+  // sends registerEntry and waits for the receipt before calling this.
+  const dep = loadDeployment();
+  const entered = await publicClient
+    .readContract({
+      address: dep.contestEngine,
+      abi: contestEngineAbi,
+      functionName: "operatorEntered",
+      args: [BigInt(id), operator as `0x${string}`],
+    })
+    .catch(() => false);
+  if (!entered) {
+    return c.json({ error: "register your entry on chain before joining" }, 409);
   }
 
   await query(
@@ -905,7 +933,7 @@ app.post("/api/admin/contests/open", async (c) => {
     prizePoolUsdc: Number(body.prizePoolUsdc ?? 100),
     durationSecs: Number(body.durationSecs ?? 120),
     topN: Number(body.topN ?? 3),
-    puzzleCount: Number(body.puzzleCount ?? (kind === "analyst" ? 4 : 5)),
+    puzzleCount: clampPuzzleCount(body.puzzleCount, kind === "analyst" ? 4 : 5),
     kind,
   });
   return c.json({ ok: true, contestId: id, kind });
