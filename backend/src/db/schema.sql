@@ -155,3 +155,31 @@ create table if not exists payouts (
   claimed     boolean not null default false,
   primary key (contest_id, operator)
 );
+
+-- World Cup Prediction Mission pool. A cache of the live World Cup markets pulled
+-- from Polymarket, plus each one's resolution state (filled in later when the real
+-- event settles) and the rotation bookkeeping that keeps missions from repeating a
+-- market until the whole pool has been used once.
+create table if not exists worldcup_markets (
+  condition_id     text primary key,   -- Polymarket conditionId, the stable key
+  question         text not null,
+  description      text,
+  group_title      text,               -- e.g. "Spain" (the team/subject)
+  event_title      text,               -- e.g. "World Cup Winner"
+  end_date         timestamptz,        -- the market's own end date
+  resolved         boolean not null default false,
+  winner_index     int,                -- 0 = Yes, 1 = No, once resolved
+  last_used_cycle  int not null default 0, -- rotation: cycle this market last appeared in
+  first_seen       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+create index if not exists worldcup_markets_rotation_idx
+  on worldcup_markets (resolved, last_used_cycle);
+
+-- Single-row rotation state: the current rotation cycle. Bumped when the unused pool
+-- for the current cycle is exhausted, which frees every market to appear again.
+create table if not exists worldcup_state (
+  id     int primary key default 1,
+  cycle  int not null default 1
+);
+insert into worldcup_state (id, cycle) values (1, 1) on conflict (id) do nothing;
