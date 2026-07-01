@@ -48,6 +48,15 @@ export function useLeaderboard() {
   });
 }
 
+export function useModelStats() {
+  return useQuery({
+    queryKey: ["model-stats"],
+    queryFn: () => api.modelStats(),
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+  });
+}
+
 export function useOperator(address: string | undefined) {
   return useQuery({
     queryKey: ["operator", address?.toLowerCase()],

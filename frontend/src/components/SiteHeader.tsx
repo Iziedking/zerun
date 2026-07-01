@@ -25,6 +25,7 @@ export function SiteHeader() {
   const nav = [
     { href: "/arena", label: "Arena" },
     { href: "/leaderboard", label: "Leaderboard" },
+    { href: "/models", label: "Models" },
     ...(address ? [{ href: `/profile/${address}`, label: "Profile" }] : []),
   ];
 

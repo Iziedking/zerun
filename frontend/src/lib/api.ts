@@ -10,6 +10,7 @@ import type {
   Deployment,
   FeedItem,
   LeaderboardRow,
+  ModelStat,
   OperatorProfile,
   RecentFeedItem,
   Standing,
@@ -50,6 +51,7 @@ export const api = {
   recentFeed: (limit = 12) =>
     req<{ feed: RecentFeedItem[] }>(`/api/feed/recent?limit=${limit}`),
   leaderboard: () => req<{ leaderboard: LeaderboardRow[] }>("/api/leaderboard"),
+  modelStats: () => req<{ models: ModelStat[] }>("/api/models/stats"),
   operator: (address: string) =>
     req<OperatorProfile>(`/api/operators/${address}`),
 

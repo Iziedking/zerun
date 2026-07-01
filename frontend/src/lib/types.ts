@@ -151,6 +151,24 @@ export interface LeaderboardRow {
   winnings: string; // USDC 6dp string
 }
 
+// One 0G Compute model's aggregated performance, for the model studies page.
+// `accuracy` is over graded answers only (Solver/Analyst); null when a model has
+// answered but never on a graded contest.
+export interface ModelStat {
+  model: string;
+  answers: number;
+  gradedAnswers: number;
+  correct: number;
+  wrong: number;
+  errors: number;
+  accuracy: number | null;
+  verified: number;
+  verifiedRate: number;
+  contests: number;
+  agents: number;
+  avgLatencyMs: number;
+}
+
 // Operator profile from GET /api/operators/:address.
 export interface OperatorProfile {
   operator: string;

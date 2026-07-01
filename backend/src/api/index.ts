@@ -77,6 +77,70 @@ app.get("/api/stats", async (c) => {
   return c.json(rows[0] ?? {});
 });
 
+// Per-model performance, aggregated from every 0G Compute answer. Powers the model
+// studies page: how each 0G model actually performs at real, graded work, sourced from
+// provable runs rather than self-reported benchmarks. Accuracy is over graded answers
+// only (Solver and Analyst, where a call is correct or wrong); poker moves and pending
+// forecasts still count as usage. Only true 0G Compute answers are included.
+app.get("/api/models/stats", async (c) => {
+  const { rows } = await query<{
+    model: string;
+    answers: number;
+    correct: number;
+    wrong: number;
+    errors: number;
+    verified: number;
+    contests: number;
+    agents: number;
+    avg_latency_ms: number;
+  }>(
+    `select
+       model,
+       count(*)::int as answers,
+       count(*) filter (where verdict = 'correct')::int as correct,
+       count(*) filter (where verdict = 'wrong')::int as wrong,
+       count(*) filter (where verdict = 'error')::int as errors,
+       count(*) filter (where verified = true)::int as verified,
+       count(distinct contest_id)::int as contests,
+       count(distinct agent_id)::int as agents,
+       coalesce(avg(latency_ms) filter (where latency_ms is not null), 0)::int as avg_latency_ms
+     from solve_runs
+     where source = '0g-compute'
+       and model is not null and model <> '' and model not in ('error', 'offline-dev')
+     group by model`,
+  );
+
+  const models = rows
+    .map((r) => {
+      const graded = r.correct + r.wrong;
+      return {
+        model: r.model,
+        answers: r.answers,
+        gradedAnswers: graded,
+        correct: r.correct,
+        wrong: r.wrong,
+        errors: r.errors,
+        accuracy: graded > 0 ? r.correct / graded : null,
+        verified: r.verified,
+        verifiedRate: r.answers > 0 ? r.verified / r.answers : 0,
+        contests: r.contests,
+        agents: r.agents,
+        avgLatencyMs: r.avg_latency_ms,
+      };
+    })
+    .sort((a, b) => {
+      // Ranked by accuracy where graded, most-graded as the tiebreak. Models with no
+      // graded answers fall to the bottom, ordered by usage.
+      if (a.accuracy === null && b.accuracy === null) return b.answers - a.answers;
+      if (a.accuracy === null) return 1;
+      if (b.accuracy === null) return -1;
+      if (b.accuracy !== a.accuracy) return b.accuracy - a.accuracy;
+      return b.gradedAnswers - a.gradedAnswers;
+    });
+
+  return c.json({ models });
+});
+
 // tUSDC faucet, capped to 100 tUSDC per operator per rolling 7 days so it cannot
 // be farmed. The coordinator mints to the operator and pays the gas.
 const USDC_WEEKLY_CAP = 100_000000n; // 100 tUSDC (6 decimals)
