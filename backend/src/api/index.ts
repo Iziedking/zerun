@@ -506,7 +506,7 @@ app.get("/api/deployment", (c) => {
 
 app.get("/api/contests", async (c) => {
   const { rows } = await query(
-    `select contest_id, status, kind, puzzle_count, agent_count, metric, prize_pool, final_root, created_at, settled_at
+    `select contest_id, status, kind, puzzle_count, agent_count, max_operators, metric, prize_pool, final_root, created_at, settled_at
        from contests_meta order by contest_id desc`,
   );
   return c.json({ contests: rows });
@@ -604,7 +604,7 @@ function clampPuzzleCount(raw: unknown, fallback: number): number {
 app.post("/api/contests/host", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const id = Number(body.contestId);
-  const kind = body.kind === "analyst" ? "analyst" : "solver";
+  const kind = body.kind === "analyst" ? "analyst" : body.kind === "poker" ? "poker" : "solver";
   const puzzleCount = clampPuzzleCount(body.puzzleCount, kind === "analyst" ? 4 : 5);
   const maxOperators = Number(body.maxOperators ?? 0) > 0 ? Number(body.maxOperators) : null;
   if (!id) return c.json({ error: "contestId required" }, 400);
@@ -627,15 +627,19 @@ app.post("/api/contests/host", async (c) => {
          puzzle_count = excluded.puzzle_count, kind = excluded.kind,
          prize_pool = excluded.prize_pool, ends_at = excluded.ends_at,
          max_operators = excluded.max_operators`,
-    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators],
+    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators],
   );
 
-  // Give the hosted contest a field so it does not sit empty and cancel, the way
-  // the autopilot seeds its own. Only for uncapped contests: a host who set an
-  // operator cap wants specific entrants, so leave those for real players. The
-  // house joins in the background; the open window gives them time to register.
+  // Seed a field so a hosted contest does not sit empty and cancel. An uncapped
+  // contest gets the full house; a 1v1 duel gets a single house opponent so it runs
+  // even if no challenger joins in time. A capped-but-larger contest is left for its
+  // specific entrants. The open window gives real players time to register too.
   if (maxOperators === null) {
     void seedHouseInto(id).catch((e) =>
+      console.error(`host ${id}: house seed failed:`, (e as Error).message),
+    );
+  } else if (maxOperators === 2) {
+    void seedHouseInto(id, 1).catch((e) =>
       console.error(`host ${id}: house seed failed:`, (e as Error).message),
     );
   }

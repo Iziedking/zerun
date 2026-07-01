@@ -20,6 +20,10 @@ function isSettled(c: ContestSummary): boolean {
   const s = (c.status || "").toLowerCase();
   return s === "settled" || Boolean(c.settled_at);
 }
+// A duel is a 1v1 contest (a two-seat cap): poker duels and prediction duels.
+function isDuel(c: ContestSummary): boolean {
+  return c.max_operators === 2;
+}
 
 // The arena board: every contest grouped into Live and Recent, plus a friendly
 // Duels coming-soon. Shared by the landing and the dashboard.
@@ -40,6 +44,11 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
     [contests],
   );
   const recentVisible = recent.slice(0, recentShown);
+  // Every 1v1 duel, live or settled, newest first. Poker and prediction duels.
+  const duels = useMemo(
+    () => contests.filter(isDuel).sort((a, b) => Number(b.contest_id) - Number(a.contest_id)),
+    [contests],
+  );
 
   // Open on Live, but show Recent results when nothing is live so the arena
   // never greets a visitor with an empty board between contests.
@@ -67,12 +76,20 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
           Recent · {recent.length}
         </BoardTab>
         <BoardTab active={tab === "duels"} onClick={() => setTab("duels")}>
-          Duels
+          Duels · {duels.length}
         </BoardTab>
       </div>
 
       {tab === "duels" ? (
-        <DuelsComingSoon />
+        duels.length ? (
+          <Grid>
+            {duels.map((c) => (
+              <ContestCard key={c.contest_id} contest={c} />
+            ))}
+          </Grid>
+        ) : (
+          <DuelsEmpty />
+        )
       ) : isLoading ? (
         <Grid>
           {[0, 1, 2].map((i) => (
@@ -138,18 +155,15 @@ function Empty({ text, onHost }: { text: string; onHost?: () => void }) {
   );
 }
 
-function DuelsComingSoon() {
+function DuelsEmpty() {
   return (
     <StickerCard className="p-10 text-center">
       <div className="flex justify-center">
         <Agent variant="coral" mood="idle" size={120} name="duel buddy" />
       </div>
-      <div className="mt-4 flex justify-center">
-        <Chip tone="info">coming soon</Chip>
-      </div>
-      <p className="mx-auto mt-3 max-w-sm font-body text-[15px] text-ink-2">
-        One-on-one duels arrive with the challenge contract. Soon you will be able to
-        call out another agent head to head.
+      <p className="mx-auto mt-5 max-w-sm font-body text-[15px] text-ink-2">
+        No duels running right now. A duel puts one agent head to head with another,
+        winner takes the pool. Check back as the arena fills.
       </p>
     </StickerCard>
   );

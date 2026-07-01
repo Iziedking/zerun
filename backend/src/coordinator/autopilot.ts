@@ -57,6 +57,22 @@ const MAX_OPEN = Number(process.env.AUTOPILOT_MAX_OPEN ?? "1");
 // Short re-check while holding off because a contest is still open, so the next
 // one opens soon after it resolves rather than a full gap later.
 const HOLD_RETRY_MS = 60_000;
+
+// Event mix: relative weights for which kind the autopilot opens. Default is a
+// poker-forward arena (poker 50, prediction 30, puzzle 20).
+const W_POKER = Number(process.env.AUTOPILOT_W_POKER ?? "50");
+const W_PREDICTION = Number(process.env.AUTOPILOT_W_PREDICTION ?? "30");
+const W_PUZZLE = Number(process.env.AUTOPILOT_W_PUZZLE ?? "20");
+// Chance a prediction event opens as a 1v1 duel rather than a full-field contest.
+const PREDICTION_DUEL_PCT = Number(process.env.AUTOPILOT_PREDICTION_DUEL_PCT ?? "0.4");
+
+function pickAutopilotKind(): "poker" | "analyst" | "solver" {
+  const total = Math.max(1, W_POKER + W_PREDICTION + W_PUZZLE);
+  const r = Math.random() * total;
+  if (r < W_POKER) return "poker";
+  if (r < W_POKER + W_PREDICTION) return "analyst";
+  return "solver";
+}
 // A contest still open this long after its window closed was abandoned (the
 // autopilot was down through its run). Refund the sponsor rather than run it late.
 const STALE_AFTER_SEC = Number(process.env.AUTOPILOT_STALE_AFTER_SECONDS ?? "3600");
@@ -245,8 +261,9 @@ async function upgradeHouseTier(
 
 export async function seedHouseInto(contestId: number, count = HOUSE_SIZE): Promise<void> {
   const dep = loadDeployment();
-  // A poker duel seats exactly two; the other kinds take the full house field.
-  const house = (await ensureHouseRoster()).slice(0, Math.max(2, count));
+  // A hosted duel seats one house opponent; an autopilot duel seats two; the other
+  // kinds take the full house field.
+  const house = (await ensureHouseRoster()).slice(0, Math.max(1, count));
   for (const h of house) {
     try {
       const hash = await h.wallet.writeContract({
@@ -439,10 +456,6 @@ async function startOpenLoop(): Promise<void> {
   // wins. Analyst contests forecast real markets, which is knowledge-bound (the
   // model cannot out-forecast an event it has no data on), so they run only every
   // Nth cycle. Set AUTOPILOT_ANALYST_EVERY=0 for solver-only, 2 for an even split.
-  const analystEvery = Number(process.env.AUTOPILOT_ANALYST_EVERY ?? "4");
-  // Mix in a heads-up poker duel every Nth cycle (0 to turn duels off).
-  const pokerEvery = Number(process.env.AUTOPILOT_POKER_EVERY ?? "3");
-  let cycle = 0;
   for (;;) {
     let held = false;
     try {
@@ -454,26 +467,25 @@ async function startOpenLoop(): Promise<void> {
         held = true;
         console.log(`autopilot: ${open} contest(s) still open, holding this slot`);
       } else {
-        const kind: "solver" | "analyst" | "poker" =
-          pokerEvery > 0 && cycle % pokerEvery === pokerEvery - 1
-            ? "poker"
-            : analystEvery > 0 && cycle % analystEvery === analystEvery - 1
-              ? "analyst"
-              : "solver";
+        const kind = pickAutopilotKind();
+        // Poker runs heads-up; a prediction opens as a 1v1 duel part of the time, so
+        // both poker and prediction fill the duels tab. Puzzles stay a full field.
+        const isDuel =
+          kind === "poker" ? true : kind === "analyst" ? Math.random() < PREDICTION_DUEL_PCT : false;
         // Vary the pool so the arena does not look canned.
         const pool = POOL_CHOICES[Math.floor(Math.random() * POOL_CHOICES.length)]!;
-        console.log(`autopilot: opening a ${kind} contest (${pool} tUSDC)`);
+        console.log(`autopilot: opening a ${kind} ${isDuel ? "duel" : "contest"} (${pool} tUSDC)`);
         const id = await openContest({
           prizePoolUsdc: pool,
           durationSecs: WINDOW_S,
-          // A duel is winner-take-all between two seats; the others rank a full field.
-          topN: kind === "poker" ? 1 : 3,
+          // A duel is winner-take-all between two seats; a contest ranks a full field.
+          topN: isDuel ? 1 : 3,
           puzzleCount: 6,
           kind,
+          maxOperators: isDuel ? 2 : undefined,
         });
-        await seedHouseInto(id, kind === "poker" ? 2 : HOUSE_SIZE);
-        console.log(`autopilot: contest ${id} (${kind}) open with the house field`);
-        cycle++;
+        await seedHouseInto(id, isDuel ? 2 : HOUSE_SIZE);
+        console.log(`autopilot: ${kind} ${isDuel ? "duel" : "contest"} ${id} open with the house field`);
       }
     } catch (err) {
       console.error("autopilot open failed:", (err as Error).message);

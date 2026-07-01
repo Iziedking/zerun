@@ -10,6 +10,7 @@ import { Chip, PopButton, StickerCard } from "./zerun";
 // visual affordance inside that link.
 export function ContestCard({ contest }: { contest: ContestSummary }) {
   const meta = kindMeta(contest.kind);
+  const isDuel = contest.max_operators === 2;
   const s = (contest.status || "").toLowerCase();
   const live = s === "running" || s === "active";
   const done = s === "settled" || s === "scored" || s === "cancelled";
@@ -25,8 +26,9 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
           <ContestStatusPill status={contest.status} />
         </div>
 
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <Chip tone={meta.tone}>{meta.label}</Chip>
+          {isDuel && <Chip tone="hot">1v1</Chip>}
         </div>
 
         <div className="mt-5 flex items-center gap-3">
@@ -52,7 +54,7 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
               </span>
             </div>
             <div className="mt-0.5 font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
-              prize pool, split among the top finishers
+              {isDuel ? "prize pool, winner takes all" : "prize pool, split among the top finishers"}
             </div>
           </div>
         </div>

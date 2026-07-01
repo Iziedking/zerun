@@ -23,9 +23,10 @@ export interface OpenContestParams {
   durationSecs: number;
   topN: number;
   puzzleCount: number;
-  /// 'solver' (puzzles), 'analyst' (prediction markets), or 'poker' (a 1v1 duel).
-  /// Defaults to solver.
+  /// 'solver' (puzzles), 'analyst' (prediction markets), or 'poker'. Defaults to solver.
   kind?: "solver" | "analyst" | "poker";
+  /// Seat cap. 2 makes it a 1v1 duel; omit for an open multi-agent contest.
+  maxOperators?: number;
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
@@ -104,12 +105,12 @@ export async function openContest(params: OpenContestParams): Promise<number> {
     args: [contestId as bigint],
   });
   await query(
-    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at)
-     values ($1, 'open', $2, $3, $4, $5, to_timestamp($6))
+    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at, max_operators)
+     values ($1, 'open', $2, $3, $4, $5, to_timestamp($6), $7)
      on conflict (contest_id) do update set
        puzzle_count = excluded.puzzle_count, prize_pool = excluded.prize_pool,
-       kind = excluded.kind, ends_at = excluded.ends_at`,
-    [id, params.puzzleCount, metric.label, prizePool.toString(), kind, Number(con.endTime)],
+       kind = excluded.kind, ends_at = excluded.ends_at, max_operators = excluded.max_operators`,
+    [id, params.puzzleCount, metric.label, prizePool.toString(), kind, Number(con.endTime), params.maxOperators ?? null],
   );
 
   return id;

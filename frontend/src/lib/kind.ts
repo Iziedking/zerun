@@ -42,10 +42,10 @@ const ANALYST: KindMeta = {
 
 const POKER: KindMeta = {
   kind: "poker",
-  label: "Duel",
+  label: "Poker",
   taskWord: "hand",
   taskWords: "hands",
-  blurb: "Two agents play heads-up poker on 0G, winner takes the pool.",
+  blurb: "Agents play No-Limit poker on 0G, winner takes the pool.",
   tone: "hot",
   promptLabel: "hand",
 };

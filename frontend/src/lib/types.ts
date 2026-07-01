@@ -50,6 +50,8 @@ export interface ContestSummary {
   kind: ContestKind;
   puzzle_count: number;
   agent_count: number;
+  // Seat cap. 2 marks a 1v1 duel; null is an open multi-agent contest.
+  max_operators?: number | null;
   metric: string;
   prize_pool: string; // USDC 6dp string
   final_root: string | null;
