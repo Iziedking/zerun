@@ -22,6 +22,7 @@ import {
 import { POKER_SYSTEM, buildUserPrompt, parseAction } from "../runners/poker/decide.js";
 import { recordDuel } from "../runners/poker/dossier.js";
 import { acquireDossier } from "../runners/poker/x402.js";
+import { runPokerTable } from "./runPokerTable.js";
 
 // The poker duel loop. Two agents play heads-up No-Limit Hold'em on 0G Compute for
 // a fixed window; every decision is a paced inference call and lands on the live
@@ -90,7 +91,9 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     await cancelContest(contestId);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
-  // A duel is two seats. If more than two entered, the first two by id play.
+  // Three or more agents make a multi-player table; hand off to that runner. Two
+  // seats stay on the proven heads-up path below.
+  if (entries.length > 2) return runPokerTable(contestId, entries);
   const players: [Entry, Entry] = [entries[0]!, entries[1]!];
 
   // House agents fill a seat for the feed but are never paid. If a real player is in

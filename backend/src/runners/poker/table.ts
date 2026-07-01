@@ -233,7 +233,7 @@ function showdown(t: Table): void {
 
 // What the seat to act sees, for building its decision prompt.
 export interface PlayerView {
-  seat: Seat;
+  seat: number; // display only, so a table seat (0..n-1) fits too
   holeCards: string; // e.g. "As Kd"
   board: string; // e.g. "Th 7c 2s" or "" preflop
   street: string; // "preflop" | "flop" | "turn" | "river"

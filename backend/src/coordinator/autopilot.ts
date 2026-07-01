@@ -2,7 +2,7 @@ import { createWalletClient, http, keccak256, parseEther, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { config } from "../config/index.js";
 import { query } from "../db/pool.js";
-import { openContest } from "./contestOps.js";
+import { openContest, kindFromMetric } from "./contestOps.js";
 import { runContest } from "./runContest.js";
 import { runAnalystContest } from "./runAnalystContest.js";
 import { runPokerContest } from "./runPokerContest.js";
@@ -65,6 +65,10 @@ const W_PREDICTION = Number(process.env.AUTOPILOT_W_PREDICTION ?? "30");
 const W_PUZZLE = Number(process.env.AUTOPILOT_W_PUZZLE ?? "20");
 // Chance a prediction event opens as a 1v1 duel rather than a full-field contest.
 const PREDICTION_DUEL_PCT = Number(process.env.AUTOPILOT_PREDICTION_DUEL_PCT ?? "0.4");
+// Chance a poker event opens as a multi-player table (up to 6-max) rather than a
+// heads-up duel. Off by default: set AUTOPILOT_POKER_TABLE_PCT above 0 to enable
+// tables once the multi-player path is proven live.
+const POKER_TABLE_PCT = Number(process.env.AUTOPILOT_POKER_TABLE_PCT ?? "0");
 
 function pickAutopilotKind(): "poker" | "analyst" | "solver" {
   const total = Math.max(1, W_POKER + W_PREDICTION + W_PUZZLE);
@@ -294,7 +298,7 @@ export async function seedHouseInto(contestId: number, count = HOUSE_SIZE): Prom
 // Open contests (status OPEN = 1) whose window has closed, any sponsor.
 interface DueContest {
   id: number;
-  contestType: number;
+  kind: "solver" | "analyst" | "poker";
   overdueSec: number; // seconds since the entry window closed
 }
 async function findDueContests(lookback = 100): Promise<DueContest[]> {
@@ -331,7 +335,7 @@ async function findDueContests(lookback = 100): Promise<DueContest[]> {
       args: [BigInt(id)],
     });
     if (Number(c.status) === 1 && Number(c.endTime) <= nowSec) {
-      due.push({ id, contestType: Number(c.contestType), overdueSec: nowSec - Number(c.endTime) });
+      due.push({ id, kind: kindFromMetric(c.metric as string), overdueSec: nowSec - Number(c.endTime) });
     }
   }
   return due.sort((a, b) => a.id - b.id); // oldest first
@@ -339,7 +343,7 @@ async function findDueContests(lookback = 100): Promise<DueContest[]> {
 
 // Make sure a contests_meta row exists for an on-chain contest, so the runner
 // and the API have its kind and pool. Covers user-hosted contests too.
-async function ensureContestMeta(id: number, contestType: number): Promise<void> {
+async function ensureContestMeta(id: number): Promise<void> {
   const dep = loadDeployment();
   const c = await publicClient.readContract({
     address: dep.contestEngine,
@@ -347,14 +351,14 @@ async function ensureContestMeta(id: number, contestType: number): Promise<void>
     functionName: "getContest",
     args: [BigInt(id)],
   });
-  const kind =
-    contestType === CONTEST_TYPE.ANALYST ? "analyst" : contestType === CONTEST_TYPE.POKER ? "poker" : "solver";
+  const kind = kindFromMetric(c.metric as string);
+  const metricLabel = kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : "PUZZLE";
   await query(
     `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at)
        values ($1, 'open', 4, $2, $3, $4, to_timestamp($5))
        on conflict (contest_id) do update set
          kind = excluded.kind, prize_pool = excluded.prize_pool, ends_at = excluded.ends_at`,
-    [id, kind === "analyst" ? "PREDICTION" : "PUZZLE", c.prizePool.toString(), kind, Number(c.endTime)],
+    [id, metricLabel, c.prizePool.toString(), kind, Number(c.endTime)],
   );
 }
 
@@ -394,16 +398,11 @@ async function reconcileStatuses(): Promise<void> {
 
 const inFlight = new Set<number>();
 
-async function runOnce(id: number, contestType: number): Promise<void> {
+async function runOnce(id: number, kind: "solver" | "analyst" | "poker"): Promise<void> {
   if (inFlight.has(id)) return;
   inFlight.add(id);
-  await ensureContestMeta(id, contestType).catch(() => {});
-  const runner =
-    contestType === CONTEST_TYPE.ANALYST
-      ? runAnalystContest
-      : contestType === CONTEST_TYPE.POKER
-        ? runPokerContest
-        : runContest;
+  await ensureContestMeta(id).catch(() => {});
+  const runner = kind === "analyst" ? runAnalystContest : kind === "poker" ? runPokerContest : runContest;
   const work = runner(id).finally(() => inFlight.delete(id));
   work.catch(() => {});
   await Promise.race([
@@ -432,8 +431,8 @@ async function startDueSweeper(): Promise<void> {
           );
           continue;
         }
-        console.log(`autopilot: settling due contest ${d.id}`);
-        await runOnce(d.id, d.contestType).catch((err) =>
+        console.log(`autopilot: settling due ${d.kind} contest ${d.id}`);
+        await runOnce(d.id, d.kind).catch((err) =>
           console.error(`autopilot: settle ${d.id} failed:`, (err as Error).message),
         );
       }
@@ -468,24 +467,30 @@ async function startOpenLoop(): Promise<void> {
         console.log(`autopilot: ${open} contest(s) still open, holding this slot`);
       } else {
         const kind = pickAutopilotKind();
-        // Poker runs heads-up; a prediction opens as a 1v1 duel part of the time, so
-        // both poker and prediction fill the duels tab. Puzzles stay a full field.
+        // Poker opens as a heads-up duel, or a multi-player table part of the time; a
+        // prediction opens as a 1v1 duel part of the time so both fill the duels tab.
+        // Puzzles stay a full field.
+        const pokerTable = kind === "poker" && Math.random() < POKER_TABLE_PCT;
         const isDuel =
-          kind === "poker" ? true : kind === "analyst" ? Math.random() < PREDICTION_DUEL_PCT : false;
+          kind === "poker" ? !pokerTable : kind === "analyst" ? Math.random() < PREDICTION_DUEL_PCT : false;
+        const seatCap = pokerTable ? 6 : isDuel ? 2 : undefined;
+        const houseSeats = pokerTable ? 6 : isDuel ? 2 : HOUSE_SIZE;
+        // Poker is winner-take-all whether duel or table; other contests rank a field.
+        const winnerTakeAll = kind === "poker" || isDuel;
+        const format = pokerTable ? "table" : isDuel ? "duel" : "contest";
         // Vary the pool so the arena does not look canned.
         const pool = POOL_CHOICES[Math.floor(Math.random() * POOL_CHOICES.length)]!;
-        console.log(`autopilot: opening a ${kind} ${isDuel ? "duel" : "contest"} (${pool} tUSDC)`);
+        console.log(`autopilot: opening a ${kind} ${format} (${pool} tUSDC)`);
         const id = await openContest({
           prizePoolUsdc: pool,
           durationSecs: WINDOW_S,
-          // A duel is winner-take-all between two seats; a contest ranks a full field.
-          topN: isDuel ? 1 : 3,
+          topN: winnerTakeAll ? 1 : 3,
           puzzleCount: 6,
           kind,
-          maxOperators: isDuel ? 2 : undefined,
+          maxOperators: seatCap,
         });
-        await seedHouseInto(id, isDuel ? 2 : HOUSE_SIZE);
-        console.log(`autopilot: ${kind} ${isDuel ? "duel" : "contest"} ${id} open with the house field`);
+        await seedHouseInto(id, houseSeats);
+        console.log(`autopilot: ${kind} ${format} ${id} open with the house field`);
       }
     } catch (err) {
       console.error("autopilot open failed:", (err as Error).message);

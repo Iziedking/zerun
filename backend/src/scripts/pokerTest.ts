@@ -10,6 +10,13 @@ import {
   type Seat,
 } from "../runners/poker/table.js";
 import { parseAction } from "../runners/poker/decide.js";
+import {
+  startHand as startMulti,
+  applyAction as applyMulti,
+  viewFor as viewMulti,
+  type MultiTable,
+  type MultiView,
+} from "../runners/poker/multi.js";
 
 // Offline checks for the poker hand evaluator and the seeded shuffle. No chain,
 // no network. Run with: npx tsx src/scripts/pokerTest.ts
@@ -151,6 +158,63 @@ check("parses BET as raise", bet.type === "raise" && (bet as { to: number }).to 
 const untagged = pa("I think I should raise to 200 here");
 check("parses untagged raise", untagged.type === "raise" && (untagged as { to: number }).to === 200);
 check("garbage falls back to check", pa("hmm, not sure what to do").type === "check");
+
+// ---- multi-player engine (side pots) ----
+
+type MStrat = (v: MultiView) => Action;
+const mCheckCall: MStrat = (v) => (v.legal.canCheck ? { type: "check" } : { type: "call" });
+const mFold: MStrat = (v) => (v.legal.canCheck ? { type: "check" } : { type: "fold" });
+const mShove: MStrat = (v) =>
+  v.legal.canRaise ? { type: "raise", to: v.legal.maxRaiseTo } : v.legal.canCall ? { type: "call" } : { type: "check" };
+
+function playMulti(stacks: number[], button: number, seed: `0x${string}`, strats: MStrat[]): MultiTable {
+  const t = startMulti(stacks, button, shuffle(seed));
+  let guard = 0;
+  while (!t.handOver && guard++ < 2000) {
+    applyMulti(t, strats[t.toAct]!(viewMulti(t)));
+  }
+  return t;
+}
+const msum = (t: MultiTable) => t.stacks.reduce((a, b) => a + b, 0);
+
+// Everyone calls to showdown at a 4-handed table: chips conserved, board complete.
+const m1 = playMulti([1000, 1000, 1000, 1000], 0, "0xa1", [mCheckCall, mCheckCall, mCheckCall, mCheckCall]);
+check("4-way call-down ends", m1.handOver);
+check("4-way conserves chips", msum(m1) === 4000);
+check("4-way reaches full board", m1.board.length === 5);
+check("4-way no negative stacks", m1.stacks.every((s) => s >= 0));
+
+// Everyone folds to one player: that player wins the blinds, chips conserved.
+const m2 = playMulti([1000, 1000, 1000], 0, "0xa2", [mFold, mFold, mCheckCall]);
+check("fold-around ends", m2.handOver);
+check("fold-around conserves chips", msum(m2) === 3000);
+check("one live seat wins", m2.pots?.every((p) => p.winners.length >= 1) ?? false);
+
+// The side-pot case: a short stack all-in against two deep stacks. Chips must be
+// conserved and the pots must sum to everything committed.
+const m3 = playMulti([120, 1000, 1000], 0, "0xa3", [mShove, mShove, mShove]);
+check("side-pot hand ends", m3.handOver);
+check("side-pot conserves chips", msum(m3) === 2120);
+check("side-pot no negative stacks", m3.stacks.every((s) => s >= 0));
+const potTotal = (m3.pots ?? []).reduce((a, p) => a + p.amount, 0);
+check("pots sum to the chips committed", potTotal === 2120);
+// The short stack (seat 0) can never win more than the main pot it covered (3 x 120).
+const seat0Won = (m3.pots ?? []).filter((p) => p.winners.includes(0)).reduce((a, p) => a + p.amount, 0);
+check("short all-in wins at most the main pot", seat0Won <= 360);
+
+// A 6-max match over several hands, mixed strategies, alternating button: the chip
+// total never drifts and no stack goes negative.
+let mstacks = [1000, 1000, 1000, 1000, 1000, 1000];
+let mbutton = 0;
+let mdrift = false;
+const mstrats: MStrat[] = [mCheckCall, mShove, mFold, mCheckCall, mShove, mCheckCall];
+for (let i = 0; i < 15 && mstacks.filter((s) => s > 0).length > 1; i++) {
+  const h = playMulti(mstacks, mbutton, `0xb${i}` as `0x${string}`, mstrats);
+  if (h.stacks.some((s) => s < 0) || msum(h) !== 6000) mdrift = true;
+  mstacks = [...h.stacks];
+  mbutton = (mbutton + 1) % 6;
+}
+check("6-max match never drifts chips", !mdrift);
 
 console.log(failures === 0 ? "\nall poker checks passed" : `\n${failures} poker checks FAILED`);
 process.exit(failures === 0 ? 0 : 1);
