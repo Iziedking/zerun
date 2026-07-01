@@ -19,7 +19,7 @@ import {
   type Action,
   type Seat,
 } from "../runners/poker/table.js";
-import { POKER_SYSTEM, buildUserPrompt, parseAction } from "../runners/poker/decide.js";
+import { POKER_SYSTEM, buildUserPrompt, parseAction, consensusAction } from "../runners/poker/decide.js";
 import { recordDuel } from "../runners/poker/dossier.js";
 import { acquireDossier } from "../runners/poker/x402.js";
 import { runPokerTable } from "./runPokerTable.js";
@@ -34,6 +34,9 @@ import { runPokerTable } from "./runPokerTable.js";
 const MATCH_MS = Number(process.env.POKER_MATCH_SECONDS ?? "300") * 1000;
 const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "200");
 const DECISION_SPACING_MS = Number(process.env.POKER_DECISION_SPACING_MS ?? "400");
+// Most passes a tough (facing-a-bet) decision samples for self-consistency, capped
+// so a match still plays a watchable number of hands under the 0G rate limit.
+const POKER_MAX_SAMPLES = Number(process.env.POKER_MAX_SAMPLES_PER_SPOT ?? "3");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -179,16 +182,32 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
       const view = viewFor(t);
       const plan = planOf.get(entry.agentId)!;
 
-      let res: Awaited<ReturnType<typeof callModel>> | { text: string; source: string; provider: string; model: string; chatID: string | null; verified: boolean | null; latencyMs: number };
+      type Res = { text: string; source: string; provider: string; model: string; chatID: string | null; verified: boolean | null; latencyMs: number };
+      // Facing a bet is a tough spot; higher tiers sample several independent reads
+      // and take the majority (self-consistency), so more compute plays sharper. Free
+      // spots (a check-through) stay single-shot to keep the hand count up.
+      const nSamples = view.toCall > 0 ? Math.min(plan.samples, POKER_MAX_SAMPLES) : 1;
+      const params = {
+        systemPrompt: POKER_SYSTEM,
+        userPrompt: buildUserPrompt(view, dossierOf.get(entry.agentId)),
+        maxTokens: plan.maxTokens,
+        temperature: plan.temperature,
+      };
+      let res: Res;
       let action: Action;
       try {
-        res = await callModel({
-          systemPrompt: POKER_SYSTEM,
-          userPrompt: buildUserPrompt(view, dossierOf.get(entry.agentId)),
-          maxTokens: plan.maxTokens,
-          temperature: plan.temperature,
-        });
-        action = parseAction(res.text, view.legal);
+        if (nSamples <= 1) {
+          res = await callModel(params);
+          action = parseAction(res.text, view.legal);
+        } else {
+          const reads: { r: Res; a: Action }[] = [];
+          for (let k = 0; k < nSamples; k++) {
+            const r = await callModel(params);
+            reads.push({ r, a: parseAction(r.text, view.legal) });
+          }
+          action = consensusAction(reads.map((x) => x.a));
+          res = (reads.find((x) => x.a.type === action.type) ?? reads[0]!).r;
+        }
       } catch (err) {
         console.error(`poker ${contestId}: decision failed for agent ${entry.agentId}:`, (err as Error).message);
         res = { text: "", source: "error", provider: "error", model: "error", chatID: null, verified: null, latencyMs: 0 };

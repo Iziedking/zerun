@@ -9,7 +9,7 @@ import {
   type PlayerView,
   type Seat,
 } from "../runners/poker/table.js";
-import { parseAction } from "../runners/poker/decide.js";
+import { parseAction, consensusAction } from "../runners/poker/decide.js";
 import {
   startHand as startMulti,
   applyAction as applyMulti,
@@ -215,6 +215,17 @@ for (let i = 0; i < 15 && mstacks.filter((s) => s > 0).length > 1; i++) {
   mbutton = (mbutton + 1) % 6;
 }
 check("6-max match never drifts chips", !mdrift);
+
+// ---- self-consistency (compute edge) ----
+const c1 = consensusAction([
+  { type: "raise", to: 60 },
+  { type: "raise", to: 100 },
+  { type: "fold" },
+]);
+check("consensus takes the majority (raise)", c1.type === "raise");
+check("consensus raise uses median size", c1.type === "raise" && (c1 as { to: number }).to === 100);
+check("consensus folds when folds win", consensusAction([{ type: "fold" }, { type: "fold" }, { type: "call" }]).type === "fold");
+check("consensus tie prefers call", consensusAction([{ type: "call" }, { type: "raise", to: 40 }, { type: "fold" }]).type === "call");
 
 console.log(failures === 0 ? "\nall poker checks passed" : `\n${failures} poker checks FAILED`);
 process.exit(failures === 0 ? 0 : 1);

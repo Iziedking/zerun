@@ -56,6 +56,34 @@ export function parseAction(text: string, legal: Legal): Action {
   return legal.canCheck ? { type: "check" } : { type: "call" };
 }
 
+// The self-consistency verdict across several independent reads of the same spot:
+// the majority action type wins, and a raise uses the median size. This is the
+// compute edge in poker: more passes vote across more diverse reads, so a blunder in
+// any single sample is outvoted. Ties prefer the cheaper, lower-variance action.
+export function consensusAction(actions: Action[]): Action {
+  if (actions.length <= 1) return actions[0] ?? { type: "check" };
+  const counts = new Map<Action["type"], number>();
+  for (const a of actions) counts.set(a.type, (counts.get(a.type) ?? 0) + 1);
+  let bestType: Action["type"] = "check";
+  let bestCount = -1;
+  // Tie-break order: stay in cheaply before committing chips or folding a live hand.
+  for (const t of ["call", "check", "raise", "fold"] as Action["type"][]) {
+    const c = counts.get(t) ?? 0;
+    if (c > bestCount) {
+      bestType = t;
+      bestCount = c;
+    }
+  }
+  if (bestType === "raise") {
+    const sizes = actions
+      .filter((a): a is { type: "raise"; to: number } => a.type === "raise")
+      .map((a) => a.to)
+      .sort((x, y) => x - y);
+    return { type: "raise", to: sizes[Math.floor(sizes.length / 2)] ?? 0 };
+  }
+  return { type: bestType };
+}
+
 function readAction(s: string, legal: Legal): Action | null {
   if (/\bfold\b/.test(s)) return { type: "fold" };
   if (/\ball[\s-]?in\b|\bshove\b|\bjam\b/.test(s)) return { type: "raise", to: legal.maxRaiseTo };
