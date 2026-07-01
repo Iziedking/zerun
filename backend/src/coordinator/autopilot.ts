@@ -92,7 +92,10 @@ const POOL_USDC = Number(process.env.AUTOPILOT_POOL_USDC ?? "30");
 // Pools the autopilot picks from at random, so prizes vary contest to contest.
 const POOL_CHOICES = [25, 30, 40, 50, 60, 70, 80, 100];
 const HOUSE_SIZE = Number(process.env.AUTOPILOT_HOUSE ?? "4");
-const SWEEP_MS = 30_000;
+// How often the due-sweeper checks for contests whose join window has closed and
+// runs them. This is the main source of the gap between a window closing and the run
+// starting, so keep it short. Tunable with AUTOPILOT_SWEEP_SECONDS.
+const SWEEP_MS = Number(process.env.AUTOPILOT_SWEEP_SECONDS ?? "12") * 1000;
 const RUN_TIMEOUT_MS = 1_200_000; // paced 0G calls make a full field take longer
 
 // The wait before the next open: the fixed override, or a jittered draw around
