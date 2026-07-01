@@ -1055,21 +1055,28 @@ async function standingsFor(contestId: number) {
     total_latency: string;
     compute_level: string;
     passes: string;
+    payout_rank: number | null;
   }>(
     // Every entrant shows, house agents included, so a duel visibly has two players.
     // House agents are flagged so the UI can mark them, but they are never paid (the
     // runner excludes them from the payout).
+    // Once settled, order by the actual payout rank so the winner shown always
+    // matches who got paid (poker ranks by chips, which the correct/compute order
+    // below cannot express). Before settlement, fall back to the live skill order.
     `select e.agent_id, e.operator, m.name, coalesce(m.is_house, false) as is_house,
             coalesce(sum(case when s.verdict = 'correct' then 1 else 0 end), 0) as correct,
             coalesce(sum(s.latency_ms), 0) as total_latency,
             coalesce(m.compute_level, 0) as compute_level,
-            coalesce(sum(s.samples), 0) as passes
+            coalesce(sum(s.samples), 0) as passes,
+            min(p.rank) as payout_rank
        from contest_entries e
        left join agents_meta m on m.agent_id = e.agent_id
        left join solve_runs s on s.contest_id = e.contest_id and s.agent_id = e.agent_id
+       left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
       where e.contest_id = $1
       group by e.agent_id, e.operator, m.name, m.compute_level, m.is_house
-      order by correct desc, coalesce(m.compute_level, 0) desc, total_latency asc, e.agent_id asc`,
+      order by (min(p.rank) is null), min(p.rank) asc,
+               correct desc, coalesce(m.compute_level, 0) desc, total_latency asc, e.agent_id asc`,
     [contestId],
   );
   return rows.map((r, i) => ({
