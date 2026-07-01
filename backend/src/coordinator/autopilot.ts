@@ -421,6 +421,27 @@ async function reconcileStatuses(): Promise<void> {
   }
 }
 
+// Fill the house into any open contest that is about to close and is still short of
+// its target field, so real players get almost the whole window to enter first. Runs
+// on the sweep tick, so it survives restarts (unlike a per-contest timer).
+async function fillClosingContests(): Promise<void> {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const cutoff = nowSec + HOUSE_JOIN_LEAD_MS / 1000 + SWEEP_MS / 1000; // closing within a lead + a sweep
+  const { rows } = await query<{ contest_id: string; max_operators: number | null; agent_count: number | null; ends_at_sec: number | null }>(
+    `select contest_id, max_operators, agent_count, extract(epoch from ends_at)::int as ends_at_sec
+       from contests_meta where status = 'open' and ends_at is not null`,
+  );
+  for (const r of rows) {
+    const endsAt = r.ends_at_sec ?? 0;
+    if (endsAt <= nowSec || endsAt > cutoff) continue; // not closing within the window yet
+    const target = r.max_operators ?? HOUSE_SIZE;
+    if ((r.agent_count ?? 0) >= target) continue; // already full
+    await seedHouseInto(Number(r.contest_id), target).catch((e) =>
+      console.error(`autopilot: house fill for ${r.contest_id} failed:`, (e as Error).message),
+    );
+  }
+}
+
 const inFlight = new Set<number>();
 
 async function runOnce(id: number, kind: "solver" | "analyst" | "poker"): Promise<void> {
@@ -442,6 +463,10 @@ async function startDueSweeper(): Promise<void> {
   for (;;) {
     await sleep(SWEEP_MS);
     try {
+      // Fill the house into contests about to close, before settling due ones.
+      await fillClosingContests().catch((err) =>
+        console.error("autopilot: house fill sweep failed:", (err as Error).message),
+      );
       for (const d of await findDueContests()) {
         if (inFlight.has(d.id)) continue;
         if (d.overdueSec > STALE_AFTER_SEC) {
