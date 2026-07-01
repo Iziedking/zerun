@@ -1,9 +1,10 @@
 import type { ContestSummary } from "./types";
 
-// The four phases a contest moves through, derived from its backend status and
-// its join-window deadline (ends_at). The contest page renders each differently
-// so the run never looks stuck.
-export type ContestPhase = "joining" | "running" | "settled" | "cancelled";
+// The phases a contest moves through, derived from its backend status and its
+// join-window deadline (ends_at). The contest page renders each differently so the
+// run never looks stuck. "awaiting" is a World Cup mission that has forecast and is
+// waiting on the real events to resolve before it settles.
+export type ContestPhase = "joining" | "running" | "awaiting" | "settled" | "cancelled";
 
 // Decide the current phase. `now` is injected so a ticking clock can recompute
 // it every second without re-reading Date.now() at the call site.
@@ -17,6 +18,8 @@ export function contestPhase(
   // "scored" means the field is ranked and the root is posted: the winner is
   // decided, so show the result even while the on-chain settle catches up.
   if (s === "settled" || s === "scored" || Boolean(contest.settled_at)) return "settled";
+  // A World Cup mission has locked its forecasts and is waiting on the real results.
+  if (s === "awaiting_resolution") return "awaiting";
 
   const endsAt = contest.ends_at ? Date.parse(contest.ends_at) : NaN;
   const windowOpen =

@@ -6,12 +6,14 @@ export function ContestStatusPill({ status }: { status: string }) {
   const s = (status || "").toLowerCase();
   const live = s === "running" || s === "open" || s === "active";
   const settled = s === "settled" || s === "closed" || s === "complete";
+  const awaiting = s === "awaiting_resolution";
 
-  const tone: ChipTone = live ? "live" : settled ? "won" : "neutral";
+  const tone: ChipTone = awaiting ? "info" : live ? "live" : settled ? "won" : "neutral";
+  const label = awaiting ? "awaiting results" : status || "unknown";
 
   return (
     <Chip tone={tone} pulse={live}>
-      {status || "unknown"}
+      {label}
     </Chip>
   );
 }

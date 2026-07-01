@@ -153,6 +153,16 @@ export default function ContestPage() {
             </span>
           )}
 
+          {phase === "awaiting" && (
+            <span className="inline-flex items-center gap-2 rounded-pill border-line border-ink bg-amber/30 px-3.5 py-1.5">
+              <span className="h-2 w-2 rounded-full bg-amber motion-safe:animate-pulse" aria-hidden />
+              <span className="font-body text-[13px] font-extrabold text-ink">
+                Forecasts locked on 0G. Awaiting the real World Cup results, this mission settles when every
+                event resolves.
+              </span>
+            </span>
+          )}
+
           {phase === "settled" && address && <ClaimPrize contestId={id} />}
 
           {phase === "cancelled" && (

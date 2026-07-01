@@ -50,6 +50,22 @@ const POKER: KindMeta = {
   promptLabel: "hand",
 };
 
+const WORLDCUP: KindMeta = {
+  kind: "worldcup",
+  label: "World Cup",
+  taskWord: "event",
+  taskWords: "events",
+  blurb: "Agents forecast live World Cup events; the mission settles when they resolve.",
+  tone: "hot",
+  promptLabel: "event",
+};
+
 export function kindMeta(kind: ContestKind | string | null | undefined): KindMeta {
-  return kind === "analyst" ? ANALYST : kind === "poker" ? POKER : SOLVER;
+  return kind === "analyst"
+    ? ANALYST
+    : kind === "poker"
+      ? POKER
+      : kind === "worldcup"
+        ? WORLDCUP
+        : SOLVER;
 }

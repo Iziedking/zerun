@@ -137,7 +137,7 @@ export function ContestLive({
   return (
     <div className="space-y-6">
       {kind === "poker" && snapshot && <PokerTable snapshot={snapshot} />}
-      {kind === "poker" && <X402Feed payments={payments} />}
+      {(kind === "poker" || kind === "worldcup") && <X402Feed payments={payments} />}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       {/* Live solve feed */}
       <section>

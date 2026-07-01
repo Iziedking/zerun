@@ -98,13 +98,14 @@ export function PokerTable({ snapshot }: { snapshot: WsPokerSnapshot }) {
   );
 }
 
-// The x402 scouting payments, each verifiable on the 0G explorer.
+// The x402 data payments (poker dossiers or World Cup intel), each verifiable on the
+// 0G explorer.
 export function X402Feed({ payments }: { payments: WsX402Payload[] }) {
   if (!payments.length) return null;
   return (
     <StickerCard className="p-4">
       <div className="mb-2 flex items-center gap-2">
-        <span className="font-display text-[15px] text-ink">Scouting payments</span>
+        <span className="font-display text-[15px] text-ink">Paid data</span>
         <Chip tone="won">x402</Chip>
       </div>
       <ul className="space-y-2">
@@ -115,7 +116,12 @@ export function X402Feed({ payments }: { payments: WsX402Payload[] }) {
           >
             <span className="font-body text-[13px] text-ink-2">
               <span className="font-extrabold text-ink">{p.agentName}</span> paid{" "}
-              <span className="font-extrabold text-ink">{p.priceUsdc} tUSDC</span> for a dossier on {p.opponentName}
+              <span className="font-extrabold text-ink">{p.priceUsdc} tUSDC</span>{" "}
+              {p.opponentName
+                ? `for a dossier on ${p.opponentName}`
+                : p.label
+                  ? `for ${p.label}`
+                  : "for data"}
             </span>
             <ExplorerLink kind="tx" value={p.txHash} label="verify on 0G" />
           </li>

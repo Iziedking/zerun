@@ -72,9 +72,10 @@ const PREDICTION_DUEL_PCT = Number(process.env.AUTOPILOT_PREDICTION_DUEL_PCT ?? 
 // tables once the multi-player path is proven live.
 const POKER_TABLE_PCT = Number(process.env.AUTOPILOT_POKER_TABLE_PCT ?? "0");
 // Within the prediction slice, the share that opens as a World Cup mission (deferred
-// settlement) instead of a normal prediction. Off by default: Phase 4 raises it to the
-// spotlight ~0.9 once the hosting UI and frontend land, so production is unchanged now.
-const WORLDCUP_PCT = Number(process.env.AUTOPILOT_WORLDCUP_PCT ?? "0");
+// settlement) instead of a normal prediction. The spotlight default surfaces the World
+// Cup ~90% of the time while the tournament is on; set AUTOPILOT_WORLDCUP_PCT to 0 to
+// turn it off, or lower to soak-test.
+const WORLDCUP_PCT = Number(process.env.AUTOPILOT_WORLDCUP_PCT ?? "0.9");
 
 function pickAutopilotKind(): "poker" | "analyst" | "solver" {
   const total = Math.max(1, W_POKER + W_PREDICTION + W_PUZZLE);

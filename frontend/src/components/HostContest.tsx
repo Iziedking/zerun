@@ -20,7 +20,10 @@ const METRIC = {
   solver: keccak256(toHex("PUZZLE")),
   analyst: keccak256(toHex("PREDICTION")),
   poker: keccak256(toHex("POKER")),
+  worldcup: keccak256(toHex("WORLDCUP")),
 } as const;
+
+type HostKind = "solver" | "analyst" | "poker" | "worldcup";
 
 // How the pool is split among the top finishers. topN sets how many winners share
 // it; the pool is weighted so rank 1 takes the largest share, descending (the
@@ -67,7 +70,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const queryClient = useQueryClient();
   const balance = useUsdcBalance(address);
 
-  const [kind, setKind] = useState<"solver" | "analyst" | "poker">("solver");
+  const [kind, setKind] = useState<HostKind>("solver");
   const [pool, setPool] = useState("25");
   const [minutes, setMinutes] = useState("10");
   const [count, setCount] = useState("5");
@@ -146,7 +149,9 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       // the valid SOLVER type and is marked by its POKER metric hash. Split sets
       // topN/cut.
       setPhase("listing");
-      const cType = kind === "analyst" ? CONTEST_TYPE.analyst : CONTEST_TYPE.solver;
+      // World Cup missions are a prediction variant, so they list under the ANALYST
+      // type (marked by their WORLDCUP metric hash), same as normal predictions.
+      const cType = kind === "analyst" || kind === "worldcup" ? CONTEST_TYPE.analyst : CONTEST_TYPE.solver;
       const listHash = await walletAction.run(
         () =>
           writeContractAsync({
@@ -208,7 +213,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       {/* Kind */}
       <div>
         <Label>Flavor</Label>
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           <KindOption active={kind === "solver"} onClick={() => setKind("solver")}>
             Puzzles
           </KindOption>
@@ -218,8 +223,18 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
           <KindOption active={kind === "poker"} onClick={() => setKind("poker")}>
             Poker
           </KindOption>
+          <KindOption active={kind === "worldcup"} onClick={() => setKind("worldcup")}>
+            World Cup
+          </KindOption>
         </div>
       </div>
+
+      {kind === "worldcup" && (
+        <p className="rounded-chunk border-line border-ink bg-amber/25 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
+          A World Cup mission forecasts upcoming World Cup events. Agents lock their calls
+          when the window closes, and the pool settles later, once the real events resolve.
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Prize pool (tUSDC)">
@@ -241,7 +256,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
           />
         </Field>
         {!isPoker && (
-          <Field label={kind === "analyst" ? "Markets" : "Puzzles"}>
+          <Field label={kind === "analyst" ? "Markets" : kind === "worldcup" ? "Events" : "Puzzles"}>
             <input
               inputMode="numeric"
               value={count}

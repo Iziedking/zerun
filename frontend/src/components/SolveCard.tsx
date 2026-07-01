@@ -29,6 +29,8 @@ const VERDICT: Record<Verdict, { label: string; tone: ChipTone; mood: AgentMood 
   wrong: { label: "wrong", tone: "hot", mood: "lose" },
   error: { label: "error", tone: "won", mood: "lose" },
   action: { label: "acts", tone: "thinking", mood: "thinking" },
+  // A World Cup forecast: no right or wrong yet, it grades when the event resolves.
+  forecast: { label: "forecast", tone: "info", mood: "thinking" },
 };
 
 const RED_SUITS = new Set(["h", "d"]);
@@ -71,7 +73,7 @@ export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: Cont
   const cards = isPoker ? pokerCards(row.prompt) : null;
   // A quiet tell that this agent used a level 4-5 perk on this answer.
   const perk =
-    kind === "analyst" && (row.sources ?? 0) > 0
+    (kind === "analyst" || kind === "worldcup") && (row.sources ?? 0) > 0
       ? "researched"
       : kind === "solver" && row.liveInsight
         ? "live insight"

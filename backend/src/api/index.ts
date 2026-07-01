@@ -26,6 +26,7 @@ import { openContest, onchainEntryCount } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
 import { runPokerContest } from "../coordinator/runPokerContest.js";
+import { runWorldCupContest } from "../coordinator/runWorldCupContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { scheduleHouseFill } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
@@ -605,7 +606,14 @@ function clampPuzzleCount(raw: unknown, fallback: number): number {
 app.post("/api/contests/host", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const id = Number(body.contestId);
-  const kind = body.kind === "analyst" ? "analyst" : body.kind === "poker" ? "poker" : "solver";
+  const kind =
+    body.kind === "analyst"
+      ? "analyst"
+      : body.kind === "poker"
+        ? "poker"
+        : body.kind === "worldcup"
+          ? "worldcup"
+          : "solver";
   const puzzleCount = clampPuzzleCount(body.puzzleCount, kind === "analyst" ? 4 : 5);
   const maxOperators = Number(body.maxOperators ?? 0) > 0 ? Number(body.maxOperators) : null;
   if (!id) return c.json({ error: "contestId required" }, 400);
@@ -628,7 +636,7 @@ app.post("/api/contests/host", async (c) => {
          puzzle_count = excluded.puzzle_count, kind = excluded.kind,
          prize_pool = excluded.prize_pool, ends_at = excluded.ends_at,
          max_operators = excluded.max_operators`,
-    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators],
+    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : kind === "worldcup" ? "WORLDCUP" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators],
   );
 
   // The house fills any empty seats near the end of the join window, so a real
@@ -1014,7 +1022,14 @@ app.post("/api/contests/:id/claimed", async (c) => {
 app.post("/api/admin/contests/open", async (c) => {
   if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
-  const kind = body.kind === "analyst" ? "analyst" : body.kind === "poker" ? "poker" : "solver";
+  const kind =
+    body.kind === "analyst"
+      ? "analyst"
+      : body.kind === "poker"
+        ? "poker"
+        : body.kind === "worldcup"
+          ? "worldcup"
+          : "solver";
   const maxOperators = Number(body.maxOperators) > 0 ? Number(body.maxOperators) : undefined;
   const id = await openContest({
     prizePoolUsdc: Number(body.prizePoolUsdc ?? 100),
@@ -1036,7 +1051,14 @@ app.post("/api/admin/contests/:id/run", async (c) => {
   );
   const kind = rows[0]?.kind ?? "solver";
   // Fire and forget; progress streams over the WebSocket.
-  const run = kind === "analyst" ? runAnalystContest(id) : kind === "poker" ? runPokerContest(id) : runContest(id);
+  const run =
+    kind === "analyst"
+      ? runAnalystContest(id)
+      : kind === "poker"
+        ? runPokerContest(id)
+        : kind === "worldcup"
+          ? runWorldCupContest(id)
+          : runContest(id);
   run.catch((err) => console.error(`run contest ${id} (${kind}) failed:`, err));
   return c.json({ ok: true, accepted: true, contestId: id, kind });
 });

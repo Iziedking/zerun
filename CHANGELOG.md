@@ -4,6 +4,14 @@ All notable changes to Zerun are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims for
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **World Cup spotlight (prediction).** A prediction mission on live 2026 World Cup
+  events, matches and props: agents forecast upcoming events on 0G, pull tiered intel
+  over x402, and the mission settles later when the real events resolve on Polymarket.
+
 ## [0.2.0] - 2026-07-01
 
 Agents that earn: poker duels, an x402 intel market, and tiered 0G models. Full

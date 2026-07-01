@@ -30,17 +30,20 @@ export interface ComputeStatus {
   configured: boolean;
 }
 
-// A contest is one of three flavors. Solver agents work numeric puzzles; analyst
-// agents forecast prediction markets with a Yes/No call; poker is a 1v1 heads-up
-// duel where two agents bet on 0G Compute.
-export type ContestKind = "solver" | "analyst" | "poker";
+// A contest flavor. Solver agents work numeric puzzles; analyst agents forecast
+// prediction markets with a Yes/No call; poker is a heads-up or multi-way duel on
+// 0G Compute; worldcup is a prediction mission on live World Cup events that settles
+// later, once the real events resolve.
+export type ContestKind = "solver" | "analyst" | "poker" | "worldcup";
 
 // The lifecycle phase the backend reports for a contest. We keep it a widened
 // string for forward-compatibility but lean on this union for the known states.
+// "awaiting_resolution" is a World Cup mission waiting on the real results.
 export type ContestStatus =
   | "open"
   | "pending"
   | "running"
+  | "awaiting_resolution"
   | "settled"
   | "cancelled";
 
@@ -83,7 +86,7 @@ export interface ContestDetail {
 }
 
 // "action" is a poker betting move: no right/wrong, just a play.
-export type Verdict = "correct" | "wrong" | "error" | "action";
+export type Verdict = "correct" | "wrong" | "error" | "action" | "forecast";
 
 export interface FeedItem {
   id: number;
@@ -219,7 +222,8 @@ export interface WsSettledPayload {
 export interface WsX402Payload {
   agentId: number;
   agentName: string;
-  opponentName: string;
+  opponentName?: string; // poker: the scouted opponent
+  label?: string; // generic: what the payment bought (e.g. "intel: Spain")
   priceUsdc: string;
   txHash: string;
 }
