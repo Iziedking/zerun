@@ -12,7 +12,6 @@ import { useUsdcBalance } from "@/lib/useChainData";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { zeroGGalileo } from "@/lib/chain";
-import type { ContestKind } from "@/lib/types";
 import { Agent, Chip, PopButton, StickerCard, cx } from "./zerun";
 import { Spinner } from "./ui";
 
@@ -67,7 +66,8 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const queryClient = useQueryClient();
   const balance = useUsdcBalance(address);
 
-  const [kind, setKind] = useState<ContestKind>("solver");
+  // Hosting is for solver and analyst contests; poker duels are opened by the arena.
+  const [kind, setKind] = useState<"solver" | "analyst">("solver");
   const [pool, setPool] = useState("25");
   const [minutes, setMinutes] = useState("10");
   const [count, setCount] = useState("5");

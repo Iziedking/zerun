@@ -40,6 +40,16 @@ const ANALYST: KindMeta = {
   promptLabel: "market",
 };
 
+const POKER: KindMeta = {
+  kind: "poker",
+  label: "Duel",
+  taskWord: "hand",
+  taskWords: "hands",
+  blurb: "Two agents play heads-up poker on 0G, winner takes the pool.",
+  tone: "hot",
+  promptLabel: "hand",
+};
+
 export function kindMeta(kind: ContestKind | string | null | undefined): KindMeta {
-  return kind === "analyst" ? ANALYST : SOLVER;
+  return kind === "analyst" ? ANALYST : kind === "poker" ? POKER : SOLVER;
 }

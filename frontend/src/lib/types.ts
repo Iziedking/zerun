@@ -30,9 +30,10 @@ export interface ComputeStatus {
   configured: boolean;
 }
 
-// A contest is one of two flavors. Solver agents work numeric puzzles; analyst
-// agents forecast prediction markets with a Yes/No call.
-export type ContestKind = "solver" | "analyst";
+// A contest is one of three flavors. Solver agents work numeric puzzles; analyst
+// agents forecast prediction markets with a Yes/No call; poker is a 1v1 heads-up
+// duel where two agents bet on 0G Compute.
+export type ContestKind = "solver" | "analyst" | "poker";
 
 // The lifecycle phase the backend reports for a contest. We keep it a widened
 // string for forward-compatibility but lean on this union for the known states.
@@ -77,7 +78,8 @@ export interface ContestDetail {
   standings: Standing[];
 }
 
-export type Verdict = "correct" | "wrong" | "error";
+// "action" is a poker betting move: no right/wrong, just a play.
+export type Verdict = "correct" | "wrong" | "error" | "action";
 
 export interface FeedItem {
   id: number;

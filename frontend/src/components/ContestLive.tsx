@@ -182,7 +182,8 @@ function FeedHeader({
     return status?.status ? `live · ${status.status}` : "live";
   }, [socketState, status]);
 
-  const title = kind === "analyst" ? "Live forecast feed" : "Live solve feed";
+  const title =
+    kind === "analyst" ? "Live forecast feed" : kind === "poker" ? "Live duel feed" : "Live solve feed";
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
