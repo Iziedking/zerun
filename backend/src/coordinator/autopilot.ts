@@ -92,6 +92,12 @@ const POOL_USDC = Number(process.env.AUTOPILOT_POOL_USDC ?? "30");
 // Pools the autopilot picks from at random, so prizes vary contest to contest.
 const POOL_CHOICES = [25, 30, 40, 50, 60, 70, 80, 100];
 const HOUSE_SIZE = Number(process.env.AUTOPILOT_HOUSE ?? "4");
+// Non-poker contests (prediction, puzzle, World Cup) only need a small baseline field
+// to be watchable, so the house tops up to this rather than the full seat cap. Fewer
+// house seats means a smaller fill, which the poll can start much closer to the close,
+// so real players keep the seats and the house does not swarm in early. Poker still
+// fills the whole table, where a full table is the point.
+const HOUSE_BASELINE = Number(process.env.AUTOPILOT_HOUSE_BASELINE ?? "2");
 // How often the due-sweeper checks for contests whose join window has closed and
 // runs them. This is the main source of the gap between a window closing and the run
 // starting, so keep it short. Tunable with AUTOPILOT_SWEEP_SECONDS.
@@ -456,8 +462,8 @@ async function reconcileStatuses(): Promise<void> {
 // Runs on a dedicated poll, so it survives restarts (unlike a per-contest timer).
 async function fillClosingContests(): Promise<void> {
   const nowMs = Date.now();
-  const { rows } = await query<{ contest_id: string; max_operators: number | null; agent_count: number | null; ends_at_ms: string | null }>(
-    `select contest_id, max_operators, agent_count, (extract(epoch from ends_at) * 1000)::bigint as ends_at_ms
+  const { rows } = await query<{ contest_id: string; kind: string | null; max_operators: number | null; agent_count: number | null; ends_at_ms: string | null }>(
+    `select contest_id, kind, max_operators, agent_count, (extract(epoch from ends_at) * 1000)::bigint as ends_at_ms
        from contests_meta where status = 'open' and ends_at is not null`,
   );
   for (const r of rows) {
@@ -465,9 +471,13 @@ async function fillClosingContests(): Promise<void> {
     if (fillingHouse.has(id)) continue; // a fill for this contest is already running
     const endsAtMs = Number(r.ends_at_ms ?? 0);
     if (endsAtMs <= nowMs) continue; // window already closed
-    const target = r.max_operators ?? HOUSE_SIZE;
+    // Poker fills the whole table; everything else only tops up to a small baseline so
+    // real players take the seats and the house joins late (a small fill has a short
+    // lead). A capped contest never fills past its seat cap.
+    const cap = r.max_operators ?? HOUSE_SIZE;
+    const target = r.kind === "poker" ? cap : Math.min(cap, HOUSE_BASELINE);
     const need = target - (r.agent_count ?? 0);
-    if (need <= 0) continue; // already full
+    if (need <= 0) continue; // already at the target field
 
     // Start just early enough that every needed house entry confirms before close:
     // a base lead (floor), or one confirmation window per empty seat if that is
