@@ -74,6 +74,25 @@ alter table contests_meta add column if not exists audit_tx text;
 alter table contests_meta add column if not exists poker_root text;
 alter table contests_meta add column if not exists poker_tx text;
 
+-- Per-agent poker record, accumulated as duels settle. Powers the opponent dossier
+-- (how an agent tends to play), which another agent can scout before a duel.
+create table if not exists poker_stats (
+  agent_id      int primary key,
+  hands         int not null default 0,
+  folds         int not null default 0,
+  checks        int not null default 0,
+  calls         int not null default 0,
+  raises        int not null default 0,
+  allins        int not null default 0,
+  showdowns     int not null default 0,
+  showdowns_won int not null default 0,
+  duels         int not null default 0,
+  duels_won     int not null default 0,
+  updated_at    timestamptz not null default now()
+);
+-- The agent's dossier snapshot on 0G Storage: owned, provable scouting data.
+alter table agents_meta add column if not exists dossier_root text;
+
 -- Contest type: 'solver' (puzzles) or 'analyst' (prediction markets).
 alter table contests_meta add column if not exists kind text not null default 'solver';
 

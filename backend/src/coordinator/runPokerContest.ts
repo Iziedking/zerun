@@ -20,6 +20,7 @@ import {
   type Seat,
 } from "../runners/poker/table.js";
 import { POKER_SYSTEM, buildUserPrompt, parseAction } from "../runners/poker/decide.js";
+import { buildDossier, recordDuel } from "../runners/poker/dossier.js";
 
 // The poker duel loop. Two agents play heads-up No-Limit Hold'em on 0G Compute for
 // a fixed window; every decision is a paced inference call and lands on the live
@@ -111,8 +112,22 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   for (const p of players) levelOf.set(p.agentId, await getAgentCompute(p.agentId));
   const planOf = new Map<number, ReturnType<typeof computePlan>>();
   for (const p of players) planOf.set(p.agentId, computePlan(levelOf.get(p.agentId)!));
-  // Opponent dossiers are prefetched here in a later phase; empty for now.
+  // Prefetch each agent's dossier on its opponent before the clock starts, so a
+  // scouting read never stalls a hand. The dossier is edge information: how the
+  // opponent has played across its past duels.
   const dossierOf = new Map<number, string>();
+  for (const seat of [0, 1] as const) {
+    const opponent = players[seat === 0 ? 1 : 0];
+    const d = await buildDossier(opponent.agentId).catch(() => null);
+    if (d) {
+      dossierOf.set(players[seat].agentId, d.text);
+      broadcast({
+        type: "status",
+        contestId,
+        payload: { status: "running", detail: `${players[seat].agentName} scouted ${opponent.agentName}` },
+      });
+    }
+  }
 
   await query("update contests_meta set status = 'running' where contest_id = $1", [contestId]);
   broadcast({
@@ -159,7 +174,7 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
       applyAction(t, action);
       const label = (t.log[t.log.length - 1] ?? "").replace(/^seat \d+ /, "");
       await recordDecision(contestId, entry, decisionSeq[seat]++, view.street, view.holeCards, view.board, label, res);
-      handActions.push({ seat, agentId: entry.agentId, action: label, source: res.source, chatID: res.chatID });
+      handActions.push({ seat, agentId: entry.agentId, action: label, allin: t.stacks[seat] === 0, source: res.source, chatID: res.chatID });
       await sleep(DECISION_SPACING_MS);
     }
 
@@ -220,6 +235,14 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     winnerSeat = l0 > l1 ? 0 : l1 > l0 ? 1 : players[0].agentId < players[1].agentId ? 0 : 1;
   }
   const winner = players[winnerSeat];
+
+  // Fold this duel into both agents' dossiers so their record grows for future
+  // scouting. A dead-even match credits no duel winner. Best effort.
+  await recordDuel(
+    matchLog as unknown as Parameters<typeof recordDuel>[0],
+    [players[0].agentId, players[1].agentId],
+    stacks[0] === stacks[1] ? null : winnerSeat,
+  ).catch((err) => console.error(`poker ${contestId}: dossier update failed:`, (err as Error).message));
 
   // Only a real player can take the pool. If a real player lost to a house agent,
   // refund the sponsor rather than pay the house.
