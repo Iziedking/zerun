@@ -8,6 +8,7 @@ import { broadcast } from "./ws.js";
 import { finalizeContest, cancelContest, type RunResult } from "./finalize.js";
 import { onchainEntryCount, syncEntriesFromChain, keepOnchainEntrants } from "./contestOps.js";
 import { contestEngineAbi, coordinatorAddress, loadDeployment, publicClient } from "../chain/contracts.js";
+import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
 import { shuffle, handLabels } from "../runners/poker/cards.js";
 import {
   startHand,
@@ -184,6 +185,28 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     stacks = [t.stacks[0], t.stacks[1]];
     button = button === 0 ? 1 : 0;
     handIndex += 1;
+  }
+
+  // Verifiable replay: store the full match (per hand: seed, hole cards, board, every
+  // action with its 0G provenance, and the result) to 0G Storage, so anyone can
+  // reconstruct and check the duel from its root hash. Best effort, never blocks the
+  // settlement below.
+  if (storageConfigured() && matchLog.length > 0) {
+    try {
+      const up = await uploadJson({ contestId, kind: "poker", finalStacks: stacks, hands: matchLog });
+      await query("update contests_meta set poker_root = $2, poker_tx = $3 where contest_id = $1", [
+        contestId,
+        up.rootHash,
+        up.txHash,
+      ]);
+      broadcast({
+        type: "status",
+        contestId,
+        payload: { status: "running", detail: `replay stored on 0G Storage (${up.rootHash.slice(0, 10)}...)` },
+      });
+    } catch (err) {
+      console.error(`poker ${contestId}: replay storage failed:`, (err as Error).message);
+    }
   }
 
   // Winner by chips; a dead-even stack (e.g. no hand finished) breaks to the higher

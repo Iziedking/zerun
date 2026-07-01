@@ -69,6 +69,11 @@ create table if not exists contests_meta (
 alter table contests_meta add column if not exists audit_root text;
 alter table contests_meta add column if not exists audit_tx text;
 
+-- Poker duel replay: the full hand-by-hand match log (seeds, cards, actions) on 0G
+-- Storage, so a duel can be reconstructed and verified by its root hash.
+alter table contests_meta add column if not exists poker_root text;
+alter table contests_meta add column if not exists poker_tx text;
+
 -- Contest type: 'solver' (puzzles) or 'analyst' (prediction markets).
 alter table contests_meta add column if not exists kind text not null default 'solver';
 

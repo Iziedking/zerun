@@ -21,7 +21,7 @@ import {
   computeLevelClamp,
   COMPUTE_COSTS_OG,
 } from "../runners/computeLevels.js";
-import { storageConfigured, uploadBytes, downloadBytes } from "../storage/zgStorage.js";
+import { storageConfigured, uploadBytes, downloadBytes, downloadJson } from "../storage/zgStorage.js";
 import { openContest, onchainEntryCount } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
@@ -524,6 +524,27 @@ app.get("/api/contests/:id/feed", async (c) => {
 app.get("/api/contests/:id/standings", async (c) => {
   const id = Number(c.req.param("id"));
   return c.json({ standings: await standingsFor(id) });
+});
+
+// The stored hand-by-hand replay of a poker duel, read back from 0G Storage by its
+// root hash. Proves the duel is reconstructable and verifiable from decentralized
+// storage, and powers the replay view.
+app.get("/api/contests/:id/replay", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!id) return c.json({ error: "contest id required" }, 400);
+  const { rows } = await query<{ poker_root: string | null }>(
+    "select poker_root from contests_meta where contest_id = $1",
+    [id],
+  );
+  const root = rows[0]?.poker_root;
+  if (!root) return c.json({ error: "no replay stored for this contest" }, 404);
+  try {
+    const replay = await downloadJson(root);
+    return c.json({ root, replay });
+  } catch (err) {
+    console.error(`replay ${id} read failed:`, (err as Error).message);
+    return c.json({ error: "replay could not be read from 0G Storage", root }, 502);
+  }
 });
 
 // Keep a contest's puzzle or market count in a sane range, so a host cannot make
