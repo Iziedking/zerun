@@ -152,13 +152,51 @@ export function coordinatorAccount() {
 }
 
 let _walletClient: ReturnType<typeof createWalletClient> | null = null;
+// The coordinator signs from one account, but the open loop, the settle sweeper, and
+// the API mints all send through it at the same time. Without coordination two
+// concurrent sends read the same pending nonce and one is dropped as "nonce too low",
+// which silently loses a settlement, refund, or mint. Serialize every coordinator
+// send and hand out explicit, sequential nonces so they queue instead of colliding.
+let _nonce: number | null = null;
+let _sendChain: Promise<unknown> = Promise.resolve();
 export function coordinatorWallet() {
   if (_walletClient) return _walletClient;
-  _walletClient = createWalletClient({
+  const client = createWalletClient({
     account: coordinatorAccount(),
     chain: ogGalileo,
     transport: http(config.chain.rpcUrl),
   });
+  const rawWrite = client.writeContract.bind(client) as (args: any) => Promise<`0x${string}`>;
+  const serializedWrite = (args: any): Promise<`0x${string}`> => {
+    const run = _sendChain.then(async () => {
+      if (_nonce == null) {
+        _nonce = await publicClient.getTransactionCount({
+          address: coordinatorAccount().address,
+          blockTag: "pending",
+        });
+      }
+      try {
+        const hash = await rawWrite({ ...args, nonce: _nonce });
+        _nonce = _nonce + 1;
+        return hash;
+      } catch (err) {
+        _nonce = null; // resync from chain on the next send so a gap does not stick
+        throw err;
+      }
+    });
+    // Keep the queue alive whether this send resolved or threw.
+    _sendChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
+  // A Proxy leaves every other client method untouched and only serializes writes.
+  _walletClient = new Proxy(client, {
+    get(target, prop, recv) {
+      return prop === "writeContract" ? serializedWrite : Reflect.get(target, prop, recv);
+    },
+  }) as typeof client;
   return _walletClient;
 }
 
