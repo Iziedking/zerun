@@ -142,10 +142,11 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       });
       const contestId = Number(nextId as bigint);
 
-      // List the contest. cType: solver=2, analyst=1, poker=3. Split sets topN/cut.
+      // List the contest. The on-chain enum has no poker type, so poker lists under
+      // the valid SOLVER type and is marked by its POKER metric hash. Split sets
+      // topN/cut.
       setPhase("listing");
-      const cType =
-        kind === "poker" ? CONTEST_TYPE.poker : kind === "solver" ? CONTEST_TYPE.solver : CONTEST_TYPE.analyst;
+      const cType = kind === "analyst" ? CONTEST_TYPE.analyst : CONTEST_TYPE.solver;
       const listHash = await walletAction.run(
         () =>
           writeContractAsync({

@@ -33,8 +33,20 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const METRIC = {
   solver: { hash: keccak256(toHex("PUZZLE")), label: "PUZZLE", contestType: CONTEST_TYPE.SOLVER },
   analyst: { hash: keccak256(toHex("PREDICTION")), label: "PREDICTION", contestType: CONTEST_TYPE.ANALYST },
-  poker: { hash: keccak256(toHex("POKER")), label: "POKER", contestType: CONTEST_TYPE.POKER },
+  // The on-chain ContestType enum only has SCOUT/ANALYST/SOLVER, so poker lists under
+  // the valid SOLVER type and is identified by its POKER metric hash instead. The
+  // contest type is opaque to escrow and settlement, so this is safe.
+  poker: { hash: keccak256(toHex("POKER")), label: "POKER", contestType: CONTEST_TYPE.SOLVER },
 } as const;
+
+// The contest kind, derived from the on-chain metric hash rather than the enum (which
+// cannot represent poker). This is the source of truth for how a contest is run.
+export function kindFromMetric(metricHash: string): "solver" | "analyst" | "poker" {
+  const m = (metricHash ?? "").toLowerCase();
+  if (m === METRIC.poker.hash.toLowerCase()) return "poker";
+  if (m === METRIC.analyst.hash.toLowerCase()) return "analyst";
+  return "solver";
+}
 
 export async function openContest(params: OpenContestParams): Promise<number> {
   const kind = params.kind ?? "solver";

@@ -25,6 +25,7 @@ import { storageConfigured, uploadBytes, downloadBytes, downloadJson } from "../
 import { openContest, onchainEntryCount } from "../coordinator/contestOps.js";
 import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
+import { runPokerContest } from "../coordinator/runPokerContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { seedHouseInto } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
@@ -1021,13 +1022,15 @@ app.post("/api/contests/:id/claimed", async (c) => {
 app.post("/api/admin/contests/open", async (c) => {
   if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
   const body = await c.req.json().catch(() => ({}));
-  const kind = body.kind === "analyst" ? "analyst" : "solver";
+  const kind = body.kind === "analyst" ? "analyst" : body.kind === "poker" ? "poker" : "solver";
+  const maxOperators = Number(body.maxOperators) > 0 ? Number(body.maxOperators) : undefined;
   const id = await openContest({
     prizePoolUsdc: Number(body.prizePoolUsdc ?? 100),
     durationSecs: Number(body.durationSecs ?? 120),
-    topN: Number(body.topN ?? 3),
+    topN: Number(body.topN ?? (kind === "poker" ? 1 : 3)),
     puzzleCount: clampPuzzleCount(body.puzzleCount, kind === "analyst" ? 4 : 5),
     kind,
+    maxOperators,
   });
   return c.json({ ok: true, contestId: id, kind });
 });
@@ -1041,7 +1044,7 @@ app.post("/api/admin/contests/:id/run", async (c) => {
   );
   const kind = rows[0]?.kind ?? "solver";
   // Fire and forget; progress streams over the WebSocket.
-  const run = kind === "analyst" ? runAnalystContest(id) : runContest(id);
+  const run = kind === "analyst" ? runAnalystContest(id) : kind === "poker" ? runPokerContest(id) : runContest(id);
   run.catch((err) => console.error(`run contest ${id} (${kind}) failed:`, err));
   return c.json({ ok: true, accepted: true, contestId: id, kind });
 });
