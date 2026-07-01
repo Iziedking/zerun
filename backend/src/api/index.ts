@@ -27,7 +27,7 @@ import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
 import { runPokerContest } from "../coordinator/runPokerContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
-import { seedHouseInto } from "../coordinator/autopilot.js";
+import { scheduleHouseFill } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { buildDossier } from "../runners/poker/dossier.js";
 import {
@@ -631,19 +631,11 @@ app.post("/api/contests/host", async (c) => {
     [id, puzzleCount, kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators],
   );
 
-  // Seed a field so a hosted contest does not sit empty and cancel. An uncapped
-  // contest gets the full house; a 1v1 duel gets a single house opponent so it runs
-  // even if no challenger joins in time. A capped-but-larger contest is left for its
-  // specific entrants. The open window gives real players time to register too.
-  if (maxOperators === null) {
-    void seedHouseInto(id).catch((e) =>
-      console.error(`host ${id}: house seed failed:`, (e as Error).message),
-    );
-  } else if (maxOperators === 2) {
-    void seedHouseInto(id, 1).catch((e) =>
-      console.error(`host ${id}: house seed failed:`, (e as Error).message),
-    );
-  }
+  // The house fills any empty seats near the end of the join window, so a real
+  // challenger has the whole window to enter first. It targets the seat cap for a
+  // capped contest (a duel fills to two), or a small field for an open one.
+  const secondsUntilClose = Number(con.endTime) - Math.floor(Date.now() / 1000);
+  scheduleHouseFill(id, maxOperators ?? 4, secondsUntilClose);
   return c.json({ ok: true, contestId: id, kind });
 });
 
@@ -1058,12 +1050,16 @@ async function standingsFor(contestId: number) {
     agent_id: string;
     operator: string;
     name: string | null;
+    is_house: boolean;
     correct: string;
     total_latency: string;
     compute_level: string;
     passes: string;
   }>(
-    `select e.agent_id, e.operator, m.name,
+    // Every entrant shows, house agents included, so a duel visibly has two players.
+    // House agents are flagged so the UI can mark them, but they are never paid (the
+    // runner excludes them from the payout).
+    `select e.agent_id, e.operator, m.name, coalesce(m.is_house, false) as is_house,
             coalesce(sum(case when s.verdict = 'correct' then 1 else 0 end), 0) as correct,
             coalesce(sum(s.latency_ms), 0) as total_latency,
             coalesce(m.compute_level, 0) as compute_level,
@@ -1072,11 +1068,7 @@ async function standingsFor(contestId: number) {
        left join agents_meta m on m.agent_id = e.agent_id
        left join solve_runs s on s.contest_id = e.contest_id and s.agent_id = e.agent_id
       where e.contest_id = $1
-        and (not coalesce(m.is_house, false)
-             or not exists (select 1 from contest_entries re
-                              join agents_meta rm on rm.agent_id = re.agent_id
-                             where re.contest_id = $1 and not coalesce(rm.is_house, false)))
-      group by e.agent_id, e.operator, m.name, m.compute_level
+      group by e.agent_id, e.operator, m.name, m.compute_level, m.is_house
       order by correct desc, coalesce(m.compute_level, 0) desc, total_latency asc, e.agent_id asc`,
     [contestId],
   );
@@ -1085,6 +1077,7 @@ async function standingsFor(contestId: number) {
     agentId: Number(r.agent_id),
     agentName: r.name ?? `Agent #${r.agent_id}`,
     operator: r.operator,
+    isHouse: Boolean(r.is_house),
     correct: Number(r.correct),
     totalLatencyMs: Number(r.total_latency),
     computeLevel: Number(r.compute_level),

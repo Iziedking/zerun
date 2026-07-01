@@ -263,11 +263,19 @@ async function upgradeHouseTier(
   }
 }
 
-export async function seedHouseInto(contestId: number, count = HOUSE_SIZE): Promise<void> {
+// Fill a contest up to `target` seats with house agents, taking only seats not
+// already held by a real player or a house agent. House agents enter on chain like
+// anyone else; the mirror row follows.
+export async function seedHouseInto(contestId: number, target = HOUSE_SIZE): Promise<void> {
   const dep = loadDeployment();
-  // A hosted duel seats one house opponent; an autopilot duel seats two; the other
-  // kinds take the full house field.
-  const house = (await ensureHouseRoster()).slice(0, Math.max(1, count));
+  const { rows: inRows } = await query<{ agent_id: string }>(
+    "select agent_id from contest_entries where contest_id = $1",
+    [contestId],
+  );
+  const already = new Set(inRows.map((r) => Number(r.agent_id)));
+  const need = Math.max(0, target - already.size);
+  if (need === 0) return;
+  const house = (await ensureHouseRoster()).filter((h) => !already.has(h.agentId)).slice(0, need);
   for (const h of house) {
     try {
       const hash = await h.wallet.writeContract({
@@ -293,6 +301,23 @@ export async function seedHouseInto(contestId: number, count = HOUSE_SIZE): Prom
     `update contests_meta set agent_count = (select count(*) from contest_entries where contest_id = $1) where contest_id = $1`,
     [contestId],
   );
+}
+
+// How long before the join window closes the house steps in to fill empty seats, so
+// real players have almost the whole window to enter first without a house agent
+// taking a seat they wanted.
+const HOUSE_JOIN_LEAD_MS = Number(process.env.AUTOPILOT_HOUSE_JOIN_LEAD_SECONDS ?? "7") * 1000;
+
+// Schedule the house to fill any still-empty seats near the end of the join window.
+// A restart drops a pending fill; the contest then runs with whoever entered (or
+// cancels and refunds if too few), which the sweeper already handles.
+export function scheduleHouseFill(contestId: number, target: number, secondsUntilClose: number): void {
+  const delay = Math.max(0, secondsUntilClose * 1000 - HOUSE_JOIN_LEAD_MS);
+  setTimeout(() => {
+    void seedHouseInto(contestId, target).catch((e) =>
+      console.error(`autopilot: house fill for ${contestId} failed:`, (e as Error).message),
+    );
+  }, delay);
 }
 
 // Open contests (status OPEN = 1) whose window has closed, any sponsor.
@@ -489,8 +514,10 @@ async function startOpenLoop(): Promise<void> {
           kind,
           maxOperators: seatCap,
         });
-        await seedHouseInto(id, houseSeats);
-        console.log(`autopilot: ${kind} ${format} ${id} open with the house field`);
+        // The house fills any empty seats near the end of the window, not now, so
+        // real players have the whole window to join first.
+        scheduleHouseFill(id, houseSeats, WINDOW_S);
+        console.log(`autopilot: ${kind} ${format} ${id} open, house fills near close`);
       }
     } catch (err) {
       console.error("autopilot open failed:", (err as Error).message);
