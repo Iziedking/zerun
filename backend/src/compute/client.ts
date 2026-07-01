@@ -16,6 +16,9 @@ export interface CallParams {
   userPrompt: string;
   maxTokens: number;
   temperature: number;
+  // Tier's ordered model preference for 0G Compute. Ignored by the router/offline
+  // paths, which have a single model.
+  models?: string[];
 }
 
 export interface CallResult {

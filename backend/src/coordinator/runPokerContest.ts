@@ -192,6 +192,7 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
         userPrompt: buildUserPrompt(view, dossierOf.get(entry.agentId)),
         maxTokens: plan.maxTokens,
         temperature: plan.temperature,
+        models: plan.models,
       };
       let res: Res;
       let action: Action;

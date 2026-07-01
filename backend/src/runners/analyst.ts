@@ -94,6 +94,7 @@ export async function predictMarket(market: Market, plan: InferencePlan): Promis
           userPrompt: buildPrompt(market, research),
           maxTokens: plan.maxTokens,
           temperature: plan.temperature,
+          models: plan.models,
         });
         latencyMs += res.latencyMs;
         last = res;

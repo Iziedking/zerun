@@ -49,6 +49,11 @@ export interface InferencePlan {
   // Solver only: whether the agent sees the live on-chain data for a live-insight
   // puzzle. A top-tier perk (level 4-5), so only they can answer those.
   liveInsight?: boolean;
+  // Ordered 0G Compute model preference for this tier. The top tiers route to a
+  // stronger, TEE-capable model (so more 0G buys a better brain AND the verified
+  // badge); lower tiers stay on the base model. Falls back to the base model
+  // whenever a preferred one has no healthy provider.
+  models?: string[];
 }
 
 // Self-consistency passes allowed by the compute budget (tier). Kept small so a

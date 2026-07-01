@@ -113,6 +113,7 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
           ),
           maxTokens: plan.maxTokens,
           temperature: plan.temperature,
+          models: plan.models,
         });
         action = parseAction(res.text, view.legal);
       } catch (err) {

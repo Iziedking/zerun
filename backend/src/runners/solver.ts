@@ -79,6 +79,7 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
           userPrompt,
           maxTokens: plan.maxTokens,
           temperature: plan.temperature,
+          models: plan.models,
         },
         Math.max(1, plan.retries),
       );

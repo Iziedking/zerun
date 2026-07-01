@@ -23,13 +23,24 @@ export const COMPUTE_COSTS_OG = [0.8, 2, 5, 12, 30] as const;
 // `intel` is the Analyst research perk, gated to the top tiers so reaching level
 // 4-5 unlocks real research power: low levels forecast blind, the top tiers pull
 // and reason over real sources. Solver contests ignore it.
+// 0G Compute model names, exactly as the providers advertise them via
+// listService(). The top two tiers prefer a stronger, TEE-capable model; every
+// tier lists the base model as its fallback so an unhealthy premium provider
+// never leaves an agent unable to think.
+const MODEL_BASE = "qwen/qwen2.5-omni-7b"; // levels 0-3
+const MODEL_GEMMA = "google/gemma-3-27b-it"; // level 4 (TEE)
+const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
+
+// Higher tiers keep their bigger compute (more self-consistency passes and a
+// bigger token budget) AND route to a stronger model, so the advantages compound:
+// more 0G invested buys both more thinking and a better brain.
 const LEVELS: InferencePlan[] = [
-  { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "", intel: 0 },
-  { maxTokens: 440, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step.", intel: 0 },
-  { maxTokens: 620, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer.", intel: 0 },
-  { maxTokens: 760, temperature: 0.6, samples: 5, retries: 1, hint: " Think step by step, then check your answer.", intel: 2 },
-  { maxTokens: 900, temperature: 0.58, samples: 6, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 5, liveInsight: true },
-  { maxTokens: 1024, temperature: 0.58, samples: 7, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 8, liveInsight: true },
+  { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "", intel: 0, models: [MODEL_BASE] },
+  { maxTokens: 440, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step.", intel: 0, models: [MODEL_BASE] },
+  { maxTokens: 620, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer.", intel: 0, models: [MODEL_BASE] },
+  { maxTokens: 760, temperature: 0.6, samples: 5, retries: 1, hint: " Think step by step, then check your answer.", intel: 2, models: [MODEL_BASE] },
+  { maxTokens: 900, temperature: 0.58, samples: 6, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 5, liveInsight: true, models: [MODEL_GEMMA, MODEL_BASE] },
+  { maxTokens: 1024, temperature: 0.58, samples: 7, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 8, liveInsight: true, models: [MODEL_GPT_OSS, MODEL_BASE] },
 ];
 
 export function computeLevelClamp(level: number): number {

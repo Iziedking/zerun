@@ -46,6 +46,12 @@ let brokerPromise: Promise<Broker> | null = null;
 let handle: ProviderHandle | null = null;
 let readyPromise: Promise<ProviderHandle> | null = null;
 
+// Set up (acknowledge + fund + fetch metadata) is done once per provider and the
+// handle cached, so tier-based routing can hold several providers ready at once
+// without re-acknowledging on every call.
+const handles = new Map<string, ProviderHandle>();
+const setupPromises = new Map<string, Promise<ProviderHandle>>();
+
 // The broker signs single-use headers per request, and those nonces collide if
 // two requests overlap. Run the per-request work one at a time so concurrent
 // agents queue instead of stepping on each other.
@@ -171,9 +177,54 @@ export async function listProviders(): Promise<
   return (await broker.inference.listService()).map(readService);
 }
 
-// Bring the broker to a ready state: ledger funded, a provider chosen and
-// acknowledged, its sub-account funded, metadata cached. Idempotent and
-// single-flight so concurrent agent calls share one setup.
+// Bring one provider to a ready state (acknowledge signer, fund its sub-account,
+// cache its metadata) and return its handle. Single-flight per provider, so
+// concurrent calls that want the same provider share one setup.
+async function getHandleFor(broker: Broker, provider: string): Promise<ProviderHandle> {
+  const cached = handles.get(provider);
+  if (cached) return cached;
+
+  let p = setupPromises.get(provider);
+  if (!p) {
+    p = (async () => {
+      // Accept the provider's TEE signer so its responses can be verified. This
+      // is best effort: if it is already acknowledged, or the provider does not
+      // require it, the inference still works, so a failure here must not stop us.
+      try {
+        await broker.inference.acknowledgeProviderSigner(provider);
+      } catch (err) {
+        console.warn(`acknowledgeProviderSigner skipped: ${(err as Error).message}`);
+      }
+
+      // Lock a small amount to the provider sub-account. Also best effort: the
+      // broker funds the sub-account on demand during a request, so an explicit
+      // transfer reverting here does not block inference.
+      try {
+        const locked = BigInt(config.compute.perProviderOg) * 10n ** 18n;
+        await broker.ledger.transferFund(provider, "inference", locked);
+      } catch (err) {
+        console.warn(`transferFund skipped: ${(err as Error).message}`);
+      }
+
+      const { endpoint, model } = await broker.inference.getServiceMetadata(provider);
+      const h: ProviderHandle = { provider, endpoint, model };
+      handles.set(provider, h);
+      return h;
+    })();
+    setupPromises.set(provider, p);
+  }
+
+  try {
+    return await p;
+  } catch (err) {
+    setupPromises.delete(provider);
+    throw err;
+  }
+}
+
+// Bring the broker to a ready state on the best available provider: ledger
+// funded, a provider chosen and acknowledged, its sub-account funded, metadata
+// cached. Idempotent and single-flight so concurrent agent calls share one setup.
 export async function ensureReady(): Promise<ProviderHandle> {
   if (handle) return handle;
   if (readyPromise) return readyPromise;
@@ -181,30 +232,8 @@ export async function ensureReady(): Promise<ProviderHandle> {
   readyPromise = (async () => {
     const broker = await getBroker();
     await ensureLedger();
-
     const provider = await pickProvider(broker);
-
-    // Accept the provider's TEE signer so its responses can be verified. This
-    // is best effort: if it is already acknowledged, or the provider does not
-    // require it, the inference still works, so a failure here must not stop us.
-    try {
-      await broker.inference.acknowledgeProviderSigner(provider);
-    } catch (err) {
-      console.warn(`acknowledgeProviderSigner skipped: ${(err as Error).message}`);
-    }
-
-    // Lock a small amount to the provider sub-account. Also best effort: the
-    // broker funds the sub-account on demand during a request, so an explicit
-    // transfer reverting here does not block inference.
-    try {
-      const locked = BigInt(config.compute.perProviderOg) * 10n ** 18n;
-      await broker.ledger.transferFund(provider, "inference", locked);
-    } catch (err) {
-      console.warn(`transferFund skipped: ${(err as Error).message}`);
-    }
-
-    const { endpoint, model } = await broker.inference.getServiceMetadata(provider);
-    handle = { provider, endpoint, model };
+    handle = await getHandleFor(broker, provider);
     return handle;
   })();
 
@@ -216,14 +245,39 @@ export async function ensureReady(): Promise<ProviderHandle> {
   }
 }
 
+// Resolve a handle for a tier's preferred models. Walks the preference list in
+// order and takes the first model that a HEALTHY provider is currently serving,
+// so a higher tier reaches its stronger (TEE-capable) model. If none of the
+// preferred models has a healthy provider right now, it falls back to the default
+// best provider, so routing can never stall an agent: the worst case is exactly
+// today's behaviour.
+export async function ensureReadyFor(preferredModels?: string[]): Promise<ProviderHandle> {
+  if (!preferredModels || preferredModels.length === 0) return ensureReady();
+
+  const broker = await getBroker();
+  await ensureLedger();
+
+  const services = (await broker.inference.listService()).map(readService);
+  for (const want of preferredModels) {
+    const match = services.find((s) => s.serviceType === "chatbot" && s.model === want && s.healthy);
+    if (match) return getHandleFor(broker, match.provider);
+  }
+
+  // Nothing preferred is healthy — use the default best provider.
+  return ensureReady();
+}
+
 // One paid, verifiable inference call on 0G Compute.
 export async function computeChat(params: {
   systemPrompt: string;
   userPrompt: string;
   maxTokens: number;
   temperature: number;
+  // Ordered model preference (a tier's ladder). The first one a healthy provider
+  // serves is used; otherwise it falls back to the default best provider.
+  models?: string[];
 }): Promise<ComputeAnswer> {
-  const h = await ensureReady();
+  const h = await ensureReadyFor(params.models);
   const broker = await getBroker();
 
   const messages = [

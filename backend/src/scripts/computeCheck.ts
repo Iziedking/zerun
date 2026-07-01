@@ -1,6 +1,7 @@
 import { config } from "../config/index.js";
 import { ensureReady, ensureLedger, listProviders } from "../compute/zgCompute.js";
 import { callModel, computeMode } from "../compute/client.js";
+import { computePlan, MAX_COMPUTE_LEVEL } from "../runners/computeLevels.js";
 
 // End-to-end check of the 0G Compute path. Run this once the deployer wallet
 // holds a few 0G:  pnpm compute:check
@@ -27,6 +28,22 @@ async function main() {
       }
     } catch (err) {
       console.log(`  (could not list providers: ${(err as Error).message})`);
+    }
+
+    // Tier -> model routing: show each compute level's preferred model and which
+    // one actually resolves to a healthy provider right now (the * is what an
+    // agent at that level would use; it falls back to the base model otherwise).
+    try {
+      const providers = await listProviders();
+      const healthy = new Set(providers.filter((p) => p.healthy).map((p) => p.model));
+      console.log("\ntier -> model routing (level: preferred [resolves to]):");
+      for (let lvl = 0; lvl <= MAX_COMPUTE_LEVEL; lvl++) {
+        const models = computePlan(lvl).models ?? [];
+        const resolved = models.find((m) => healthy.has(m)) ?? "(default best)";
+        console.log(`  L${lvl}: ${models.join(" > ") || "(default)"}  ->  ${resolved}`);
+      }
+    } catch {
+      // best effort
     }
 
     console.log("\ndiscovering a provider...");
