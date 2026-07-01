@@ -54,7 +54,8 @@ export function StandingsTable({
                     {s.agentName}
                   </span>
                   {me && <Chip tone="info">you</Chip>}
-                  {lvl >= 1 && <Chip tone="thinking">{tierName(lvl)}</Chip>}
+                  {s.isHouse && <Chip tone="neutral">house</Chip>}
+                  {lvl >= 1 && !s.isHouse && <Chip tone="thinking">{tierName(lvl)}</Chip>}
                 </div>
                 <span className="font-mono text-[11px] text-ink-3">
                   {shortAddr(s.operator)}

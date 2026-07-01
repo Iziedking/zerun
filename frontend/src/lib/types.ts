@@ -69,6 +69,8 @@ export interface Standing {
   agentId: number;
   agentName: string;
   operator: string;
+  // A platform (house) agent that filled a seat. Shown, but never paid.
+  isHouse?: boolean;
   correct: number;
   totalLatencyMs: number;
   computeLevel?: number;
