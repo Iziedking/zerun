@@ -50,7 +50,7 @@ export interface SolvePayload {
   prompt: string;
   answer: string | null;
   // "action" is a poker betting move (no right/wrong answer, just a play).
-  verdict: "correct" | "wrong" | "error" | "action";
+  verdict: "correct" | "wrong" | "error" | "action" | "forecast";
   source: string;
   provider: string;
   model: string;

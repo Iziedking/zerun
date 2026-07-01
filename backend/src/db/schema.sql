@@ -183,3 +183,26 @@ create table if not exists worldcup_state (
   cycle  int not null default 1
 );
 insert into worldcup_state (id, cycle) values (1, 1) on conflict (id) do nothing;
+
+-- The markets a specific World Cup mission (contest) drew, in order. market_idx lines
+-- up with solve_runs.puzzle_idx so the live feed and the audit reuse the same slot.
+-- Fixed once at forecast time so the resolver knows exactly which events to wait on.
+create table if not exists worldcup_mission_markets (
+  contest_id   bigint not null,
+  market_idx   int not null,
+  condition_id text not null,
+  question     text not null,
+  primary key (contest_id, market_idx)
+);
+
+-- Each agent's forecast for one mission market, as a probability the market resolves
+-- Yes. Kept as a number so grading is exact once the real outcome is known (World Cup
+-- missions settle later, not at the join-window close). latency feeds the speed tiebreak.
+create table if not exists worldcup_forecasts (
+  contest_id  bigint not null,
+  agent_id    bigint not null,
+  market_idx  int not null,
+  prob_yes    double precision,
+  latency_ms  int not null default 0,
+  primary key (contest_id, agent_id, market_idx)
+);

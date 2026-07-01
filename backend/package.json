@@ -15,6 +15,7 @@
     "db:migrate": "tsx src/scripts/migrate.ts",
     "selftest": "tsx src/scripts/selfTest.ts",
     "poker:test": "tsx src/scripts/pokerTest.ts",
+    "worldcup:test": "tsx src/scripts/worldcupTest.ts",
     "seed": "tsx src/scripts/seedAndRun.ts",
     "typecheck": "tsc --noEmit"
   },

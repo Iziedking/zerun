@@ -137,6 +137,97 @@ export async function syncWorldCupMarkets(): Promise<number> {
   return upserts;
 }
 
+// Fetch resolution for specific markets by conditionId, including closed ones, and
+// update the pool for any that have resolved. The event-level sync catches markets
+// whose parent event is still open; this targeted fetch covers the tail (a market
+// whose event has fully closed at tournament end).
+export async function refreshMissionResolutions(conditionIds: string[]): Promise<void> {
+  if (conditionIds.length === 0) return;
+  const params = conditionIds.map((c) => `condition_ids=${encodeURIComponent(c)}`).join("&");
+  const url = `https://gamma-api.polymarket.com/markets?${params}&limit=${conditionIds.length}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  let raw: RawMarket[] = [];
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return;
+    const data = (await res.json()) as RawMarket[];
+    raw = Array.isArray(data) ? data : [];
+  } catch {
+    return;
+  } finally {
+    clearTimeout(timer);
+  }
+  for (const m of raw) {
+    const { resolved, winnerIndex } = resolutionOf(m);
+    if (!resolved || !m.conditionId) continue;
+    await query(
+      "update worldcup_markets set resolved = true, winner_index = $2, updated_at = now() where condition_id = $1",
+      [m.conditionId, winnerIndex],
+    );
+  }
+}
+
+export interface MissionOutcome {
+  marketIdx: number;
+  conditionId: string;
+  resolved: boolean;
+  winnerIndex: number | null;
+}
+
+// The resolution state of a mission's markets, joined from the pool.
+export async function missionOutcomes(contestId: number): Promise<MissionOutcome[]> {
+  const { rows } = await query<{
+    market_idx: number;
+    condition_id: string;
+    resolved: boolean | null;
+    winner_index: number | null;
+  }>(
+    `select mm.market_idx, mm.condition_id, wm.resolved, wm.winner_index
+       from worldcup_mission_markets mm
+       left join worldcup_markets wm on wm.condition_id = mm.condition_id
+      where mm.contest_id = $1
+      order by mm.market_idx asc`,
+    [contestId],
+  );
+  return rows.map((r) => ({
+    marketIdx: r.market_idx,
+    conditionId: r.condition_id,
+    resolved: Boolean(r.resolved),
+    winnerIndex: r.winner_index,
+  }));
+}
+
+export interface Forecast {
+  agentId: number;
+  marketIdx: number;
+  probYes: number | null;
+  latencyMs: number;
+}
+
+// Grade forecasts against the resolved outcomes: a call counts correct when the
+// agent leaned the way the market actually settled (prob >= 0.5 for Yes). Pure and
+// testable; the resolver turns this into ranked scores. Latency accumulates for the
+// speed tiebreak.
+export function tallyForecasts(
+  forecasts: Forecast[],
+  outcomes: { marketIdx: number; winnerIndex: number | null }[],
+): Map<number, { correct: number; totalLatencyMs: number }> {
+  const winByIdx = new Map(outcomes.map((o) => [o.marketIdx, o.winnerIndex]));
+  const out = new Map<number, { correct: number; totalLatencyMs: number }>();
+  for (const f of forecasts) {
+    const rec = out.get(f.agentId) ?? { correct: 0, totalLatencyMs: 0 };
+    rec.totalLatencyMs += f.latencyMs;
+    const winner = winByIdx.get(f.marketIdx);
+    if (winner !== undefined && winner !== null && f.probYes !== null) {
+      const predictedYes = f.probYes >= 0.5;
+      if (predictedYes === (winner === 0)) rec.correct += 1;
+    }
+    out.set(f.agentId, rec);
+  }
+  return out;
+}
+
 async function currentCycle(): Promise<number> {
   const { rows } = await query<{ cycle: number }>("select cycle from worldcup_state where id = 1");
   return rows[0]?.cycle ?? 1;

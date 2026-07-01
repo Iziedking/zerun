@@ -2,10 +2,12 @@ import { createWalletClient, http, keccak256, parseEther, toHex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { config } from "../config/index.js";
 import { query } from "../db/pool.js";
-import { openContest, kindFromMetric } from "./contestOps.js";
+import { openContest, kindFromMetric, type ContestKind } from "./contestOps.js";
 import { runContest } from "./runContest.js";
 import { runAnalystContest } from "./runAnalystContest.js";
 import { runPokerContest } from "./runPokerContest.js";
+import { runWorldCupContest } from "./runWorldCupContest.js";
+import { startWorldCupResolver } from "./worldcupResolver.js";
 import { resettleFromStored, cancelContest } from "./finalize.js";
 import {
   CONTEST_TYPE,
@@ -69,6 +71,10 @@ const PREDICTION_DUEL_PCT = Number(process.env.AUTOPILOT_PREDICTION_DUEL_PCT ?? 
 // heads-up duel. Off by default: set AUTOPILOT_POKER_TABLE_PCT above 0 to enable
 // tables once the multi-player path is proven live.
 const POKER_TABLE_PCT = Number(process.env.AUTOPILOT_POKER_TABLE_PCT ?? "0");
+// Within the prediction slice, the share that opens as a World Cup mission (deferred
+// settlement) instead of a normal prediction. Off by default: Phase 4 raises it to the
+// spotlight ~0.9 once the hosting UI and frontend land, so production is unchanged now.
+const WORLDCUP_PCT = Number(process.env.AUTOPILOT_WORLDCUP_PCT ?? "0");
 
 function pickAutopilotKind(): "poker" | "analyst" | "solver" {
   const total = Math.max(1, W_POKER + W_PREDICTION + W_PUZZLE);
@@ -329,7 +335,7 @@ export function scheduleHouseFill(_contestId: number, _target: number, _secondsU
 // Open contests (status OPEN = 1) whose window has closed, any sponsor.
 interface DueContest {
   id: number;
-  kind: "solver" | "analyst" | "poker";
+  kind: ContestKind;
   overdueSec: number; // seconds since the entry window closed
 }
 async function findDueContests(lookback = 100): Promise<DueContest[]> {
@@ -357,8 +363,18 @@ async function findDueContests(lookback = 100): Promise<DueContest[]> {
     if (id >= 1 && id <= latest) ids.add(id);
   }
 
+  // World Cup missions stay on-chain OPEN while they wait for the real events to
+  // resolve (deferred settlement). They are intentionally long-lived, so exclude them
+  // here: otherwise the sweeper would re-run their forecast phase or, past the stale
+  // cutoff, cancel and refund a mission that is simply waiting on Polymarket.
+  const { rows: awaiting } = await query<{ contest_id: string }>(
+    "select contest_id from contests_meta where status = 'awaiting_resolution'",
+  );
+  const parked = new Set(awaiting.map((r) => Number(r.contest_id)));
+
   const due: DueContest[] = [];
   for (const id of ids) {
+    if (parked.has(id)) continue;
     const c = await publicClient.readContract({
       address: dep.contestEngine,
       abi: contestEngineAbi,
@@ -383,7 +399,8 @@ async function ensureContestMeta(id: number): Promise<void> {
     args: [BigInt(id)],
   });
   const kind = kindFromMetric(c.metric as string);
-  const metricLabel = kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : "PUZZLE";
+  const metricLabel =
+    kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : kind === "worldcup" ? "WORLDCUP" : "PUZZLE";
   await query(
     `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at)
        values ($1, 'open', 4, $2, $3, $4, to_timestamp($5))
@@ -476,11 +493,18 @@ async function startHouseFillPoll(): Promise<void> {
 
 const inFlight = new Set<number>();
 
-async function runOnce(id: number, kind: "solver" | "analyst" | "poker"): Promise<void> {
+async function runOnce(id: number, kind: ContestKind): Promise<void> {
   if (inFlight.has(id)) return;
   inFlight.add(id);
   await ensureContestMeta(id).catch(() => {});
-  const runner = kind === "analyst" ? runAnalystContest : kind === "poker" ? runPokerContest : runContest;
+  const runner =
+    kind === "analyst"
+      ? runAnalystContest
+      : kind === "poker"
+        ? runPokerContest
+        : kind === "worldcup"
+          ? runWorldCupContest
+          : runContest;
   const work = runner(id).finally(() => inFlight.delete(id));
   work.catch(() => {});
   await Promise.race([
@@ -544,10 +568,13 @@ async function startOpenLoop(): Promise<void> {
         held = true;
         console.log(`autopilot: ${open} contest(s) still open, holding this slot`);
       } else {
-        const kind = pickAutopilotKind();
+        const base = pickAutopilotKind();
+        // A prediction can open as a World Cup mission part of the time (deferred
+        // settlement); the rest stay normal predictions. Default off until Phase 4.
+        const kind: ContestKind = base === "analyst" && Math.random() < WORLDCUP_PCT ? "worldcup" : base;
         // Poker opens as a heads-up duel, or a multi-player table part of the time; a
         // prediction opens as a 1v1 duel part of the time so both fill the duels tab.
-        // Puzzles stay a full field.
+        // Puzzles and World Cup missions stay a full field.
         const pokerTable = kind === "poker" && Math.random() < POKER_TABLE_PCT;
         const isDuel =
           kind === "poker" ? !pokerTable : kind === "analyst" ? Math.random() < PREDICTION_DUEL_PCT : false;
@@ -594,4 +621,5 @@ export function startAutopilot(): void {
   void startOpenLoop();
   void startDueSweeper();
   void startHouseFillPoll();
+  void startWorldCupResolver();
 }
