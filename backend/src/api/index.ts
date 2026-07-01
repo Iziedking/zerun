@@ -27,6 +27,16 @@ import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { seedHouseInto } from "../coordinator/autopilot.js";
+import { getAgentCompute } from "../runners/traitStore.js";
+import { buildDossier } from "../runners/poker/dossier.js";
+import {
+  freeAllotment,
+  freeUsed,
+  consumeFree,
+  buildRequirements,
+  decodePaymentHeader,
+  verifyPaymentTx,
+} from "../runners/poker/x402.js";
 
 // Read API plus the admin/demo triggers. The live feed itself goes over the
 // WebSocket; these endpoints serve initial loads, lookups, and the proofs
@@ -524,6 +534,38 @@ app.get("/api/contests/:id/feed", async (c) => {
 app.get("/api/contests/:id/standings", async (c) => {
   const id = Number(c.req.param("id"));
   return c.json({ standings: await standingsFor(id) });
+});
+
+// An opponent dossier, gated by the x402 flow. Free within the requesting agent's
+// tier allotment; beyond that this returns HTTP 402 with payment requirements, and
+// serves the dossier once a testUSDC payment on 0G is verified. The `for` agent is
+// the one buying the scouting report on `opponentId`.
+app.get("/api/dossiers/:opponentId", async (c) => {
+  const opponentId = Number(c.req.param("opponentId"));
+  const forId = Number(c.req.query("for"));
+  if (!opponentId || !forId) return c.json({ error: "opponentId and ?for= agent id are required" }, 400);
+
+  const dossier = await buildDossier(opponentId);
+  if (!dossier) return c.json({ error: "this agent has no duel history to scout yet" }, 404);
+
+  const level = await getAgentCompute(forId);
+  const allot = freeAllotment(level);
+  const used = await freeUsed(forId);
+  if (used < allot) {
+    await consumeFree(forId);
+    return c.json({ dossier: dossier.text, stats: dossier.stats, paid: false, freeRemaining: allot - used - 1 });
+  }
+
+  // Free allotment used up: require an x402 payment.
+  const resource = new URL(c.req.url).pathname;
+  const description = `Opponent dossier on agent ${opponentId}`;
+  const header = c.req.header("x-payment");
+  if (!header) return c.json(buildRequirements(resource, description), 402);
+  const txHash = decodePaymentHeader(header);
+  if (!txHash || !(await verifyPaymentTx(txHash))) {
+    return c.json({ error: "payment required or not verified", ...buildRequirements(resource, description) }, 402);
+  }
+  return c.json({ dossier: dossier.text, stats: dossier.stats, paid: true, txHash });
 });
 
 // The stored hand-by-hand replay of a poker duel, read back from 0G Storage by its

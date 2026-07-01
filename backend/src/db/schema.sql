@@ -92,6 +92,9 @@ create table if not exists poker_stats (
 );
 -- The agent's dossier snapshot on 0G Storage: owned, provable scouting data.
 alter table agents_meta add column if not exists dossier_root text;
+-- Free opponent-dossier reads an agent has used. Beyond its tier's free allotment,
+-- an agent pays for a dossier via x402.
+alter table agents_meta add column if not exists dossier_free_used int not null default 0;
 
 -- Contest type: 'solver' (puzzles) or 'analyst' (prediction markets).
 alter table contests_meta add column if not exists kind text not null default 'solver';

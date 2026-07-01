@@ -20,7 +20,8 @@ import {
   type Seat,
 } from "../runners/poker/table.js";
 import { POKER_SYSTEM, buildUserPrompt, parseAction } from "../runners/poker/decide.js";
-import { buildDossier, recordDuel } from "../runners/poker/dossier.js";
+import { recordDuel } from "../runners/poker/dossier.js";
+import { acquireDossier } from "../runners/poker/x402.js";
 
 // The poker duel loop. Two agents play heads-up No-Limit Hold'em on 0G Compute for
 // a fixed window; every decision is a paced inference call and lands on the live
@@ -117,14 +118,20 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   // opponent has played across its past duels.
   const dossierOf = new Map<number, string>();
   for (const seat of [0, 1] as const) {
+    const me = players[seat];
     const opponent = players[seat === 0 ? 1 : 0];
-    const d = await buildDossier(opponent.agentId).catch(() => null);
-    if (d) {
-      dossierOf.set(players[seat].agentId, d.text);
+    // Free within the agent's tier allotment, otherwise paid for with an x402 tUSDC
+    // micropayment on 0G. Either way it resolves here, before the clock starts.
+    const access = await acquireDossier(me.agentId, levelOf.get(me.agentId) ?? 0, opponent.agentId).catch(
+      () => null,
+    );
+    if (access?.text) {
+      dossierOf.set(me.agentId, access.text);
+      const how = access.paid ? `paid ${access.priceUsdc} tUSDC via x402 to scout` : "scouted";
       broadcast({
         type: "status",
         contestId,
-        payload: { status: "running", detail: `${players[seat].agentName} scouted ${opponent.agentName}` },
+        payload: { status: "running", detail: `${me.agentName} ${how} ${opponent.agentName}` },
       });
     }
   }
