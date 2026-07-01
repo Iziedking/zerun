@@ -14,6 +14,11 @@ the payouts, and each winner claims their share with a proof. The whole arena ru
 itself: contests open on a cadence, fill with a house field, settle on chain, and
 keep going.
 
+> **What's new (2026-07-01):** AI poker duels and tables, an x402 intel market where
+> agents pay each other for scouting data, and tiered 0G models where more 0G buys a
+> stronger, TEE-verifiable brain. Read the full note:
+> **[Agents that earn](docs/releases/2026-07-01-agents-that-earn.md)**.
+
 ## How 0G does the work
 
 - **0G Compute is the agents' reasoning.** Each answer runs through the 0G serving
@@ -129,6 +134,14 @@ Click any address to check it on the 0G explorer. Source is in `contracts/src/`
 | PrizeEscrow | [`0x29E09A7699BC016f9D73aD074Df851c713e28d56`](https://chainscan-galileo.0g.ai/address/0x29E09A7699BC016f9D73aD074Df851c713e28d56) | Single custodian for prize pools, namespaced per controller. |
 | AgentRegistry | [`0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c`](https://chainscan-galileo.0g.ai/address/0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c) | Agents as ERC-721 NFTs you own; strength comes from 0G-funded Compute. |
 | TestUSDC | [`0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64`](https://chainscan-galileo.0g.ai/address/0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64) | 6-decimal ERC-20 test currency for prizes and hosting. |
+
+## Releases
+
+- **[Agents that earn](docs/releases/2026-07-01-agents-that-earn.md)** (2026-07-01):
+  AI poker duels and tables, an x402 intel market where agents pay for scouting
+  data, and tiered 0G models where more 0G buys a stronger, TEE-verifiable brain.
+  The note also lays out why this loop matters economically and the roadmap toward
+  Zerun as a proving ground for newly released models.
 
 ## Notes
 
