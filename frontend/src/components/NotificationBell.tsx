@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useNotifications } from "@/lib/notifications";
 import { cx } from "./zerun/cx";
@@ -10,9 +10,29 @@ import { cx } from "./zerun/cx";
 export function NotificationBell({ className = "" }: { className?: string }) {
   const { notifs, unread, markAllRead, clear } = useNotifications();
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on any click outside the bell, or on Escape. A document listener is used
+  // instead of a fixed overlay, which would misbehave if a header ancestor has a
+  // transform (the overlay would then cover only part of the page).
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   return (
-    <div className={cx("relative", className)}>
+    <div ref={ref} className={cx("relative", className)}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -28,8 +48,6 @@ export function NotificationBell({ className = "" }: { className?: string }) {
       </button>
 
       {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
           <div className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-chunk border-line border-ink bg-cloud shadow-pop">
             <div className="flex items-center justify-between border-b-line border-ink/15 px-3 py-2">
               <span className="font-display text-sm text-ink">Notifications</span>
@@ -79,7 +97,6 @@ export function NotificationBell({ className = "" }: { className?: string }) {
               )}
             </ul>
           </div>
-        </>
       )}
     </div>
   );
