@@ -13,6 +13,7 @@
     "ledger:fund": "tsx src/scripts/fundLedger.ts",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "selftest": "tsx src/scripts/selfTest.ts",
+    "poker:test": "tsx src/scripts/pokerTest.ts",
     "seed": "tsx src/scripts/seedAndRun.ts",
     "typecheck": "tsc --noEmit"
   },

@@ -204,8 +204,11 @@ export function coordinatorAddress(): `0x${string}` {
   return coordinatorAccount().address;
 }
 
-// ContestType enum order from the contracts: SCOUT=0, ANALYST=1, SOLVER=2.
-export const CONTEST_TYPE = { SCOUT: 0, ANALYST: 1, SOLVER: 2 } as const;
+// ContestType order from the contracts: SCOUT=0, ANALYST=1, SOLVER=2. POKER=3 is a
+// backend-only type: the engine stores the contest type as an opaque uint8, so a new
+// kind needs no contract change. getTier may not know type 3, so callers fall back to
+// the agent's compute level for a poker tier.
+export const CONTEST_TYPE = { SCOUT: 0, ANALYST: 1, SOLVER: 2, POKER: 3 } as const;
 
 // 0G keeps a base fee near zero but enforces a minimum gas price around 2 gwei,
 // which breaks the usual EIP-1559 fee estimate. Send every write as a legacy

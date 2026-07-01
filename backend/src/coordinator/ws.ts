@@ -18,7 +18,8 @@ export interface SolvePayload {
   puzzleIdx: number;
   prompt: string;
   answer: string | null;
-  verdict: "correct" | "wrong" | "error";
+  // "action" is a poker betting move (no right/wrong answer, just a play).
+  verdict: "correct" | "wrong" | "error" | "action";
   source: string;
   provider: string;
   model: string;

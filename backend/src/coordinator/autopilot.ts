@@ -5,6 +5,7 @@ import { query } from "../db/pool.js";
 import { openContest } from "./contestOps.js";
 import { runContest } from "./runContest.js";
 import { runAnalystContest } from "./runAnalystContest.js";
+import { runPokerContest } from "./runPokerContest.js";
 import { resettleFromStored, cancelContest } from "./finalize.js";
 import {
   CONTEST_TYPE,
@@ -242,9 +243,10 @@ async function upgradeHouseTier(
   }
 }
 
-export async function seedHouseInto(contestId: number): Promise<void> {
+export async function seedHouseInto(contestId: number, count = HOUSE_SIZE): Promise<void> {
   const dep = loadDeployment();
-  const house = await ensureHouseRoster();
+  // A poker duel seats exactly two; the other kinds take the full house field.
+  const house = (await ensureHouseRoster()).slice(0, Math.max(2, count));
   for (const h of house) {
     try {
       const hash = await h.wallet.writeContract({
@@ -328,7 +330,8 @@ async function ensureContestMeta(id: number, contestType: number): Promise<void>
     functionName: "getContest",
     args: [BigInt(id)],
   });
-  const kind = contestType === CONTEST_TYPE.ANALYST ? "analyst" : "solver";
+  const kind =
+    contestType === CONTEST_TYPE.ANALYST ? "analyst" : contestType === CONTEST_TYPE.POKER ? "poker" : "solver";
   await query(
     `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at)
        values ($1, 'open', 4, $2, $3, $4, to_timestamp($5))
@@ -378,7 +381,12 @@ async function runOnce(id: number, contestType: number): Promise<void> {
   if (inFlight.has(id)) return;
   inFlight.add(id);
   await ensureContestMeta(id, contestType).catch(() => {});
-  const runner = contestType === CONTEST_TYPE.ANALYST ? runAnalystContest : runContest;
+  const runner =
+    contestType === CONTEST_TYPE.ANALYST
+      ? runAnalystContest
+      : contestType === CONTEST_TYPE.POKER
+        ? runPokerContest
+        : runContest;
   const work = runner(id).finally(() => inFlight.delete(id));
   work.catch(() => {});
   await Promise.race([
@@ -432,6 +440,8 @@ async function startOpenLoop(): Promise<void> {
   // model cannot out-forecast an event it has no data on), so they run only every
   // Nth cycle. Set AUTOPILOT_ANALYST_EVERY=0 for solver-only, 2 for an even split.
   const analystEvery = Number(process.env.AUTOPILOT_ANALYST_EVERY ?? "4");
+  // Mix in a heads-up poker duel every Nth cycle (0 to turn duels off).
+  const pokerEvery = Number(process.env.AUTOPILOT_POKER_EVERY ?? "3");
   let cycle = 0;
   for (;;) {
     let held = false;
@@ -444,19 +454,24 @@ async function startOpenLoop(): Promise<void> {
         held = true;
         console.log(`autopilot: ${open} contest(s) still open, holding this slot`);
       } else {
-        const kind =
-          analystEvery > 0 && cycle % analystEvery === analystEvery - 1 ? "analyst" : "solver";
+        const kind: "solver" | "analyst" | "poker" =
+          pokerEvery > 0 && cycle % pokerEvery === pokerEvery - 1
+            ? "poker"
+            : analystEvery > 0 && cycle % analystEvery === analystEvery - 1
+              ? "analyst"
+              : "solver";
         // Vary the pool so the arena does not look canned.
         const pool = POOL_CHOICES[Math.floor(Math.random() * POOL_CHOICES.length)]!;
         console.log(`autopilot: opening a ${kind} contest (${pool} tUSDC)`);
         const id = await openContest({
           prizePoolUsdc: pool,
           durationSecs: WINDOW_S,
-          topN: 3,
+          // A duel is winner-take-all between two seats; the others rank a full field.
+          topN: kind === "poker" ? 1 : 3,
           puzzleCount: 6,
           kind,
         });
-        await seedHouseInto(id);
+        await seedHouseInto(id, kind === "poker" ? 2 : HOUSE_SIZE);
         console.log(`autopilot: contest ${id} (${kind}) open with the house field`);
         cycle++;
       }

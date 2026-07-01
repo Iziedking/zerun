@@ -23,14 +23,16 @@ export interface OpenContestParams {
   durationSecs: number;
   topN: number;
   puzzleCount: number;
-  /// 'solver' (puzzles) or 'analyst' (prediction markets). Defaults to solver.
-  kind?: "solver" | "analyst";
+  /// 'solver' (puzzles), 'analyst' (prediction markets), or 'poker' (a 1v1 duel).
+  /// Defaults to solver.
+  kind?: "solver" | "analyst" | "poker";
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const METRIC = {
   solver: { hash: keccak256(toHex("PUZZLE")), label: "PUZZLE", contestType: CONTEST_TYPE.SOLVER },
   analyst: { hash: keccak256(toHex("PREDICTION")), label: "PREDICTION", contestType: CONTEST_TYPE.ANALYST },
+  poker: { hash: keccak256(toHex("POKER")), label: "POKER", contestType: CONTEST_TYPE.POKER },
 } as const;
 
 export async function openContest(params: OpenContestParams): Promise<number> {
