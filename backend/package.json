@@ -10,6 +10,7 @@
     "compute:check": "tsx src/scripts/computeCheck.ts",
     "storage:check": "tsx src/scripts/storageCheck.ts",
     "analyst:check": "tsx src/scripts/analystCheck.ts",
+    "worldcup:check": "tsx src/scripts/worldcupCheck.ts",
     "ledger:fund": "tsx src/scripts/fundLedger.ts",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "selftest": "tsx src/scripts/selfTest.ts",
