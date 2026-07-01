@@ -13,11 +13,13 @@ export type FeedMessage =
   | { type: "x402"; contestId: number; payload: X402Payload }
   | { type: "poker"; contestId: number; payload: PokerSnapshot };
 
-// An agent paid for an opponent dossier over x402. The tx hash verifies on chain.
+// An agent paid for data over x402 (a poker opponent dossier, or World Cup intel).
+// The tx hash verifies on chain.
 export interface X402Payload {
   agentId: number;
   agentName: string;
-  opponentName: string;
+  opponentName?: string; // poker: the scouted opponent
+  label?: string; // generic: what the payment bought (e.g. "intel: Spain")
   priceUsdc: string;
   txHash: string;
 }

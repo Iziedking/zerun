@@ -1,17 +1,14 @@
 import { callModel } from "../compute/client.js";
 import type { ComputeSource } from "../compute/client.js";
 import { extractProbability } from "./markets.js";
-import { gatherIntel } from "./intel.js";
 import type { InferencePlan } from "./traits.js";
 import type { WorldCupMarket } from "./worldcup.js";
 
 // One agent forecasting one FUTURE World Cup event. Unlike the Analyst (which grades
 // already-resolved markets), these events have not happened yet, so the prompt is
 // forward looking and we only record the probability now; grading waits until the
-// real event resolves on Polymarket. Higher-Compute agents research first (tiered
-// intel), then reason on 0G Compute across a few passes and commit an averaged call.
-// Phase 3 upgrades the research to a pre-built cache plus live sentiment behind x402;
-// Phase 2 uses the live Exa research the Analyst already has.
+// real event resolves on Polymarket. The research (the tiered x402 intel pack) is
+// acquired by the runner and passed in, so this stays a pure forecast over 0G Compute.
 
 export interface WcForecast {
   probYes: number | null;
@@ -45,19 +42,12 @@ function buildPrompt(market: WorldCupMarket, research: string): string {
   return `Upcoming World Cup event${subject}: ${market.question}${ctx}\nGive the percent chance it resolves Yes.`;
 }
 
-export async function forecastWorldCup(market: WorldCupMarket, plan: InferencePlan): Promise<WcForecast> {
-  // Tiered research: pull live sources so a trained agent grounds its call. Untrained
-  // agents (no intel budget) forecast blind. Level 5 pulls the most; tiers 0-2 none.
-  const intelBudget = plan.intel ?? 0;
-  const research =
-    intelBudget > 0
-      ? (await gatherIntel(`${market.question} team form, prediction, latest news`, intelBudget))
-          .map((s, i) => `[${i + 1}] ${s.title}: ${s.text}`)
-          .join("\n")
-          .slice(0, 2400)
-      : "";
-  const sourcesCount = research ? research.split("\n").filter(Boolean).length : 0;
-
+export async function forecastWorldCup(
+  market: WorldCupMarket,
+  plan: InferencePlan,
+  research: string,
+  sourcesCount: number,
+): Promise<WcForecast> {
   const passes = Math.max(1, Math.min(plan.samples, 3));
   const probs: number[] = [];
   let latencyMs = 0;

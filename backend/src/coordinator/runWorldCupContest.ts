@@ -1,6 +1,7 @@
 import { query } from "../db/pool.js";
 import { pickMissionMarkets, type WorldCupMarket } from "../runners/worldcup.js";
 import { forecastWorldCup } from "../runners/worldcupForecast.js";
+import { buildIntelPack, canResearch, freeAllotment, payForIntel } from "../runners/worldcupIntel.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { computePlan } from "../runners/computeLevels.js";
 import { broadcast } from "./ws.js";
@@ -165,14 +166,56 @@ export async function runWorldCupContest(contestId: number): Promise<RunResult> 
     payload: { status: "running", detail: `${entries.length} agents forecasting ${markets.length} World Cup events` },
   });
 
+  const levelOf = new Map<number, number>();
   const planOf = new Map<number, ReturnType<typeof computePlan>>();
-  for (const e of entries) planOf.set(e.agentId, computePlan(await getAgentCompute(e.agentId)));
+  for (const e of entries) {
+    const lvl = await getAgentCompute(e.agentId);
+    levelOf.set(e.agentId, lvl);
+    planOf.set(e.agentId, computePlan(lvl));
+  }
 
   await mapLimit(entries, AGENT_CONCURRENCY, async (entry) => {
     const plan = planOf.get(entry.agentId)!;
+    const level = levelOf.get(entry.agentId) ?? 0;
+    const allot = freeAllotment(level);
+    let freeUsed = 0; // intel pulls used this mission (free within the tier's allotment)
+
     for (let idx = 0; idx < markets.length; idx++) {
-      const fc = await forecastWorldCup(markets[idx]!, plan);
-      await recordForecast(contestId, entry, idx, markets[idx]!, fc);
+      const market = markets[idx]!;
+
+      // Acquire the tiered intel pack. Research is a tier-3-and-up capability; within
+      // the tier's free allotment it is free, beyond it each pull is paid over x402
+      // (coordinator-settled and broadcast to the feed with its verifiable tx).
+      let research = "";
+      let sources = 0;
+      if (canResearch(level)) {
+        const pack = await buildIntelPack(market, level);
+        research = pack.text;
+        sources = pack.sources;
+        if (research) {
+          if (freeUsed < allot) {
+            freeUsed += 1;
+          } else {
+            const pay = await payForIntel();
+            if (pay) {
+              broadcast({
+                type: "x402",
+                contestId,
+                payload: {
+                  agentId: entry.agentId,
+                  agentName: entry.agentName,
+                  label: `intel: ${(market.groupTitle || market.question).slice(0, 40)}`,
+                  priceUsdc: pay.priceUsdc,
+                  txHash: pay.txHash,
+                },
+              });
+            }
+          }
+        }
+      }
+
+      const fc = await forecastWorldCup(market, plan, research, sources);
+      await recordForecast(contestId, entry, idx, market, fc);
       await sleep(150);
     }
   });

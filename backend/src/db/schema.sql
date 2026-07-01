@@ -195,6 +195,16 @@ create table if not exists worldcup_mission_markets (
   primary key (contest_id, market_idx)
 );
 
+-- Pre-built World Cup intel cache: a research brief per market (history, stats, the
+-- pundit read), built once and reused across agents and missions, refreshed on a TTL.
+-- The live-sentiment half of the intel pack is fetched fresh at forecast time and not
+-- cached here.
+create table if not exists worldcup_intel (
+  condition_id text primary key,
+  brief        text not null,
+  updated_at   timestamptz not null default now()
+);
+
 -- Each agent's forecast for one mission market, as a probability the market resolves
 -- Yes. Kept as a number so grading is exact once the real outcome is known (World Cup
 -- missions settle later, not at the join-window close). latency feeds the speed tiebreak.

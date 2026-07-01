@@ -1,5 +1,6 @@
 import { tallyForecasts, type Forecast } from "../runners/worldcup.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
+import { canResearch, freeAllotment } from "../runners/worldcupIntel.js";
 
 // Pure checks for World Cup mission grading: forecasts are graded against the real
 // outcomes into correct-call counts, and the field ranks the same way the rest of the
@@ -61,6 +62,15 @@ const tie: AgentScore[] = [
 ];
 const rankedTie = rankAgents(tie);
 ok(rankedTie[0]!.agentId === 10, "a tie on correct breaks to the higher compute level");
+
+// Tiered intel access: research is a tier-3-and-up capability, and the free allotment
+// steps up with the 0G investment (tier 5 unlimited).
+ok(!canResearch(0) && !canResearch(2), "tiers 0-2 have no research capability");
+ok(canResearch(3) && canResearch(5), "tiers 3+ can research");
+ok(freeAllotment(2) === 0, "tier 2 gets no free intel");
+ok(freeAllotment(3) === 1, "tier 3 gets one free intel per mission");
+ok(freeAllotment(4) === 3, "tier 4 gets three free intel per mission");
+ok(freeAllotment(5) === Number.POSITIVE_INFINITY, "tier 5 has unlimited free intel");
 
 console.log(`\n${fail === 0 ? "all worldcup checks passed" : `${fail} check(s) failed`} (${pass}/${pass + fail})`);
 if (fail > 0) process.exit(1);
