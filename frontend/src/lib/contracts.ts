@@ -9,8 +9,9 @@ export const agentRegistryAbi = parseAbi([
   "event AgentCreated(uint256 indexed agentId, address indexed owner)",
 ]);
 
-// ContestType enum on chain: SCOUT=0, ANALYST=1, SOLVER=2.
-export const CONTEST_TYPE = { scout: 0, analyst: 1, solver: 2 } as const;
+// ContestType on chain: SCOUT=0, ANALYST=1, SOLVER=2. POKER=3 is a backend-only
+// type the engine stores as an opaque uint8, so it needs no contract change.
+export const CONTEST_TYPE = { scout: 0, analyst: 1, solver: 2, poker: 3 } as const;
 
 export const testUsdcAbi = parseAbi([
   "function mint(address to, uint256 amount)",

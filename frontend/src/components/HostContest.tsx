@@ -19,6 +19,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const METRIC = {
   solver: keccak256(toHex("PUZZLE")),
   analyst: keccak256(toHex("PREDICTION")),
+  poker: keccak256(toHex("POKER")),
 } as const;
 
 // How the pool is split among the top finishers. topN sets how many winners share
@@ -66,8 +67,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const queryClient = useQueryClient();
   const balance = useUsdcBalance(address);
 
-  // Hosting is for solver and analyst contests; poker duels are opened by the arena.
-  const [kind, setKind] = useState<"solver" | "analyst">("solver");
+  const [kind, setKind] = useState<"solver" | "analyst" | "poker">("solver");
   const [pool, setPool] = useState("25");
   const [minutes, setMinutes] = useState("10");
   const [count, setCount] = useState("5");
@@ -76,7 +76,9 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  const split = SPLITS.find((s) => s.key === splitKey)!;
+  const isPoker = kind === "poker";
+  // A poker duel is fixed: two seats, winner takes the whole pool.
+  const split = isPoker ? SPLITS[0]! : SPLITS.find((s) => s.key === splitKey)!;
 
   const usdcAddr = deployment?.contracts.testUSDC;
   const engineAddr = deployment?.contracts.contestEngine;
@@ -140,9 +142,10 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       });
       const contestId = Number(nextId as bigint);
 
-      // List the contest. cType: solver=2, analyst=1. Split sets topN and the cut.
+      // List the contest. cType: solver=2, analyst=1, poker=3. Split sets topN/cut.
       setPhase("listing");
-      const cType = kind === "solver" ? CONTEST_TYPE.solver : CONTEST_TYPE.analyst;
+      const cType =
+        kind === "poker" ? CONTEST_TYPE.poker : kind === "solver" ? CONTEST_TYPE.solver : CONTEST_TYPE.analyst;
       const listHash = await walletAction.run(
         () =>
           writeContractAsync({
@@ -158,7 +161,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
 
       // Mirror it to the backend so it shows in the arena.
       setPhase("saving");
-      const maxOperators = maxOps.trim() ? Math.max(1, Math.round(Number(maxOps))) : 0;
+      const maxOperators = isPoker ? 2 : maxOps.trim() ? Math.max(1, Math.round(Number(maxOps))) : 0;
       await api.hostContest({ contestId, kind, puzzleCount: taskCount, maxOperators });
       await queryClient.invalidateQueries({ queryKey: ["contests"] });
       await balance.refetch();
@@ -211,6 +214,9 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
           <KindOption active={kind === "analyst"} onClick={() => setKind("analyst")}>
             Predictions
           </KindOption>
+          <KindOption active={kind === "poker"} onClick={() => setKind("poker")}>
+            Poker
+          </KindOption>
         </div>
       </div>
 
@@ -233,47 +239,58 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
             className={inputCx}
           />
         </Field>
-        <Field label={kind === "analyst" ? "Markets" : "Puzzles"}>
-          <input
-            inputMode="numeric"
-            value={count}
-            onChange={(e) => setCount(e.target.value)}
-            disabled={busy}
-            className={inputCx}
-          />
-        </Field>
+        {!isPoker && (
+          <Field label={kind === "analyst" ? "Markets" : "Puzzles"}>
+            <input
+              inputMode="numeric"
+              value={count}
+              onChange={(e) => setCount(e.target.value)}
+              disabled={busy}
+              className={inputCx}
+            />
+          </Field>
+        )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Winners split">
-          <select
-            value={splitKey}
-            onChange={(e) => setSplitKey(e.target.value as (typeof SPLITS)[number]["key"])}
-            disabled={busy}
-            className={inputCx}
-          >
-            {SPLITS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label} ({s.pct.join("/")})
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Max operators (optional)">
-          <input
-            inputMode="numeric"
-            value={maxOps}
-            onChange={(e) => setMaxOps(e.target.value)}
-            placeholder="no limit"
-            disabled={busy}
-            className={inputCx}
-          />
-        </Field>
-      </div>
-      <p className="font-body text-[12px] text-ink-3">
-        Split: {splitBreakdown(split.pct)}.
-        {maxOps.trim() ? ` Up to ${maxOps} operators can join.` : " Open to any number of operators."}
-      </p>
+      {isPoker ? (
+        <p className="rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
+          Heads-up duel: two agents, winner takes the whole pool. A house agent fills the
+          second seat if no challenger joins in time.
+        </p>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Winners split">
+              <select
+                value={splitKey}
+                onChange={(e) => setSplitKey(e.target.value as (typeof SPLITS)[number]["key"])}
+                disabled={busy}
+                className={inputCx}
+              >
+                {SPLITS.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label} ({s.pct.join("/")})
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Max operators (optional)">
+              <input
+                inputMode="numeric"
+                value={maxOps}
+                onChange={(e) => setMaxOps(e.target.value)}
+                placeholder="no limit"
+                disabled={busy}
+                className={inputCx}
+              />
+            </Field>
+          </div>
+          <p className="font-body text-[12px] text-ink-3">
+            Split: {splitBreakdown(split.pct)}.
+            {maxOps.trim() ? ` Up to ${maxOps} operators can join.` : " Open to any number of operators."}
+          </p>
+        </>
+      )}
 
       <p className="font-body text-[13px] text-ink-2">
         Your balance:{" "}
