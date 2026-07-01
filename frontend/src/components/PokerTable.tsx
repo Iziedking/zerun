@@ -57,23 +57,42 @@ function Seat({ seat }: { seat: WsPokerSnapshot["seats"][number] }) {
   );
 }
 
-// The live poker table: two agents facing off, the board in the middle, the pot, and
-// the acting agent's move with its 0G reasoning.
+// A row of seats that wraps, so a table reads well from a heads-up duel up to 6-max.
+function SeatRow({ seats }: { seats: WsPokerSnapshot["seats"] }) {
+  if (!seats.length) return null;
+  return (
+    <div className="flex flex-wrap items-start justify-center gap-5">
+      {seats.map((seat) => (
+        <Seat key={seat.agentId} seat={seat} />
+      ))}
+    </div>
+  );
+}
+
+// The live poker table: the agents around the felt (heads-up or up to 6-max), the
+// board in the middle, the pot, and the acting agent's move with its 0G reasoning.
 export function PokerTable({ snapshot }: { snapshot: WsPokerSnapshot }) {
   const s = snapshot;
   const last = s.lastAction;
+  // Split the field above and below the board so it reads like a table at any size.
+  const half = Math.ceil(s.seats.length / 2);
+  const top = s.seats.slice(0, half);
+  const bottom = s.seats.slice(half);
   return (
     <StickerCard className="p-6">
       <div className="mb-4 flex items-center justify-between">
         <span className="font-display text-lg text-ink">
           Hand {s.handIndex} · {s.street}
         </span>
-        <Chip tone="won">pot {s.pot}</Chip>
+        <div className="flex items-center gap-2">
+          {s.seats.length > 2 && <Chip tone="neutral">{s.seats.length}-max</Chip>}
+          <Chip tone="won">pot {s.pot}</Chip>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 items-center gap-5 sm:grid-cols-[1fr_auto_1fr]">
-        {s.seats[0] && <Seat seat={s.seats[0]} />}
-        <div className="flex flex-col items-center gap-2">
+      <div className="flex flex-col items-center gap-5">
+        <SeatRow seats={top} />
+        <div className="flex flex-col items-center gap-2 rounded-chunk border-line border-ink/15 bg-mint/10 px-6 py-4">
           <span className="font-body text-[11px] font-extrabold uppercase tracking-[0.03em] text-ink-3">board</span>
           <div className="flex gap-1.5">
             {[0, 1, 2, 3, 4].map((i) => (
@@ -81,7 +100,7 @@ export function PokerTable({ snapshot }: { snapshot: WsPokerSnapshot }) {
             ))}
           </div>
         </div>
-        {s.seats[1] && <Seat seat={s.seats[1]} />}
+        <SeatRow seats={bottom} />
       </div>
 
       {last && (

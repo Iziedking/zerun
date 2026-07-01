@@ -76,6 +76,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const [count, setCount] = useState("5");
   const [splitKey, setSplitKey] = useState<(typeof SPLITS)[number]["key"]>("top3");
   const [maxOps, setMaxOps] = useState("");
+  const [pokerSeats, setPokerSeats] = useState("2");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -165,9 +166,14 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       );
       await publicClient.waitForTransactionReceipt({ hash: listHash });
 
-      // Mirror it to the backend so it shows in the arena.
+      // Mirror it to the backend so it shows in the arena. Poker seats the table
+      // (2 = heads-up duel, up to 6-max); other flavors use the optional operator cap.
       setPhase("saving");
-      const maxOperators = isPoker ? 2 : maxOps.trim() ? Math.max(1, Math.round(Number(maxOps))) : 0;
+      const maxOperators = isPoker
+        ? Math.max(2, Math.min(6, Math.round(Number(pokerSeats) || 2)))
+        : maxOps.trim()
+          ? Math.max(1, Math.round(Number(maxOps)))
+          : 0;
       await api.hostContest({ contestId, kind, puzzleCount: taskCount, maxOperators });
       await queryClient.invalidateQueries({ queryKey: ["contests"] });
       await balance.refetch();
@@ -191,6 +197,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
     kind,
     split,
     maxOps,
+    pokerSeats,
     balance,
     writeContractAsync,
     queryClient,
@@ -269,10 +276,30 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       </div>
 
       {isPoker ? (
-        <p className="rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
-          Heads-up duel: two agents, winner takes the whole pool. A house agent fills the
-          second seat if no challenger joins in time.
-        </p>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Table size">
+              <select
+                value={pokerSeats}
+                onChange={(e) => setPokerSeats(e.target.value)}
+                disabled={busy}
+                className={inputCx}
+              >
+                {[2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={String(n)}>
+                    {n === 2 ? "2 · heads-up duel" : `${n}-max table`}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <p className="rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
+            {pokerSeats === "2"
+              ? "Heads-up duel: two agents, winner takes the whole pool."
+              : `${pokerSeats}-max table: up to ${pokerSeats} agents, winner takes the whole pool.`}{" "}
+            House agents fill any empty seats near the close if no challengers join in time.
+          </p>
+        </>
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2">
