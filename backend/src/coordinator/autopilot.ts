@@ -303,21 +303,27 @@ export async function seedHouseInto(contestId: number, target = HOUSE_SIZE): Pro
   );
 }
 
-// How long before the join window closes the house steps in to fill empty seats, so
-// real players have almost the whole window to enter first without a house agent
-// taking a seat they wanted.
+// How close to the window close the LAST house entry should land. Real players get
+// almost the whole window to enter first before a house agent takes a seat.
 const HOUSE_JOIN_LEAD_MS = Number(process.env.AUTOPILOT_HOUSE_JOIN_LEAD_SECONDS ?? "7") * 1000;
+// How often the house-fill poll runs. Also the slack a fill window must exceed so a
+// tick cannot skip over it.
+const HOUSE_FILL_POLL_MS = Number(process.env.AUTOPILOT_HOUSE_FILL_POLL_MS ?? "5000");
+// Rough time for one house entry to confirm on chain. Each empty seat is registered
+// on chain in sequence, so the fill needs this much lead per seat to seat the whole
+// field before the window closes.
+const HOUSE_ENTRY_CONFIRM_MS = Number(process.env.AUTOPILOT_HOUSE_ENTRY_CONFIRM_MS ?? "4500");
 
-// Schedule the house to fill any still-empty seats near the end of the join window.
-// A restart drops a pending fill; the contest then runs with whoever entered (or
-// cancels and refunds if too few), which the sweeper already handles.
-export function scheduleHouseFill(contestId: number, target: number, secondsUntilClose: number): void {
-  const delay = Math.max(0, secondsUntilClose * 1000 - HOUSE_JOIN_LEAD_MS);
-  setTimeout(() => {
-    void seedHouseInto(contestId, target).catch((e) =>
-      console.error(`autopilot: house fill for ${contestId} failed:`, (e as Error).message),
-    );
-  }, delay);
+// Contests whose house fill is in flight, so overlapping poll ticks do not double
+// seat (and collide on the house wallet nonce).
+const fillingHouse = new Set<number>();
+
+// Deprecated: the house fill now runs on a dedicated poll (fillClosingContests),
+// which is restart safe and scales its lead to the number of empty seats. A fixed
+// per-contest timer fired too early for multi-seat tables and was lost on restart,
+// so this is a no-op kept only for callers that still reference it.
+export function scheduleHouseFill(_contestId: number, _target: number, _secondsUntilClose: number): void {
+  // intentionally empty; see fillClosingContests / startHouseFillPoll
 }
 
 // Open contests (status OPEN = 1) whose window has closed, any sponsor.
@@ -422,23 +428,49 @@ async function reconcileStatuses(): Promise<void> {
 }
 
 // Fill the house into any open contest that is about to close and is still short of
-// its target field, so real players get almost the whole window to enter first. Runs
-// on the sweep tick, so it survives restarts (unlike a per-contest timer).
+// its target field, so real players get almost the whole window to enter first. The
+// lead scales with how many seats are empty: a 1-seat duel fills only ~7-12s before
+// close (real players keep nearly the whole window), while a bigger table gets the
+// head start it needs to seat every house agent on chain before the window shuts.
+// Runs on a dedicated poll, so it survives restarts (unlike a per-contest timer).
 async function fillClosingContests(): Promise<void> {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const cutoff = nowSec + HOUSE_JOIN_LEAD_MS / 1000 + SWEEP_MS / 1000; // closing within a lead + a sweep
-  const { rows } = await query<{ contest_id: string; max_operators: number | null; agent_count: number | null; ends_at_sec: number | null }>(
-    `select contest_id, max_operators, agent_count, extract(epoch from ends_at)::int as ends_at_sec
+  const nowMs = Date.now();
+  const { rows } = await query<{ contest_id: string; max_operators: number | null; agent_count: number | null; ends_at_ms: string | null }>(
+    `select contest_id, max_operators, agent_count, (extract(epoch from ends_at) * 1000)::bigint as ends_at_ms
        from contests_meta where status = 'open' and ends_at is not null`,
   );
   for (const r of rows) {
-    const endsAt = r.ends_at_sec ?? 0;
-    if (endsAt <= nowSec || endsAt > cutoff) continue; // not closing within the window yet
+    const id = Number(r.contest_id);
+    if (fillingHouse.has(id)) continue; // a fill for this contest is already running
+    const endsAtMs = Number(r.ends_at_ms ?? 0);
+    if (endsAtMs <= nowMs) continue; // window already closed
     const target = r.max_operators ?? HOUSE_SIZE;
-    if ((r.agent_count ?? 0) >= target) continue; // already full
-    await seedHouseInto(Number(r.contest_id), target).catch((e) =>
-      console.error(`autopilot: house fill for ${r.contest_id} failed:`, (e as Error).message),
-    );
+    const need = target - (r.agent_count ?? 0);
+    if (need <= 0) continue; // already full
+
+    // Start just early enough that every needed house entry confirms before close:
+    // a base lead (floor), or one confirmation window per empty seat if that is
+    // longer, plus the poll gap so a tick cannot miss the window.
+    const leadMs = Math.max(HOUSE_JOIN_LEAD_MS, need * HOUSE_ENTRY_CONFIRM_MS) + HOUSE_FILL_POLL_MS;
+    if (endsAtMs - nowMs > leadMs) continue; // not close enough to the window yet
+
+    fillingHouse.add(id);
+    void seedHouseInto(id, target)
+      .catch((e) => console.error(`autopilot: house fill for ${id} failed:`, (e as Error).message))
+      .finally(() => fillingHouse.delete(id));
+  }
+}
+
+// The dedicated house-fill loop. Runs far more often than the settle sweeper so the
+// house can join late (near close) yet reliably, independent of restarts.
+async function startHouseFillPoll(): Promise<void> {
+  for (;;) {
+    await sleep(HOUSE_FILL_POLL_MS);
+    try {
+      await fillClosingContests();
+    } catch (err) {
+      console.error("autopilot: house fill poll failed:", (err as Error).message);
+    }
   }
 }
 
@@ -463,10 +495,6 @@ async function startDueSweeper(): Promise<void> {
   for (;;) {
     await sleep(SWEEP_MS);
     try {
-      // Fill the house into contests about to close, before settling due ones.
-      await fillClosingContests().catch((err) =>
-        console.error("autopilot: house fill sweep failed:", (err as Error).message),
-      );
       for (const d of await findDueContests()) {
         if (inFlight.has(d.id)) continue;
         if (d.overdueSec > STALE_AFTER_SEC) {
@@ -565,4 +593,5 @@ export function startAutopilot(): void {
   );
   void startOpenLoop();
   void startDueSweeper();
+  void startHouseFillPoll();
 }
