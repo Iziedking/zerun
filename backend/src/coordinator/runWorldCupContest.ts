@@ -1,5 +1,5 @@
 import { query } from "../db/pool.js";
-import { pickMissionMarkets, type WorldCupMarket } from "../runners/worldcup.js";
+import { pickMissionMarkets, syncWorldCupMarkets, type WorldCupMarket } from "../runners/worldcup.js";
 import { forecastWorldCup } from "../runners/worldcupForecast.js";
 import { buildIntelPack, canResearch, freeAllotment, payForIntel } from "../runners/worldcupIntel.js";
 import { getAgentCompute } from "../runners/traitStore.js";
@@ -65,7 +65,16 @@ async function missionMarketsFor(contestId: number): Promise<WorldCupMarket[]> {
     [contestId],
   );
   const count = Math.max(1, cfg[0]?.puzzle_count ?? MISSION_SIZE);
-  const picked = await pickMissionMarkets(count);
+  let picked = await pickMissionMarkets(count);
+  if (picked.length === 0) {
+    // Cold or exhausted pool: pull the live World Cup markets from Polymarket, then
+    // draw again. Without this a fresh deployment cancels every mission for lack of
+    // markets, since nothing else populates the pool before the first mission runs.
+    await syncWorldCupMarkets().catch((e) =>
+      console.error(`worldcup ${contestId}: market sync failed:`, (e as Error).message),
+    );
+    picked = await pickMissionMarkets(count);
+  }
   for (let i = 0; i < picked.length; i++) {
     await query(
       `insert into worldcup_mission_markets (contest_id, market_idx, condition_id, question)

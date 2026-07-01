@@ -96,11 +96,14 @@ async function gradeAndSettle(contestId: number): Promise<void> {
 // One pass over every awaiting mission: refresh resolutions, and settle any whose
 // events have all resolved.
 export async function resolveAwaitingMissions(): Promise<void> {
+  // Keep the market pool warm every tick, regardless of awaiting missions. This both
+  // refreshes resolutions and, crucially, populates the pool so the very first mission
+  // has markets to draw (otherwise missions cancel for lack of markets before any can
+  // reach the awaiting state, a deadlock).
+  await syncWorldCupMarkets().catch(() => {});
+
   const ids = await awaitingMissionIds();
   if (ids.length === 0) return;
-
-  // Refresh the pool once (events still open carry their resolved markets too).
-  await syncWorldCupMarkets().catch(() => {});
 
   for (const contestId of ids) {
     if (grading.has(contestId)) continue;
