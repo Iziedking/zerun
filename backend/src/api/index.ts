@@ -118,21 +118,34 @@ app.post("/api/faucet/usdc", async (c) => {
       );
     }
 
-    // Record the claim before minting, so even a retry after a slow mint cannot
-    // double-spend the weekly allowance.
-    await query("insert into usdc_claims (operator, amount_wei) values ($1, $2)", [owner, remaining.toString()]);
+    // Reserve the allowance before minting so a retry during a slow mint cannot
+    // double-spend it, but roll the reservation back if the mint itself fails, so a
+    // failed mint never locks the user out of the faucet for the week.
+    const claim = await query<{ id: string }>(
+      "insert into usdc_claims (operator, amount_wei) values ($1, $2) returning id",
+      [owner, remaining.toString()],
+    );
+    const claimId = claim.rows[0]?.id;
     const dep = loadDeployment();
-    const hash = await coordinatorWallet().writeContract({
-      address: dep.testUSDC,
-      abi: testUsdcAbi,
-      functionName: "mint",
-      args: [owner as `0x${string}`, remaining],
-      account: coordinatorAccount(),
-      chain: undefined,
-      gasPrice: GAS_PRICE,
-    });
-    await waitReceipt(hash);
-    return c.json({ ok: true, minted: remaining.toString(), txHash: hash });
+    try {
+      const hash = await coordinatorWallet().writeContract({
+        address: dep.testUSDC,
+        abi: testUsdcAbi,
+        functionName: "mint",
+        args: [owner as `0x${string}`, remaining],
+        account: coordinatorAccount(),
+        chain: undefined,
+        gasPrice: GAS_PRICE,
+      });
+      await waitReceipt(hash);
+      return c.json({ ok: true, minted: remaining.toString(), txHash: hash });
+    } catch (err) {
+      if (claimId != null) {
+        await query("delete from usdc_claims where id = $1", [claimId]).catch(() => {});
+      }
+      console.error(`faucet mint for ${owner} failed:`, (err as Error).message);
+      return c.json({ error: "the mint did not go through, please try again" }, 502);
+    }
   } finally {
     faucetInFlight.delete(owner);
   }
@@ -916,6 +929,19 @@ app.post("/api/contests/:id/claimed", async (c) => {
   const id = Number(c.req.param("id"));
   const body = await c.req.json().catch(() => ({}));
   const operator = String(body.operator ?? "").toLowerCase();
+  if (!id || !operator) return c.json({ error: "operator required" }, 400);
+  // Anyone can post here, so confirm the prize is actually claimed on chain before
+  // flipping the flag. Otherwise this could force a real winner's claim button to
+  // disappear. The chain is the source of truth for claimed.
+  const onchain = await publicClient
+    .readContract({
+      address: loadDeployment().contestEngine,
+      abi: contestEngineAbi,
+      functionName: "prizeClaimed",
+      args: [BigInt(id), operator as `0x${string}`],
+    })
+    .catch(() => false);
+  if (!onchain) return c.json({ error: "not claimed on chain" }, 409);
   await query("update payouts set claimed = true where contest_id = $1 and lower(operator) = $2", [
     id,
     operator,
