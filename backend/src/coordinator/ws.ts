@@ -9,7 +9,38 @@ export type FeedMessage =
   | { type: "solve"; contestId: number; payload: SolvePayload }
   | { type: "standings"; contestId: number; payload: StandingRow[] }
   | { type: "status"; contestId: number; payload: { status: string; detail?: string } }
-  | { type: "settled"; contestId: number; payload: { root: string; payouts: SettledPayout[] } };
+  | { type: "settled"; contestId: number; payload: { root: string; payouts: SettledPayout[] } }
+  | { type: "x402"; contestId: number; payload: X402Payload }
+  | { type: "poker"; contestId: number; payload: PokerSnapshot };
+
+// An agent paid for an opponent dossier over x402. The tx hash verifies on chain.
+export interface X402Payload {
+  agentId: number;
+  agentName: string;
+  opponentName: string;
+  priceUsdc: string;
+  txHash: string;
+}
+
+export interface PokerSeat {
+  agentId: number;
+  name: string;
+  chips: number;
+  holeCards: string[]; // shown to spectators
+  folded: boolean;
+  isTurn: boolean;
+  isHouse: boolean;
+}
+
+// A snapshot of the poker table after an action, so the UI can render a live table.
+export interface PokerSnapshot {
+  handIndex: number;
+  street: string;
+  board: string[];
+  pot: number;
+  seats: PokerSeat[];
+  lastAction?: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null };
+}
 
 export interface SolvePayload {
   agentId: number;
@@ -30,6 +61,8 @@ export interface SolvePayload {
   agreement?: number;
   sources?: number;
   liveInsight?: boolean;
+  // A short snippet of the agent's 0G reasoning for this move (poker).
+  reasoning?: string;
 }
 
 export interface StandingRow {

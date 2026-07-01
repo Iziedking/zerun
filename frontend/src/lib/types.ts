@@ -192,6 +192,7 @@ export interface WsSolvePayload {
   samples?: number;
   sources?: number;
   liveInsight?: boolean;
+  reasoning?: string;
 }
 
 export interface WsStandingPayload {
@@ -215,8 +216,37 @@ export interface WsSettledPayload {
   payouts: { operator: string; amount: string; rank: number }[];
 }
 
+export interface WsX402Payload {
+  agentId: number;
+  agentName: string;
+  opponentName: string;
+  priceUsdc: string;
+  txHash: string;
+}
+
+export interface WsPokerSeat {
+  agentId: number;
+  name: string;
+  chips: number;
+  holeCards: string[];
+  folded: boolean;
+  isTurn: boolean;
+  isHouse: boolean;
+}
+
+export interface WsPokerSnapshot {
+  handIndex: number;
+  street: string;
+  board: string[];
+  pot: number;
+  seats: WsPokerSeat[];
+  lastAction?: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null };
+}
+
 export type WsMessage =
   | { type: "solve"; contestId: number; payload: WsSolvePayload }
   | { type: "standings"; contestId: number; payload: WsStandingPayload[] }
   | { type: "status"; contestId: number; payload: WsStatusPayload }
-  | { type: "settled"; contestId: number; payload: WsSettledPayload };
+  | { type: "settled"; contestId: number; payload: WsSettledPayload }
+  | { type: "x402"; contestId: number; payload: WsX402Payload }
+  | { type: "poker"; contestId: number; payload: WsPokerSnapshot };

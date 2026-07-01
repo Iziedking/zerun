@@ -20,6 +20,7 @@ export interface SolveRow {
   samples?: number;
   sources?: number;
   liveInsight?: boolean;
+  reasoning?: string;
   fresh?: boolean;
 }
 
@@ -112,6 +113,9 @@ export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: Cont
                 <span className="font-mono text-[13px]">{answer}</span>
               ) : (
                 <span className="font-body text-[15px] font-extrabold text-ink">{answer}</span>
+              )}
+              {isPoker && row.reasoning && (
+                <span className="mt-1 block font-body text-[12px] font-semibold text-ink-2">{row.reasoning}</span>
               )}
             </ThoughtBubble>
           </div>

@@ -10,9 +10,12 @@ import type {
   WsMessage,
   WsSettledPayload,
   WsStatusPayload,
+  WsPokerSnapshot,
+  WsX402Payload,
 } from "@/lib/types";
 import { kindMeta } from "@/lib/kind";
 import { SolveCard, type SolveRow } from "./SolveCard";
+import { PokerTable, X402Feed } from "./PokerTable";
 import { StandingsTable } from "./StandingsTable";
 import { SettledBanner } from "./SettledBanner";
 import { Chip, LoadMore, StickerCard } from "./zerun";
@@ -57,6 +60,8 @@ export function ContestLive({
   const [standings, setStandings] = useState<Standing[]>(initialStandings);
   const [status, setStatus] = useState<WsStatusPayload | null>(null);
   const [settled, setSettled] = useState<WsSettledPayload | null>(null);
+  const [snapshot, setSnapshot] = useState<WsPokerSnapshot | null>(null);
+  const [payments, setPayments] = useState<WsX402Payload[]>([]);
   const seqRef = useRef(0);
 
   // Initial feed load (live updates then arrive over the WS).
@@ -98,6 +103,7 @@ export function ContestLive({
         samples: p.samples,
         sources: p.sources,
         liveInsight: p.liveInsight,
+        reasoning: p.reasoning,
         fresh: true,
       };
       setRows((prev) => [row, ...prev].slice(0, MAX_ROWS));
@@ -119,13 +125,20 @@ export function ContestLive({
     } else if (msg.type === "settled") {
       setSettled(msg.payload);
       setStatus({ status: "settled" });
+    } else if (msg.type === "poker") {
+      setSnapshot(msg.payload);
+    } else if (msg.type === "x402") {
+      setPayments((prev) => [msg.payload, ...prev].slice(0, 20));
     }
   }, []);
 
   const socketState = useContestSocket(contestId, { onMessage });
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+    <div className="space-y-6">
+      {kind === "poker" && snapshot && <PokerTable snapshot={snapshot} />}
+      {kind === "poker" && <X402Feed payments={payments} />}
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       {/* Live solve feed */}
       <section>
         <FeedHeader socketState={socketState} status={status} count={rows.length} kind={kind} />
@@ -160,6 +173,7 @@ export function ContestLive({
           <StandingsTable standings={standings} highlight={highlight} />
         </div>
       </aside>
+      </div>
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { finalizeContest, cancelContest, type RunResult } from "./finalize.js";
 import { onchainEntryCount, syncEntriesFromChain, keepOnchainEntrants } from "./contestOps.js";
 import { contestEngineAbi, coordinatorAddress, loadDeployment, publicClient } from "../chain/contracts.js";
 import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
-import { shuffle, handLabels } from "../runners/poker/cards.js";
+import { shuffle, handLabels, cardLabel } from "../runners/poker/cards.js";
 import {
   startHand,
   applyAction,
@@ -136,6 +136,20 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
         contestId,
         payload: { status: "running", detail: `${me.agentName} ${how} ${opponent.agentName}` },
       });
+      // Surface a paid dossier as a verifiable x402 event with its on-chain tx.
+      if (access.paid && access.txHash) {
+        broadcast({
+          type: "x402",
+          contestId,
+          payload: {
+            agentId: me.agentId,
+            agentName: me.agentName,
+            opponentName: opponent.agentName,
+            priceUsdc: access.priceUsdc ?? "0.5",
+            txHash: access.txHash,
+          },
+        });
+      }
     }
   }
 
@@ -183,7 +197,20 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
 
       applyAction(t, action);
       const label = (t.log[t.log.length - 1] ?? "").replace(/^seat \d+ /, "");
-      await recordDecision(contestId, entry, decisionSeq[seat]++, view.street, view.holeCards, view.board, label, res);
+      // The agent's 0G reasoning, minus the trailing ACTION directive, for the feed.
+      const reasoning = (res.text ?? "").replace(/\bACTION:.*$/is, "").trim().slice(0, 240);
+      await recordDecision(contestId, entry, decisionSeq[seat]++, view.street, view.holeCards, view.board, label, res, reasoning);
+      broadcast({
+        type: "poker",
+        contestId,
+        payload: snapshot(t, players, handIndex, {
+          agentId: entry.agentId,
+          name: entry.agentName,
+          action: label,
+          reasoning,
+          chatID: res.chatID,
+        }),
+      });
       handActions.push({ seat, agentId: entry.agentId, action: label, allin: t.stacks[seat] === 0, source: res.source, chatID: res.chatID });
       await sleep(DECISION_SPACING_MS);
     }
@@ -293,6 +320,7 @@ async function recordDecision(
   board: string,
   actionLabel: string,
   res: { text: string; source: string; provider: string; model: string; chatID: string | null; verified: boolean | null; latencyMs: number },
+  reasoning: string,
 ): Promise<void> {
   const prompt = `${street}: ${holeCards}${board ? ` on ${board}` : ""}`;
   await query(
@@ -326,6 +354,37 @@ async function recordDecision(
       chatID: res.chatID,
       verified: res.verified,
       latencyMs: res.latencyMs,
+      reasoning,
     },
   });
+}
+
+// A snapshot of the heads-up table after an action, for the live poker view. Both
+// hole cards are shown to spectators (it is AI, and it makes the duel watchable).
+function snapshot(
+  t: Table,
+  players: [Entry, Entry],
+  handIndex: number,
+  lastAction: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null },
+) {
+  const streets = ["preflop", "flop", "turn", "river"];
+  const foldedLoser =
+    t.handOver && t.result && !t.result.showdown && t.result.winner !== null ? (t.result.winner === 0 ? 1 : 0) : -1;
+  const seats = ([0, 1] as const).map((s) => ({
+    agentId: players[s].agentId,
+    name: players[s].agentName,
+    chips: t.stacks[s],
+    holeCards: t.holes[s].map(cardLabel),
+    folded: s === foldedLoser,
+    isTurn: !t.handOver && t.toAct === s,
+    isHouse: players[s].isHouse,
+  }));
+  return {
+    handIndex: handIndex + 1,
+    street: streets[t.street] ?? "preflop",
+    board: t.board.map(cardLabel),
+    pot: t.handPut[0] + t.handPut[1],
+    seats,
+    lastAction,
+  };
 }
