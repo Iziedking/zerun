@@ -161,6 +161,16 @@ async function pickProvider(broker: Broker): Promise<string> {
   return pool[0]!.provider;
 }
 
+// Every live 0G Compute provider with its model, verifiability, health, and TEE
+// target. Use it to see which providers can attest (TeeML + a teeTarget) so you can
+// pin one with COMPUTE_PINNED_PROVIDER.
+export async function listProviders(): Promise<
+  { provider: string; model: string; serviceType: string; verifiability: string; healthy: boolean; teeTarget: string }[]
+> {
+  const broker = await getBroker();
+  return (await broker.inference.listService()).map(readService);
+}
+
 // Bring the broker to a ready state: ledger funded, a provider chosen and
 // acknowledged, its sub-account funded, metadata cached. Idempotent and
 // single-flight so concurrent agent calls share one setup.

@@ -43,13 +43,16 @@ export function buildUserPrompt(view: PlayerView, dossier?: string): string {
 // and a bare RAISE map to concrete amounts; the engine still coerces if illegal.
 export function parseAction(text: string, legal: Legal): Action {
   const full = (text ?? "").toLowerCase();
-  const tagMatch = full.match(/action:\s*(.+)$/im);
-  const seg = tagMatch ? tagMatch[1]! : full;
-
-  const fromSegment = readAction(seg, legal);
+  // Use the LAST "action:" directive (the model's final decision), not an earlier
+  // mention buried in a long chain of reasoning. This matters most for high-token
+  // agents, whose lengthy reasoning would otherwise mis-parse.
+  const matches = [...full.matchAll(/action:\s*([^\n]+)/gi)];
+  const seg = matches.length ? matches[matches.length - 1]![1]! : "";
+  const fromSegment = seg ? readAction(seg, legal) : null;
   if (fromSegment) return fromSegment;
-  const fromFull = readAction(full, legal);
-  if (fromFull) return fromFull;
+  // Fallback: read only the tail (the conclusion), not the whole ramble.
+  const fromTail = readAction(full.slice(-160), legal);
+  if (fromTail) return fromTail;
   return legal.canCheck ? { type: "check" } : { type: "call" };
 }
 

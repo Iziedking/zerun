@@ -1,5 +1,5 @@
 import { config } from "../config/index.js";
-import { ensureReady, ensureLedger } from "../compute/zgCompute.js";
+import { ensureReady, ensureLedger, listProviders } from "../compute/zgCompute.js";
 import { callModel, computeMode } from "../compute/client.js";
 
 // End-to-end check of the 0G Compute path. Run this once the deployer wallet
@@ -19,7 +19,17 @@ async function main() {
     const bal = await ensureLedger();
     console.log(`ledger balance: ~${bal} 0G`);
 
-    console.log("discovering a provider...");
+    console.log("\nlive providers (pin one with COMPUTE_PINNED_PROVIDER):");
+    try {
+      for (const p of await listProviders()) {
+        const attests = p.verifiability === "TeeML" && p.teeTarget ? "TEE ✓" : "no TEE";
+        console.log(`  ${p.provider}  ${p.model || "?"}  [${p.serviceType}]  ${attests}  ${p.healthy ? "healthy" : "unhealthy"}`);
+      }
+    } catch (err) {
+      console.log(`  (could not list providers: ${(err as Error).message})`);
+    }
+
+    console.log("\ndiscovering a provider...");
     const h = await ensureReady();
     console.log(`provider: ${h.provider}`);
     console.log(`endpoint: ${h.endpoint}`);
