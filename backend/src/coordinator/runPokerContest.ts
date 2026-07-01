@@ -259,28 +259,6 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     handIndex += 1;
   }
 
-  // Verifiable replay: store the full match (per hand: seed, hole cards, board, every
-  // action with its 0G provenance, and the result) to 0G Storage, so anyone can
-  // reconstruct and check the duel from its root hash. Best effort, never blocks the
-  // settlement below.
-  if (storageConfigured() && matchLog.length > 0) {
-    try {
-      const up = await uploadJson({ contestId, kind: "poker", finalStacks: stacks, hands: matchLog });
-      await query("update contests_meta set poker_root = $2, poker_tx = $3 where contest_id = $1", [
-        contestId,
-        up.rootHash,
-        up.txHash,
-      ]);
-      broadcast({
-        type: "status",
-        contestId,
-        payload: { status: "running", detail: `replay stored on 0G Storage (${up.rootHash.slice(0, 10)}...)` },
-      });
-    } catch (err) {
-      console.error(`poker ${contestId}: replay storage failed:`, (err as Error).message);
-    }
-  }
-
   // Winner by chips; a dead-even stack (e.g. no hand finished) breaks to the higher
   // compute level, then the lower agent id, for full determinism.
   let winnerSeat: Seat;
@@ -307,6 +285,7 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   if (!eligible) {
     broadcast({ type: "status", contestId, payload: { status: "no-winner" } });
     await cancelContest(contestId);
+    await storePokerReplay(contestId, stacks, matchLog);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
 
@@ -326,7 +305,35 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     contestId,
     payload: { status: "running", detail: `${winner.agentName} wins the duel (${stacks[winnerSeat]} chips)` },
   });
-  return finalizeContest(contestId, rankAgents(scores));
+  // Settle first, so paying the winner never waits on 0G Storage. The verifiable
+  // replay upload comes after and is best effort, so a slow or stalled upload can no
+  // longer leave a finished match stuck unsettled.
+  const result = await finalizeContest(contestId, rankAgents(scores));
+  await storePokerReplay(contestId, stacks, matchLog);
+  return result;
+}
+
+// Store the full match (per hand: seed, hole cards, board, every action with its 0G
+// provenance, and the result) to 0G Storage, so anyone can reconstruct and check the
+// duel from its root hash. Best effort and time-bounded: a failure or timeout only
+// logs, and never unsettles a contest that already paid out.
+async function storePokerReplay(contestId: number, stacks: number[], matchLog: unknown[]): Promise<void> {
+  if (!storageConfigured() || matchLog.length === 0) return;
+  try {
+    const up = await uploadJson({ contestId, kind: "poker", finalStacks: stacks, hands: matchLog });
+    await query("update contests_meta set poker_root = $2, poker_tx = $3 where contest_id = $1", [
+      contestId,
+      up.rootHash,
+      up.txHash,
+    ]);
+    broadcast({
+      type: "status",
+      contestId,
+      payload: { status: "settled", detail: `replay stored on 0G Storage (${up.rootHash.slice(0, 10)}...)` },
+    });
+  } catch (err) {
+    console.error(`poker ${contestId}: replay storage failed:`, (err as Error).message);
+  }
 }
 
 // Persist and broadcast one poker decision, mirroring the solver runner so the same

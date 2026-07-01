@@ -35,6 +35,28 @@ export function storageConfigured(): boolean {
   return config.storage.enabled && Boolean(config.signerKey);
 }
 
+// A stalled 0G Storage network call would otherwise hang forever. Every upload sits
+// before a settlement writes the payout, so an unbounded hang freezes the whole
+// contest. Bound it: on timeout we throw, and the caller treats the audit upload as a
+// best-effort failure rather than blocking the money.
+const UPLOAD_TIMEOUT_MS = Number(process.env.ZG_STORAGE_UPLOAD_TIMEOUT_MS ?? "45000");
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 // Upload raw bytes (e.g. an image). Returns the 0G Storage root hash.
 export async function uploadBytes(bytes: Uint8Array): Promise<StoreResult> {
   const file = new MemData(bytes);
@@ -44,7 +66,11 @@ export async function uploadBytes(bytes: Uint8Array): Promise<StoreResult> {
   const rootHash = tree.rootHash();
 
   const indexer = getIndexer();
-  const [tx, uploadErr] = await indexer.upload(file, config.chain.rpcUrl, getSigner());
+  const [tx, uploadErr] = await withTimeout(
+    indexer.upload(file, config.chain.rpcUrl, getSigner()),
+    UPLOAD_TIMEOUT_MS,
+    "0G Storage upload",
+  );
   if (uploadErr !== null) throw new Error(`0G Storage upload failed: ${uploadErr}`);
 
   const txHash =

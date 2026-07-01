@@ -151,17 +151,8 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
     handIndex += 1;
   }
 
-  // Store the replay, then settle. Chip leader takes the pool; a house leader with a
-  // real player in the field means the real players lost, so refund the sponsor.
-  if (storageConfigured() && matchLog.length > 0) {
-    try {
-      const up = await uploadJson({ contestId, kind: "poker", seats: n, finalStacks: stacks, hands: matchLog });
-      await query("update contests_meta set poker_root = $2, poker_tx = $3 where contest_id = $1", [contestId, up.rootHash, up.txHash]);
-    } catch (err) {
-      console.error(`poker table ${contestId}: replay storage failed:`, (err as Error).message);
-    }
-  }
-
+  // Chip leader takes the pool; a house leader with a real player in the field means
+  // the real players lost, so refund the sponsor.
   let winnerSeat = 0;
   for (let s = 1; s < n; s++) {
     if (
@@ -177,6 +168,7 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
   if (!eligible) {
     broadcast({ type: "status", contestId, payload: { status: "no-winner" } });
     await cancelContest(contestId);
+    await storeTableReplay(contestId, n, stacks, matchLog);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
 
@@ -194,7 +186,23 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
     contestId,
     payload: { status: "running", detail: `${winner.agentName} wins the table (${stacks[winnerSeat]} chips)` },
   });
-  return finalizeContest(contestId, rankAgents(scores));
+  // Settle first, so paying the winner never waits on 0G Storage. The verifiable
+  // replay upload comes after and is best effort and time-bounded.
+  const result = await finalizeContest(contestId, rankAgents(scores));
+  await storeTableReplay(contestId, n, stacks, matchLog);
+  return result;
+}
+
+// Store the full table match to 0G Storage for verifiable replay. Best effort and
+// time-bounded: a failure or timeout only logs, never unsettling a paid contest.
+async function storeTableReplay(contestId: number, seats: number, stacks: number[], matchLog: unknown[]): Promise<void> {
+  if (!storageConfigured() || matchLog.length === 0) return;
+  try {
+    const up = await uploadJson({ contestId, kind: "poker", seats, finalStacks: stacks, hands: matchLog });
+    await query("update contests_meta set poker_root = $2, poker_tx = $3 where contest_id = $1", [contestId, up.rootHash, up.txHash]);
+  } catch (err) {
+    console.error(`poker table ${contestId}: replay storage failed:`, (err as Error).message);
+  }
 }
 
 async function recordDecision(
