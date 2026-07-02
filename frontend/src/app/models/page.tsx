@@ -1,13 +1,13 @@
 "use client";
 
 import { useModelStats } from "@/lib/useAgents";
+import { kindMeta } from "@/lib/kind";
 import type { ModelStat } from "@/lib/types";
 import {
   Agent,
   Chip,
   CoinStat,
   StickerCard,
-  cx,
   type AgentVariant,
 } from "@/components/zerun";
 
@@ -124,9 +124,26 @@ function ModelCard({ model, rank, variant }: { model: ModelStat; rank: number; v
           <Stat label="answers" value={model.answers.toLocaleString()} />
           <Stat label="contests" value={model.contests.toLocaleString()} />
           <Stat label="agents" value={model.agents.toLocaleString()} />
+          {model.wins > 0 && <Stat label="wins" value={model.wins.toLocaleString()} />}
+          {model.winRate !== null && <Stat label="win rate" value={pct(model.winRate)} />}
           <Stat label="avg latency" value={`${model.avgLatencyMs.toLocaleString()}ms`} />
           {model.verifiedRate > 0 && <Stat label="verified" value={pct(model.verifiedRate)} />}
         </div>
+
+        {model.byKind.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            {model.byKind.map((k) => (
+              <span
+                key={k.kind}
+                className="inline-flex items-center gap-1.5 rounded-pill border border-ink/15 bg-cloud-2 px-2.5 py-0.5 font-body text-[12px] text-ink-2"
+              >
+                <span className="font-extrabold text-ink">{kindMeta(k.kind).label}</span>
+                <span>{k.accuracy !== null ? pct(k.accuracy) : "—"}</span>
+                <span className="text-ink-3">({(k.correct + k.wrong).toLocaleString()})</span>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Accuracy hero */}

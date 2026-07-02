@@ -83,6 +83,10 @@ app.get("/api/stats", async (c) => {
 // only (Solver and Analyst, where a call is correct or wrong); poker moves and pending
 // forecasts still count as usage. Only true 0G Compute answers are included.
 app.get("/api/models/stats", async (c) => {
+  const MODEL_FILTER =
+    "source = '0g-compute' and model is not null and model <> '' and model not in ('error', 'offline-dev')";
+
+  // Per-model usage and accuracy over every 0G Compute answer.
   const { rows } = await query<{
     model: string;
     answers: number;
@@ -105,14 +109,63 @@ app.get("/api/models/stats", async (c) => {
        count(distinct agent_id)::int as agents,
        coalesce(avg(latency_ms) filter (where latency_ms is not null), 0)::int as avg_latency_ms
      from solve_runs
-     where source = '0g-compute'
-       and model is not null and model <> '' and model not in ('error', 'offline-dev')
+     where ${MODEL_FILTER}
      group by model`,
   );
+
+  // Contest wins per model: the model the rank-1 operator's agent used in each settled
+  // contest, plus how many settled contests each model competed in (the win-rate base).
+  const { rows: winRows } = await query<{ model: string; wins: number; settled_contests: number }>(
+    `with competed as (
+       select sr.model, count(distinct sr.contest_id)::int as settled_contests
+         from solve_runs sr
+         join contests_meta m on m.contest_id = sr.contest_id and m.status = 'settled'
+        where ${MODEL_FILTER}
+        group by sr.model
+     ),
+     winner_model as (
+       select distinct on (p.contest_id) p.contest_id, sr.model
+         from payouts p
+         join solve_runs sr on sr.contest_id = p.contest_id and lower(sr.operator) = lower(p.operator)
+        where p.rank = 1 and sr.source = '0g-compute'
+          and sr.model is not null and sr.model <> '' and sr.model not in ('error', 'offline-dev')
+        order by p.contest_id, sr.id
+     ),
+     wins as (select model, count(*)::int as wins from winner_model group by model)
+     select c.model, coalesce(w.wins, 0)::int as wins, c.settled_contests
+       from competed c left join wins w on w.model = c.model`,
+  );
+  const winByModel = new Map(winRows.map((r) => [r.model, r]));
+
+  // Accuracy split by contest flavor (only Solver and Analyst are graded).
+  const { rows: kindRows } = await query<{ model: string; kind: string | null; correct: number; wrong: number }>(
+    `select sr.model, m.kind,
+            count(*) filter (where sr.verdict = 'correct')::int as correct,
+            count(*) filter (where sr.verdict = 'wrong')::int as wrong
+       from solve_runs sr
+       join contests_meta m on m.contest_id = sr.contest_id
+      where ${MODEL_FILTER} and sr.verdict in ('correct', 'wrong')
+      group by sr.model, m.kind`,
+  );
+  const kindByModel = new Map<string, { kind: string; correct: number; wrong: number; accuracy: number | null }[]>();
+  for (const r of kindRows) {
+    const graded = r.correct + r.wrong;
+    const list = kindByModel.get(r.model) ?? [];
+    list.push({
+      kind: r.kind ?? "unknown",
+      correct: r.correct,
+      wrong: r.wrong,
+      accuracy: graded > 0 ? r.correct / graded : null,
+    });
+    kindByModel.set(r.model, list);
+  }
 
   const models = rows
     .map((r) => {
       const graded = r.correct + r.wrong;
+      const win = winByModel.get(r.model);
+      const wins = win?.wins ?? 0;
+      const settledContests = win?.settled_contests ?? 0;
       return {
         model: r.model,
         answers: r.answers,
@@ -126,6 +179,10 @@ app.get("/api/models/stats", async (c) => {
         contests: r.contests,
         agents: r.agents,
         avgLatencyMs: r.avg_latency_ms,
+        wins,
+        settledContests,
+        winRate: settledContests > 0 ? wins / settledContests : null,
+        byKind: (kindByModel.get(r.model) ?? []).sort((a, b) => a.kind.localeCompare(b.kind)),
       };
     })
     .sort((a, b) => {

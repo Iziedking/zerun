@@ -167,6 +167,13 @@ export interface ModelStat {
   contests: number;
   agents: number;
   avgLatencyMs: number;
+  // Contest wins where the rank-1 agent used this model, and the win rate over the
+  // settled contests the model competed in (null when it has none settled yet).
+  wins: number;
+  settledContests: number;
+  winRate: number | null;
+  // Accuracy split by contest flavor (only graded kinds: solver, analyst).
+  byKind: { kind: string; correct: number; wrong: number; accuracy: number | null }[];
 }
 
 // Operator profile from GET /api/operators/:address.
