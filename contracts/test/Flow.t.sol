@@ -213,6 +213,129 @@ contract FlowTest is Test {
         vm.expectRevert();
         engine.upgradeToAndCall(address(newImpl2), "");
     }
+
+    /// @dev The claim window runs from settlement, not from the entry window's end,
+    ///      so a mission that settles long after endTime (deferred resolution) still
+    ///      protects winners from an early sweep.
+    function testSweepWindowAnchoredToSettlement() public {
+        uint256 prizePool = 1_000e6;
+        usdc.mint(sponsor, prizePool);
+        vm.startPrank(sponsor);
+        usdc.approve(address(escrow), prizePool);
+        uint256 contestId = engine.listContest(
+            ContestType.SCOUT, address(0), keccak256("VOLUME"), prizePool, 1 days, 5_000, 1, 0, engine.MAX_TIER(), 0
+        );
+        vm.stopPrank();
+
+        vm.prank(winner);
+        uint256 agentId = registry.createAgent("ipfs://a");
+        vm.prank(winner);
+        engine.registerEntry(contestId, agentId, 0);
+
+        // Settle 40 days after endTime, well past endTime + CLAIM_WINDOW.
+        vm.warp(block.timestamp + 40 days);
+
+        uint256 partAward = 400e6; // claim part, leaving a remainder to sweep later
+        bytes32 root = _hashPair(_leaf(winner, partAward), _leaf(other, 1));
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = _leaf(other, 1);
+        vm.startPrank(coordinator);
+        engine.postScoreRoot(contestId, root);
+        engine.settle(contestId);
+        vm.stopPrank();
+
+        // Despite being 40 days past endTime, the window runs from settlement, so a
+        // sweep is not yet possible and the winner can still claim.
+        vm.expectRevert(ContestEngine.ClaimWindowOpen.selector);
+        engine.sweepUnclaimed(contestId);
+
+        vm.prank(winner);
+        engine.claimPrize(contestId, partAward, proof);
+        assertEq(usdc.balanceOf(winner), partAward);
+
+        // After the window from settlement, the unclaimed remainder sweeps to treasury.
+        uint256 platformFee = (prizePool * 500) / 10_000;
+        uint256 remainder = (prizePool - platformFee) - partAward;
+        uint256 treasuryBefore = usdc.balanceOf(admin);
+        vm.warp(block.timestamp + 30 days + 1);
+        engine.sweepUnclaimed(contestId);
+        assertEq(usdc.balanceOf(admin) - treasuryBefore, remainder);
+    }
+
+    function testAccessControlNegatives() public {
+        uint256 prizePool = 100e6;
+        usdc.mint(sponsor, prizePool);
+        vm.startPrank(sponsor);
+        usdc.approve(address(escrow), prizePool);
+        uint256 contestId = engine.listContest(
+            ContestType.SCOUT, address(0), keccak256("VOLUME"), prizePool, 1 days, 5_000, 1, 0, engine.MAX_TIER(), 0
+        );
+        vm.stopPrank();
+
+        vm.startPrank(other);
+        vm.expectRevert();
+        engine.postScoreRoot(contestId, keccak256("x"));
+        vm.expectRevert();
+        engine.settle(contestId);
+        vm.expectRevert();
+        engine.cancelContest(contestId);
+        vm.expectRevert();
+        engine.setContestParam(contestId, "k", 1);
+        vm.expectRevert();
+        engine.setListingFeeBps(10);
+        vm.expectRevert();
+        engine.pause();
+        vm.stopPrank();
+    }
+
+    function testHybridContest() public {
+        uint256 base = 300e6;
+        uint256 fee = 100e6;
+        usdc.mint(sponsor, base);
+        vm.startPrank(sponsor);
+        usdc.approve(address(escrow), base);
+        uint256 contestId = engine.listContest(
+            ContestType.SCOUT, address(0), keccak256("VOLUME"), base, 1 days, 5_000, 1, 0, engine.MAX_TIER(), fee
+        );
+        vm.stopPrank();
+
+        _enterPaying(contestId, winner, fee);
+        _enterPaying(contestId, other, fee);
+        assertEq(escrow.poolBalance(address(engine), contestId), base + 2 * fee);
+
+        vm.warp(block.timestamp + 1 days + 1);
+        uint256 total = base + 2 * fee;
+        uint256 platformFee = (total * 500) / 10_000;
+        uint256 award = total - platformFee;
+        bytes32 root = _hashPair(_leaf(winner, award), _leaf(other, 1));
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = _leaf(other, 1);
+        vm.startPrank(coordinator);
+        engine.postScoreRoot(contestId, root);
+        engine.settle(contestId);
+        vm.stopPrank();
+
+        vm.prank(winner);
+        engine.claimPrize(contestId, award, proof);
+        assertEq(usdc.balanceOf(winner), award);
+        assertEq(usdc.balanceOf(admin), platformFee);
+    }
+
+    function testCancelStakedRefundsSponsor() public {
+        uint256 prizePool = 500e6;
+        usdc.mint(sponsor, prizePool);
+        vm.startPrank(sponsor);
+        usdc.approve(address(escrow), prizePool);
+        uint256 contestId = engine.listContest(
+            ContestType.SCOUT, address(0), keccak256("VOLUME"), prizePool, 1 days, 5_000, 1, 0, engine.MAX_TIER(), 0
+        );
+        vm.stopPrank();
+
+        vm.prank(coordinator);
+        engine.cancelContest(contestId);
+        assertEq(usdc.balanceOf(sponsor), prizePool); // full base refunded
+        assertEq(escrow.poolBalance(address(engine), contestId), 0);
+    }
 }
 
 /// @dev A trivial upgrade target: same storage, a bumped version, to prove an

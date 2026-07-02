@@ -92,6 +92,11 @@ contract ContestEngine is
         // Challenge fields, appended so old decoders and future upgrades stay valid.
         uint256 entryFee; // USDC each entrant pays to enter (0 = staked-only contest)
         uint256 feePool; // accumulated entry fees, escrowed as they arrive
+        // When the pool became claimable/refundable (settle or cancel). The claim
+        // window is measured from here, not from endTime, so a mission that settles
+        // long after its entry window (e.g. deferred World Cup resolution) still gives
+        // winners and refund-owed entrants the full window before a sweep is possible.
+        uint64 resolvedAt;
     }
 
     uint256 private _nextContestId;
@@ -281,7 +286,8 @@ contract ContestEngine is
             minTier: minTier,
             maxTier: maxTier,
             entryFee: entryFee,
-            feePool: 0
+            feePool: 0,
+            resolvedAt: 0
         });
 
         // Effects set above; now interactions (CEI ordering, guarded by nonReentrant).
@@ -408,6 +414,7 @@ contract ContestEngine is
         if (c.status != ContestStatus.SCORING) revert ContestNotScoring();
 
         c.status = ContestStatus.SETTLED;
+        c.resolvedAt = uint64(block.timestamp);
 
         uint256 total = c.prizePool + c.feePool;
         uint256 platformFee = (total * c.platformFeeBps) / BPS_DENOMINATOR;
@@ -470,6 +477,7 @@ contract ContestEngine is
         }
 
         c.status = ContestStatus.CANCELLED;
+        c.resolvedAt = uint64(block.timestamp);
 
         // Refund only the staked base pool to the sponsor. Any collected entry
         // fees stay escrowed for entrants to reclaim via claimRefund.
@@ -482,6 +490,10 @@ contract ContestEngine is
     /// @notice After the claim window, sweep any leftover pool funds (unclaimed
     ///         prizes on a settled contest, or unclaimed entry-fee refunds on a
     ///         cancelled challenge) to the treasury. Anyone can trigger recovery.
+    /// @dev    The window runs from `resolvedAt` (settle or cancel time), not from
+    ///         the entry window's end, so a mission that resolves long after its
+    ///         entry window still gives winners and entrants the full window to
+    ///         claim before anyone can sweep.
     function sweepUnclaimed(uint256 contestId) external {
         Contest storage c = _contests[contestId];
         if (c.sponsor == address(0)) revert ContestDoesNotExist();
@@ -489,7 +501,9 @@ contract ContestEngine is
             revert ContestNotSettled();
         }
         // forge-lint: disable-next-line(block-timestamp)
-        if (block.timestamp < uint256(c.endTime) + CLAIM_WINDOW) revert ClaimWindowOpen();
+        if (c.resolvedAt == 0 || block.timestamp < uint256(c.resolvedAt) + CLAIM_WINDOW) {
+            revert ClaimWindowOpen();
+        }
 
         escrow.sweepUnclaimed(contestId);
 

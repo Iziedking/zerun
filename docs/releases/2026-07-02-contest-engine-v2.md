@@ -35,16 +35,29 @@ features can attach data to a contest without even an upgrade.
 
 ## Safety
 
-- The engine holds no funds. The escrow custodies all USDC and bounds every payout to the
-  pool balance, so a bug or a bad merkle root can never over-pay past what was deposited.
+- The engine holds no funds. The escrow custodies all USDC, namespaces every pool by its
+  controller, and caps each payout to that pool's balance, so a bug or a bad merkle root
+  can never over-pay past what was deposited or reach another contest's pool.
 - The new fee paths follow checks-effects-interactions under a reentrancy guard, and the
   prize and refund claims stay pull-based.
+- The claim (and refund) window is measured from when a contest settles or is cancelled,
+  not from when its entry window closed. That matters for missions that resolve long after
+  entries close, such as deferred World Cup settlement: winners always get the full window
+  before any unclaimed remainder can be swept.
 - The implementation disables its own initializer, the proxy initializes atomically, and
-  upgrades are admin-gated. For anything beyond testnet the admin key should sit behind a
-  multisig or a timelock.
-- Covered by Foundry tests: the staked happy path, an entry-fee challenge end to end,
-  per-entrant refunds on a cancelled challenge, list validation, and an upgrade that
-  preserves state. A security audit pass returned no critical or high code findings.
+  upgrades are admin-gated.
+- Covered by Foundry tests (all passing): the staked happy path, an entry-fee challenge and
+  a hybrid pool end to end, per-entrant refunds on a cancelled challenge, list validation,
+  access-control negatives, the settlement-anchored claim window, and a real upgrade that
+  preserves state.
+
+An independent security audit reviewed the full stack. It found no critical issues and no
+permissionless way to drain the escrow. One high-severity issue, a claim window anchored to
+the entry-window end rather than to settlement, was fixed (see above) and is covered by a
+regression test. The remaining recommendations are for a mainnet hardening pass, not
+testnet: put the admin and upgrade authority behind a multisig and a timelock, and treat
+the published contest terms (winner split, top-N) as coordinator-enforced rather than
+on-chain-enforced.
 
 ## Rollout
 
