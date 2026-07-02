@@ -77,18 +77,20 @@ export function deploymentReady(): boolean {
 // Human-readable ABIs for exactly the calls Zerun makes. Kept minimal so the
 // backend does not depend on the full artifact JSON.
 export const contestEngineAbi = parseAbi([
-  "function listContest(uint8 cType, address protocolTarget, bytes32 metric, uint256 prizePool, uint64 duration, uint16 winnerCutBps, uint16 topN, uint16 minTier, uint16 maxTier) returns (uint256)",
+  "function listContest(uint8 cType, address protocolTarget, bytes32 metric, uint256 prizePool, uint64 duration, uint16 winnerCutBps, uint16 topN, uint16 minTier, uint16 maxTier, uint256 entryFee) returns (uint256)",
   "function registerEntry(uint256 contestId, uint256 agentId, uint256 syndicateId)",
   "function postScoreRoot(uint256 contestId, bytes32 root)",
   "function settle(uint256 contestId)",
   "function cancelContest(uint256 contestId)",
   "function claimPrize(uint256 contestId, uint256 amount, bytes32[] proof)",
+  "function claimRefund(uint256 contestId)",
   "function nextContestId() view returns (uint256)",
   "function entryCount(uint256) view returns (uint64)",
   "function operatorEntered(uint256 contestId, address operator) view returns (bool)",
   "function prizeClaimed(uint256 contestId, address operator) view returns (bool)",
-  "function getContest(uint256 contestId) view returns ((uint8 contestType, uint8 status, uint16 winnerCutBps, uint16 topN, uint16 platformFeeBps, address sponsor, address protocolTarget, bytes32 metric, uint64 startTime, uint64 endTime, uint256 prizePool, bytes32 finalRoot, uint16 minTier, uint16 maxTier))",
-  "event ContestListed(uint256 indexed id, address indexed sponsor, uint8 indexed cType, address protocolTarget, uint256 prizePool)",
+  "function refundClaimed(uint256 contestId, address operator) view returns (bool)",
+  "function getContest(uint256 contestId) view returns ((uint8 contestType, uint8 status, uint16 winnerCutBps, uint16 topN, uint16 platformFeeBps, address sponsor, address protocolTarget, bytes32 metric, uint64 startTime, uint64 endTime, uint256 prizePool, bytes32 finalRoot, uint16 minTier, uint16 maxTier, uint256 entryFee, uint256 feePool, uint64 resolvedAt))",
+  "event ContestListed(uint256 indexed id, address indexed sponsor, uint8 indexed cType, address protocolTarget, uint256 prizePool, uint256 entryFee)",
   "event EntryRegistered(uint256 indexed contestId, address indexed operator, uint256 indexed agentId, uint256 syndicateId)",
   "event ContestScored(uint256 indexed contestId, bytes32 scoreRoot)",
   "event ContestSettled(uint256 indexed contestId, uint256 paidOut, uint256 platformFee)",

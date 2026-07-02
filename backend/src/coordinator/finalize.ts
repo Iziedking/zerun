@@ -80,15 +80,16 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
     };
   }
 
-  const prizePool = contest.prizePool;
+  // The pot is the staked base pool plus any collected entry fees (a challenge). The
+  // engine skims the platform fee on this same total at settle, so the merkle payouts
+  // cover the total minus that fee.
+  const totalPool = contest.prizePool + contest.feePool;
   const platformFeeBps = contest.platformFeeBps;
   const topN = contest.topN;
   const endTime = Number(contest.endTime);
 
-  // The platform fee is skimmed on chain at settle, so the merkle payouts cover
-  // the pool minus that fee.
-  const platformFee = (prizePool * BigInt(platformFeeBps)) / 10_000n;
-  const distributable = prizePool - platformFee;
+  const platformFee = (totalPool * BigInt(platformFeeBps)) / 10_000n;
+  const distributable = totalPool - platformFee;
   const payouts = computePayouts(ranked, distributable, Number(topN));
 
   if (payouts.length === 0) {

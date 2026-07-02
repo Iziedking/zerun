@@ -28,6 +28,9 @@ export interface OpenContestParams {
   kind?: ContestKind;
   /// Seat cap. 2 makes it a 1v1 duel; omit for an open multi-agent contest.
   maxOperators?: number;
+  /// Entry fee in whole USDC each entrant pays to build the pot (a challenge). 0 or
+  /// omitted = a staked-only contest funded by the sponsor.
+  entryFeeUsdc?: number;
 }
 
 export type ContestKind = "solver" | "analyst" | "poker" | "worldcup";
@@ -111,6 +114,7 @@ export async function openContest(params: OpenContestParams): Promise<number> {
       params.topN,
       0, // minTier
       4, // maxTier
+      BigInt(Math.round((params.entryFeeUsdc ?? 0) * 1_000_000)), // entryFee (6dp); 0 = staked-only
     ],
     account: signer,
     chain: undefined,

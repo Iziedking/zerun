@@ -77,6 +77,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const [splitKey, setSplitKey] = useState<(typeof SPLITS)[number]["key"]>("top3");
   const [maxOps, setMaxOps] = useState("");
   const [pokerSeats, setPokerSeats] = useState("2");
+  const [entryFee, setEntryFee] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -102,11 +103,12 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
     setError(null);
     if (!ready || !address || !publicClient || !usdcAddr || !engineAddr || !escrowAddr) return;
 
-    const prizePool = toSixDp(pool.trim());
+    const prizePool = toSixDp(pool.trim() || "0");
+    const entryFeeDp = entryFee.trim() ? toSixDp(entryFee.trim()) : 0n;
     const durationSecs = Math.round(Number(minutes) * 60);
     const taskCount = Math.max(1, Math.round(Number(count)));
-    if (prizePool <= 0n) {
-      setError("Set a prize pool above zero.");
+    if (prizePool <= 0n && entryFeeDp <= 0n) {
+      setError("Set a prize pool, or an entry fee for a challenge.");
       return;
     }
     if (!Number.isFinite(durationSecs) || durationSecs < 60) {
@@ -114,29 +116,34 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       return;
     }
 
-    // The host funds the pool from their own balance.
-    const have = balance.raw ?? 0n;
-    if (have < prizePool) {
-      const short = (Number(prizePool - have) / 1e6).toFixed(2);
-      setError(`Not enough tUSDC. You are ${short} short for this pool. Mint more on your profile, then try again.`);
-      return;
+    // The host funds only the staked base pool from their own balance; on a pure
+    // entry-fee challenge they stake nothing and entrants build the pot.
+    if (prizePool > 0n) {
+      const have = balance.raw ?? 0n;
+      if (have < prizePool) {
+        const shortBy = (Number(prizePool - have) / 1e6).toFixed(2);
+        setError(`Not enough tUSDC. You are ${shortBy} short for this pool. Mint more on your profile, then try again.`);
+        return;
+      }
     }
 
     try {
-      // Approve the escrow to pull the prize pool.
-      setPhase("approving");
-      const approveHash = await walletAction.run(
-        () =>
-          writeContractAsync({
-            abi: testUsdcAbi,
-            address: usdcAddr,
-            functionName: "approve",
-            args: [escrowAddr, prizePool],
-            chainId: zeroGGalileo.id,
-          }),
-        "Step 1 of 2: approve the prize pool in your wallet.",
-      );
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      // Approve the escrow to pull the staked pool (skipped for a pure challenge).
+      if (prizePool > 0n) {
+        setPhase("approving");
+        const approveHash = await walletAction.run(
+          () =>
+            writeContractAsync({
+              abi: testUsdcAbi,
+              address: usdcAddr,
+              functionName: "approve",
+              args: [escrowAddr, prizePool],
+              chainId: zeroGGalileo.id,
+            }),
+          "Step 1 of 2: approve the prize pool in your wallet.",
+        );
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      }
 
       // The new id is the next contest id before we list.
       const nextId = await publicClient.readContract({
@@ -159,7 +166,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
             abi: contestEngineAbi,
             address: engineAddr,
             functionName: "listContest",
-            args: [cType, ZERO_ADDRESS, METRIC[kind], prizePool, BigInt(durationSecs), split.cut, split.topN, 0, 4],
+            args: [cType, ZERO_ADDRESS, METRIC[kind], prizePool, BigInt(durationSecs), split.cut, split.topN, 0, 4, entryFeeDp],
             chainId: zeroGGalileo.id,
           }),
         "Step 2 of 2: confirm listing the contest in your wallet.",
@@ -198,6 +205,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
     split,
     maxOps,
     pokerSeats,
+    entryFee,
     balance,
     writeContractAsync,
     queryClient,
@@ -274,6 +282,27 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
           </Field>
         )}
       </div>
+
+      {/* Entry-fee challenge: entrants build the pot, so the host can stake nothing. */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Entry fee (tUSDC, optional)">
+          <input
+            inputMode="decimal"
+            value={entryFee}
+            onChange={(e) => setEntryFee(e.target.value)}
+            placeholder="0"
+            disabled={busy}
+            className={inputCx}
+          />
+        </Field>
+      </div>
+      {entryFee.trim() && Number(entryFee) > 0 && (
+        <p className="rounded-chunk border-line border-ink bg-mint/20 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
+          Challenge: every agent pays {entryFee} tUSDC to enter, the fees are the pot, and the
+          winner takes it. Leave the prize pool at 0 to stake nothing yourself, or set one to
+          add a base on top of the fees.
+        </p>
+      )}
 
       {isPoker ? (
         <>

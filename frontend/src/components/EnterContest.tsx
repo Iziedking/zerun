@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { useWalletAction } from "@/lib/walletAction";
 import { useQueryClient } from "@tanstack/react-query";
-import { contestEngineAbi } from "@/lib/contracts";
+import { contestEngineAbi, testUsdcAbi } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
 import { useAgents } from "@/lib/useAgents";
 import { api } from "@/lib/api";
@@ -46,6 +46,19 @@ export function EnterContest({
   const [done, setDone] = useState(false);
 
   const engineAddr = deployment?.contracts.contestEngine;
+  const escrowAddr = deployment?.contracts.prizeEscrow;
+  const usdcAddr = deployment?.contracts.testUSDC;
+
+  // The on-chain entry fee (a challenge). registerEntry pulls it, so the operator
+  // approves the escrow for it first.
+  const { data: onchainContest } = useReadContract({
+    address: engineAddr,
+    abi: contestEngineAbi,
+    functionName: "getContest",
+    args: [BigInt(contestId)],
+    query: { enabled: Boolean(engineAddr) },
+  });
+  const entryFee = (onchainContest?.entryFee ?? 0n) as bigint;
 
   // Only allow entering while the join window is open.
   const windowOpen = joinOpen(contest);
@@ -79,6 +92,22 @@ export function EnterContest({
     }
     setBusy(true);
     try {
+      // A challenge pulls the entry fee on registerEntry, so approve the escrow first.
+      if (entryFee > 0n && escrowAddr && usdcAddr) {
+        const approveHash = await walletAction.run(
+          () =>
+            writeContractAsync({
+              abi: testUsdcAbi,
+              address: usdcAddr,
+              functionName: "approve",
+              args: [escrowAddr, entryFee],
+              chainId: zeroGGalileo.id,
+            }),
+          "Step 1 of 2: approve the entry fee in your wallet.",
+        );
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      }
+
       const hash = await walletAction.run(
         () =>
           writeContractAsync({
@@ -88,7 +117,9 @@ export function EnterContest({
             args: [BigInt(contestId), BigInt(agentId), 0n],
             chainId: zeroGGalileo.id,
           }),
-        "Approve in your wallet to send your agent in.",
+        entryFee > 0n
+          ? "Step 2 of 2: pay the fee and send your agent in."
+          : "Approve in your wallet to send your agent in.",
       );
       await publicClient.waitForTransactionReceipt({ hash });
       await api.enter(contestId, { agentId: Number(agentId), operator: address });
@@ -99,7 +130,19 @@ export function EnterContest({
     } finally {
       setBusy(false);
     }
-  }, [engineAddr, address, publicClient, agentId, contestId, writeContractAsync, queryClient]);
+  }, [
+    engineAddr,
+    escrowAddr,
+    usdcAddr,
+    entryFee,
+    address,
+    publicClient,
+    agentId,
+    contestId,
+    writeContractAsync,
+    walletAction,
+    queryClient,
+  ]);
 
   // The operator already has an agent in this contest (one per operator). Show it.
   if (myEntry) {
@@ -159,6 +202,13 @@ export function EnterContest({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
+      {entryFee > 0n && (
+        <span className="w-full font-body text-[13px] font-bold text-ink-2">
+          This is a challenge. Entry fee{" "}
+          <span className="font-display text-ink">{(Number(entryFee) / 1e6).toFixed(2)} tUSDC</span>, paid to
+          the pot when you enter.
+        </span>
+      )}
       <select
         value={agentId}
         onChange={(e) => setAgentId(e.target.value ? Number(e.target.value) : "")}
