@@ -4,6 +4,8 @@ pragma solidity 0.8.24;
 import { Script } from "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+
 import { TestUSDC } from "../src/TestUSDC.sol";
 import { PrizeEscrow } from "../src/PrizeEscrow.sol";
 import { AgentRegistry } from "../src/AgentRegistry.sol";
@@ -35,8 +37,13 @@ contract Deploy is Script {
         // 3. Agent ownership / tier / reputation registry. Treasury = deployer.
         AgentRegistry registry = new AgentRegistry(deployer, address(usdc), deployer);
 
-        // 4. Contest lifecycle engine. 0 listing fee, 5% platform fee.
-        ContestEngine engine = new ContestEngine(deployer, address(registry), address(escrow), 0, 500);
+        // 4. Contest lifecycle engine, deployed as a UUPS proxy so its logic can
+        //    evolve at a stable address. 0 listing fee, 5% platform fee.
+        ContestEngine engineImpl = new ContestEngine();
+        bytes memory initData = abi.encodeCall(
+            ContestEngine.initialize, (deployer, address(registry), address(escrow), 0, 500)
+        );
+        ContestEngine engine = ContestEngine(address(new ERC1967Proxy(address(engineImpl), initData)));
 
         // Wire cross-contract roles.
         escrow.grantRole(escrow.CONTROLLER_ROLE(), address(engine));

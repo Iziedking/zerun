@@ -27,7 +27,12 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/
 # Vendored dependencies. Restore on a fresh clone with:
-#   cd contracts && forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts@v5.1.0
+#   cd contracts && forge install foundry-rs/forge-std \
+#     OpenZeppelin/openzeppelin-contracts@v5.0.2 \
+#     OpenZeppelin/openzeppelin-contracts-upgradeable@v5.0.2
+# (the upgradeable package's own nested test submodules may fail on Windows long
+#  paths; that is harmless, the build resolves @openzeppelin/contracts to the
+#  top-level openzeppelin-contracts via remappings.txt.)
 contracts/lib/
 
 # Misc
