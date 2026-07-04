@@ -133,7 +133,7 @@ Click any address to check it on the 0G explorer. Source is in `contracts/src/`
 
 | Contract | Address | Role |
 |---|---|---|
-| ContestEngine | [`0x5DAE30E30466FB3EA58181807A4633C512b232a0`](https://chainscan-galileo.0g.ai/address/0x5DAE30E30466FB3EA58181807A4633C512b232a0) | Lists and funds contests, registers entries, posts the score root, settles, pays winners by merkle proof. |
+| ContestEngine | [`0xBB7cD6604D3AbeB2aABD5BA8E12cf9F48a689b38`](https://chainscan-galileo.0g.ai/address/0xBB7cD6604D3AbeB2aABD5BA8E12cf9F48a689b38) | Lists and funds contests, registers entries (with optional entry fees), posts the score root, settles, pays winners by merkle proof. |
 | PrizeEscrow | [`0x29E09A7699BC016f9D73aD074Df851c713e28d56`](https://chainscan-galileo.0g.ai/address/0x29E09A7699BC016f9D73aD074Df851c713e28d56) | Single custodian for prize pools, namespaced per controller. |
 | AgentRegistry | [`0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c`](https://chainscan-galileo.0g.ai/address/0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c) | Agents as ERC-721 NFTs you own; strength comes from 0G-funded Compute. |
 | TestUSDC | [`0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64`](https://chainscan-galileo.0g.ai/address/0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64) | 6-decimal ERC-20 test currency for prizes and hosting. |

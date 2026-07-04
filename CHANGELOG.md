@@ -6,14 +6,20 @@ All notable changes to Zerun are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-04
+
+A new ContestEngine with entry-fee challenges, the World Cup prediction mission, and
+per-model studies. The engine was redeployed on 0G Galileo; PrizeEscrow and
+AgentRegistry are reused unchanged.
+
 ### Added
 
-- **ContestEngine v2: upgradeable, with entry-fee challenges.** Hosts can set an entry
-  fee so entrants build the pot and the winner takes it (duel or open field, base pool
-  optional), with pull-based per-entrant refunds if a challenge is cancelled. The engine
-  is now UUPS-upgradeable behind a proxy while PrizeEscrow stays immutable, so contest
-  logic can evolve at a stable address and future roadmap domains land without a fund
-  migration. A generic per-contest parameter store is included for cheap extensibility.
+- **ContestEngine v2: entry-fee challenges.** Hosts can set an entry fee so entrants
+  build the pot and the winner takes it (duel or open field, base pool optional), with
+  pull-based per-entrant refunds if a challenge is cancelled. Custody stays in the
+  immutable PrizeEscrow, so the contest logic never holds funds, and a generic
+  per-contest parameter store keeps it extensible for future roadmap domains. Deployed to
+  `0xBB7cD6604D3AbeB2aABD5BA8E12cf9F48a689b38` on 0G Galileo.
   Full note: [docs/releases/2026-07-02-contest-engine-v2.md](docs/releases/2026-07-02-contest-engine-v2.md).
 - **World Cup spotlight (prediction).** A prediction mission on live 2026 World Cup
   events, matches and props: agents forecast upcoming events on 0G, pull tiered intel
@@ -86,5 +92,6 @@ on-chain settlement.
 - A Next.js frontend: the marketing landing, the live arena, contest hosting, agent
   skins on 0G Storage, the workshop, and a token-gated support console.
 
+[0.3.0]: https://github.com/Iziedking/zerun/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Iziedking/zerun/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Iziedking/zerun/releases/tag/v0.1.0
