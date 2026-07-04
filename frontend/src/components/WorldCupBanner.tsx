@@ -1,58 +1,234 @@
-import { Chip } from "./zerun";
+"use client";
 
-// A themed banner for the World Cup mission. Original cartoon art in the sticker
-// look, a football and a trophy with a few sparkles, no third-party logos or
-// emblems. Used on the host form and the mission header.
+import { useEffect, useState } from "react";
+import { Chip, cx } from "./zerun";
+
+// Themed banners for the World Cup mission. A rotating set of original cartoon
+// scenes in the sticker look: a kickoff, the trophy, a floodlit stadium, and a
+// knockout bracket, each with its own tagline. All original art, no third-party
+// logos, emblems, or marks.
 
 const INK = "#171449";
+const AMBER = "#FFB13C";
+const CANDY = ["#6C4CF1", "#36C5FF", "#FF6B5C", "#1FD6A6"];
 
-function WorldCupArt() {
+// A football drawn from its geometry, so it stays crisp at any size.
+function Ball({ cx: bx, cy: by, r }: { cx: number; cy: number; r: number }) {
+  const angles = [-90, -18, 54, 126, 198];
+  const inner = r * 0.5;
+  const pt = (deg: number, rr: number): [number, number] => {
+    const a = (deg * Math.PI) / 180;
+    return [bx + rr * Math.cos(a), by + rr * Math.sin(a)];
+  };
+  const poly = angles.map((d) => pt(d, inner).map((n) => n.toFixed(1)).join(" ")).join("L");
+  const seams = angles
+    .map((d) => {
+      const [x, y] = pt(d, inner);
+      const [ex, ey] = pt(d, r * 0.92);
+      return `M${x.toFixed(1)} ${y.toFixed(1)}L${ex.toFixed(1)} ${ey.toFixed(1)}`;
+    })
+    .join("");
   return (
-    <svg width="128" height="96" viewBox="0 0 128 96" fill="none" aria-hidden>
-      {/* sparkles */}
-      <path d="M16 18l1.3 3 3 1.3-3 1.3-1.3 3-1.3-3-3-1.3 3-1.3z" fill={INK} />
-      <path d="M114 62l1 2.4 2.4 1-2.4 1-1 2.4-1-2.4-2.4-1 2.4-1z" fill={INK} />
-
-      {/* trophy */}
-      <path d="M88 16h20v6a10 10 0 0 1-20 0z" fill="#FFB13C" stroke={INK} strokeWidth="3" strokeLinejoin="round" />
-      <path d="M88 18h-5a5 5 0 0 0 5 7" stroke={INK} strokeWidth="3" fill="none" />
-      <path d="M108 18h5a5 5 0 0 1-5 7" stroke={INK} strokeWidth="3" fill="none" />
-      <path d="M98 32v5" stroke={INK} strokeWidth="3.4" strokeLinecap="round" />
-      <path d="M92 37h12l2 6H90z" fill="#FFB13C" stroke={INK} strokeWidth="3" strokeLinejoin="round" />
-      <path d="M98 20l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill={INK} />
-
-      {/* football */}
-      <circle cx="46" cy="54" r="27" fill="#fff" stroke={INK} strokeWidth="3" />
-      <path d="M46 42l12 9-4.6 14H37.6L33 51z" fill={INK} />
-      <path
-        d="M46 42V28M58 51l12-5M53.4 65l7 12M39 65l-7 12M33 51l-12-5"
-        stroke={INK}
-        strokeWidth="2.6"
-        strokeLinecap="round"
-      />
-    </svg>
+    <g>
+      <circle cx={bx} cy={by} r={r} fill="#fff" stroke={INK} strokeWidth="3" />
+      <path d={`M${poly}Z`} fill={INK} />
+      <path d={seams} stroke={INK} strokeWidth="2.4" strokeLinecap="round" />
+    </g>
   );
 }
 
+function Trophy({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+  return (
+    <g transform={`translate(${x} ${y}) scale(${s})`}>
+      <path d="M-10 -14h20v6a10 10 0 0 1-20 0z" fill={AMBER} stroke={INK} strokeWidth="3" strokeLinejoin="round" />
+      <path d="M-10 -12h-5a5 5 0 0 0 5 7" fill="none" stroke={INK} strokeWidth="3" />
+      <path d="M10 -12h5a5 5 0 0 1-5 7" fill="none" stroke={INK} strokeWidth="3" />
+      <path d="M0 -2v5" stroke={INK} strokeWidth="3.4" strokeLinecap="round" />
+      <path d="M-7 3h14l2 6H-9z" fill={AMBER} stroke={INK} strokeWidth="3" strokeLinejoin="round" />
+      <path d="M0 -11l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill={INK} />
+    </g>
+  );
+}
+
+function Sparkle({ x, y, s = 1 }: { x: number; y: number; s?: number }) {
+  return (
+    <path
+      d="M0 -3.4L1 -1L3.4 0L1 1L0 3.4L-1 1L-3.4 0L-1 -1Z"
+      fill={INK}
+      transform={`translate(${x} ${y}) scale(${s})`}
+    />
+  );
+}
+
+// --- The four scenes ---
+
+function ArtKickoff() {
+  return (
+    <>
+      <Sparkle x={16} y={18} />
+      <Sparkle x={116} y={70} s={0.8} />
+      <Trophy x={100} y={36} s={0.8} />
+      <Ball cx={46} cy={56} r={26} />
+    </>
+  );
+}
+
+function ArtTrophy() {
+  const bits = [
+    [22, 20, 0], [104, 24, 1], [18, 64, 2], [110, 60, 3],
+    [40, 14, 1], [90, 76, 2], [30, 40, 3], [98, 44, 0],
+  ] as const;
+  return (
+    <>
+      {bits.map(([x, y, c], i) =>
+        i % 2 === 0 ? (
+          <rect
+            key={i}
+            x={x}
+            y={y}
+            width="5"
+            height="5"
+            rx="1"
+            fill={CANDY[c]}
+            stroke={INK}
+            strokeWidth="1.6"
+            transform={`rotate(${(i * 25) % 60} ${x + 2.5} ${y + 2.5})`}
+          />
+        ) : (
+          <path
+            key={i}
+            d="M0 -3.2L.9 -1L3.2 0L.9 1L0 3.2L-.9 1L-3.2 0L-.9 -1Z"
+            fill={CANDY[c]}
+            stroke={INK}
+            strokeWidth="1.2"
+            transform={`translate(${x + 2} ${y + 2})`}
+          />
+        ),
+      )}
+      <Trophy x={64} y={50} s={1.3} />
+    </>
+  );
+}
+
+function ArtStadium() {
+  return (
+    <>
+      {/* floodlights */}
+      <g>
+        <path d="M22 34v16" stroke={INK} strokeWidth="3" strokeLinecap="round" />
+        <rect x="16" y="26" width="12" height="8" rx="2" fill={AMBER} stroke={INK} strokeWidth="2.4" />
+      </g>
+      <g>
+        <path d="M106 34v16" stroke={INK} strokeWidth="3" strokeLinecap="round" />
+        <rect x="100" y="26" width="12" height="8" rx="2" fill={AMBER} stroke={INK} strokeWidth="2.4" />
+      </g>
+      <Sparkle x={64} y={16} s={0.9} />
+      {/* stands + pitch */}
+      <path d="M14 78a50 30 0 0 1 100 0z" fill="#fff" stroke={INK} strokeWidth="3" strokeLinejoin="round" />
+      <path d="M34 78a30 15 0 0 1 60 0z" fill="#1FD6A6" stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
+      <Ball cx={64} cy={70} r={9} />
+    </>
+  );
+}
+
+function ArtBracket() {
+  return (
+    <>
+      <path
+        d="M12 20h10M12 34h10M22 20v14M22 27h9M12 56h10M12 70h10M22 56v14M22 63h9M31 27h9M31 63h9M40 27v36M40 45h9"
+        fill="none"
+        stroke={INK}
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M55 45l1.6 3.6 3.9 .3-3 2.6.9 3.8-3.4-2-3.4 2 .9-3.8-3-2.6 3.9-.3z"
+        fill={AMBER}
+        stroke={INK}
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <Ball cx={98} cy={52} r={20} />
+    </>
+  );
+}
+
+const VARIANTS = [
+  {
+    title: "World Cup mission",
+    subtitle:
+      "Agents forecast upcoming World Cup events on 0G. Calls lock when the window closes; the mission settles when the real matches resolve.",
+    Art: ArtKickoff,
+  },
+  {
+    title: "Lift the trophy",
+    subtitle: "Agents call the tournament. The sharpest forecast on 0G takes the pot.",
+    Art: ArtTrophy,
+  },
+  {
+    title: "Under the lights",
+    subtitle: "Match nights, forecast live on 0G. Every call is provable and on the record.",
+    Art: ArtStadium,
+  },
+  {
+    title: "Road to the final",
+    subtitle: "Group stage to the final, one bracket. Read the run right and win the pot.",
+    Art: ArtBracket,
+  },
+];
+
+export const WORLD_CUP_BANNER_COUNT = VARIANTS.length;
+
 export function WorldCupBanner({
-  title = "World Cup mission",
-  subtitle = "Agents forecast upcoming World Cup events on 0G. Calls lock when the window closes, and the mission settles when the real matches resolve.",
+  variant = 0,
+  title,
+  subtitle,
+  className,
 }: {
+  variant?: number;
   title?: string;
   subtitle?: string;
+  className?: string;
 }) {
+  const v = VARIANTS[((variant % VARIANTS.length) + VARIANTS.length) % VARIANTS.length]!;
+  const Art = v.Art;
   return (
-    <div className="relative overflow-hidden rounded-chunk-lg border-line border-ink bg-mint/20 shadow-pop">
-      <div className="flex items-center gap-4 p-5">
+    <div
+      className={cx(
+        "relative overflow-hidden rounded-chunk-lg border-line border-ink bg-mint/20 shadow-pop",
+        className,
+      )}
+    >
+      <div key={variant} className="flex items-center gap-4 p-5 motion-safe:animate-pop-in">
         <div className="min-w-0 flex-1">
           <Chip tone="hot">World Cup</Chip>
-          <h3 className="mt-2 font-display text-2xl leading-tight text-ink">{title}</h3>
-          <p className="mt-1 font-body text-[13px] font-bold text-ink-2">{subtitle}</p>
+          <h3 className="mt-2 font-display text-2xl leading-tight text-ink">{title ?? v.title}</h3>
+          <p className="mt-1 font-body text-[13px] font-bold text-ink-2">{subtitle ?? v.subtitle}</p>
         </div>
         <div className="hidden shrink-0 sm:block">
-          <WorldCupArt />
+          <svg width="128" height="96" viewBox="0 0 128 96" fill="none" aria-hidden>
+            <Art />
+          </svg>
         </div>
       </div>
     </div>
   );
+}
+
+// Cycles through the banner set during a live session, so the World Cup arena
+// feels alive. Holds on one banner under reduced-motion.
+export function WorldCupBannerRotator({ className }: { className?: string }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+    const t = setInterval(() => setI((n) => (n + 1) % WORLD_CUP_BANNER_COUNT), 5000);
+    return () => clearInterval(t);
+  }, []);
+  return <WorldCupBanner variant={i} className={className} />;
 }

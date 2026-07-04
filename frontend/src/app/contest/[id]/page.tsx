@@ -12,6 +12,7 @@ import { contestPhase, secondsUntilClose, formatCountdown } from "@/lib/phase";
 import { ContestStatusPill } from "@/components/ContestStatusPill";
 import { Chip } from "@/components/zerun";
 import { ContestLive } from "@/components/ContestLive";
+import { WorldCupBannerRotator } from "@/components/WorldCupBanner";
 import { EnterContest } from "@/components/EnterContest";
 import { ClaimPrize } from "@/components/ClaimPrize";
 import { AuditTrail } from "@/components/AuditTrail";
@@ -172,6 +173,9 @@ export default function ContestPage() {
           )}
         </div>
       </StickerCard>
+
+      {/* World Cup missions get a themed, rotating banner over the live session. */}
+      {meta.kind === "worldcup" && <WorldCupBannerRotator />}
 
       {/* Live */}
       <ContestLive

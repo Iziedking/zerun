@@ -1,16 +1,19 @@
 import type { ContestKind } from "@/lib/types";
 import { cx } from "./cx";
 
-// Original, on-brand cartoon icons for each contest flavor: a lightbulb for
-// puzzles, a crystal ball for predictions, a card-and-spade for poker, and a
-// football for the World Cup mission. Flat ink line art on a candy-tinted badge,
-// matching the sticker look (chunky outline, hard pop shadow). All original art,
-// no third-party logos or marks.
+// Original, on-brand cartoon icons for each contest flavor, grounded in the
+// reference direction: a lightbulb full of puzzle pieces (puzzles), a figure
+// reading a rising bar chart (predictions), a fan of cards with a chip (poker),
+// and a football (World Cup). Flat ink line art on a candy-tinted sticker badge.
+// All original art, no third-party logos or marks.
 
 const INK = "#171449";
+const AMBER = "#FFB13C";
 
-// The badge fill per flavor. Kept as hex so it can drive an inline style (Tailwind
-// cannot see a dynamic class name).
+// A small jigsaw piece (0..10 box), reused inside the puzzle bulb.
+const PIECE =
+  "M2 2h2.2a1.3 1.3 0 1 1 2.6 0H9v2.2a1.3 1.3 0 1 0 0 2.6V9H6.8a1.3 1.3 0 1 1-2.6 0H2V6.8a1.3 1.3 0 1 0 0-2.6z";
+
 const BADGE_BG: Record<ContestKind, string> = {
   solver: "#36C5FF", // cyan
   analyst: "#6C4CF1", // violet
@@ -27,29 +30,31 @@ export function KindIcon({ kind, size = 22 }: { kind: ContestKind; size?: number
     "aria-hidden": true as const,
   };
   if (kind === "analyst") {
-    // Crystal ball on a stand, with a sparkle: a forecast.
+    // A figure reading a rising bar chart: a forecast.
     return (
       <svg {...common}>
-        <path
-          d="M6.7 18.2h10.6l-1.4 2.4H8.1z"
-          fill="#fff"
-          stroke={INK}
-          strokeWidth="2"
-          strokeLinejoin="round"
-        />
-        <circle cx="12" cy="10.5" r="6" fill="#fff" stroke={INK} strokeWidth="2" />
-        <path d="M12 6.6l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z" fill={INK} />
+        <rect x="4.4" y="13" width="3.4" height="6" rx="0.6" fill="#fff" stroke={INK} strokeWidth="1.7" />
+        <rect x="9.2" y="10" width="3.4" height="9" rx="0.6" fill="#fff" stroke={INK} strokeWidth="1.7" />
+        <rect x="14" y="6.6" width="3.4" height="12.4" rx="0.6" fill="#fff" stroke={INK} strokeWidth="1.7" />
+        <path d="M3.4 19.4h17.2" stroke={INK} strokeWidth="1.8" strokeLinecap="round" />
+        <circle cx="15.7" cy="3.9" r="1.3" fill={INK} />
+        <path d="M14.8 6.5l.9-1.3 .9 1.3z" fill={INK} />
       </svg>
     );
   }
   if (kind === "poker") {
-    // A playing card with a spade.
+    // A chip peeking behind a fan of two cards, one showing a spade.
     return (
       <svg {...common}>
-        <rect x="6.5" y="4.5" width="11" height="15" rx="2.3" fill="#fff" stroke={INK} strokeWidth="2" />
+        <circle cx="12" cy="8.2" r="4.2" fill="#fff" stroke={INK} strokeWidth="1.7" />
+        <circle cx="12" cy="8.2" r="1.9" fill="none" stroke={INK} strokeWidth="1.2" />
+        <path d="M12 3.8v1.3M12 11.3v1.3M8.2 8.2h1.3M14.5 8.2h1.3" stroke={INK} strokeWidth="1.3" strokeLinecap="round" />
+        <rect x="5.6" y="10.4" width="7" height="9.6" rx="1.4" fill="#fff" stroke={INK} strokeWidth="1.7" transform="rotate(-11 9.1 15.2)" />
+        <rect x="11.4" y="10.4" width="7" height="9.6" rx="1.4" fill="#fff" stroke={INK} strokeWidth="1.7" transform="rotate(11 14.9 15.2)" />
         <path
-          d="M12 7.6c0 1.7 3.4 2.7 3.4 4.8 0 1.3-1.4 2-2.5 1.3.2 1 .7 1.4 1.3 1.8H9.8c.6-.4 1.1-.8 1.3-1.8-1.1.7-2.5 0-2.5-1.3 0-2.1 3.4-3.1 3.4-4.8Z"
+          d="M15 12.8c0 1.1 2.1 1.7 2.1 3 0 .8-.9 1.2-1.6.8.1.6.4.9.8 1.1h-2.6c.4-.2.7-.5.8-1.1-.7.4-1.6 0-1.6-.8 0-1.3 2.1-1.9 2.1-3Z"
           fill={INK}
+          transform="rotate(11 14.9 15.2)"
         />
       </svg>
     );
@@ -69,7 +74,7 @@ export function KindIcon({ kind, size = 22 }: { kind: ContestKind; size?: number
       </svg>
     );
   }
-  // solver: a lightbulb (solve it).
+  // solver: a lightbulb full of puzzle pieces (solve it).
   return (
     <svg {...common}>
       <path
@@ -79,6 +84,8 @@ export function KindIcon({ kind, size = 22 }: { kind: ContestKind; size?: number
         strokeWidth="2"
         strokeLinejoin="round"
       />
+      <path d={PIECE} fill={AMBER} stroke={INK} strokeWidth="1.3" transform="translate(6.8 5) scale(0.82)" />
+      <path d={PIECE} fill={AMBER} stroke={INK} strokeWidth="1.9" transform="translate(15.4 1.6) scale(0.48)" />
       <path d="M9.7 17.3h4.6M10.5 19.7h3" stroke={INK} strokeWidth="2" strokeLinecap="round" />
     </svg>
   );

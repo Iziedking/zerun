@@ -41,4 +41,9 @@ coverage/
 *.tsbuildinfo
 
 # Brand/demo assets (local only)
-brand/
+
+# Reference/sample images (third-party stock, local inspiration only). Never commit.
+sample/
+
+.vercel
+.env*.local
