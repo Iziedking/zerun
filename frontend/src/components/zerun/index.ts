@@ -9,6 +9,7 @@ export { Agent, type AgentVariant, type AgentMood } from "./Agent";
 export { SkinnedAgent } from "./SkinnedAgent";
 export { Confetti } from "./Confetti";
 export { LoadMore } from "./LoadMore";
+export { KindIcon, KindBadge } from "./KindIcon";
 
 import type { AgentVariant } from "./Agent";
 

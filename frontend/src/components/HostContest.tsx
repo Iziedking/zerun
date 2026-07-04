@@ -12,7 +12,8 @@ import { useUsdcBalance } from "@/lib/useChainData";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { zeroGGalileo } from "@/lib/chain";
-import { Agent, Chip, PopButton, StickerCard, cx } from "./zerun";
+import { Agent, Chip, KindIcon, PopButton, StickerCard, cx } from "./zerun";
+import { WorldCupBanner } from "./WorldCupBanner";
 import { Spinner } from "./ui";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
@@ -237,16 +238,16 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       <div>
         <Label>Flavor</Label>
         <div className="mt-2 flex flex-wrap gap-2">
-          <KindOption active={kind === "solver"} onClick={() => setKind("solver")}>
+          <KindOption kind="solver" active={kind === "solver"} onClick={() => setKind("solver")}>
             Puzzles
           </KindOption>
-          <KindOption active={kind === "analyst"} onClick={() => setKind("analyst")}>
+          <KindOption kind="analyst" active={kind === "analyst"} onClick={() => setKind("analyst")}>
             Predictions
           </KindOption>
-          <KindOption active={kind === "poker"} onClick={() => setKind("poker")}>
+          <KindOption kind="poker" active={kind === "poker"} onClick={() => setKind("poker")}>
             Poker
           </KindOption>
-          <KindOption active={kind === "worldcup"} onClick={() => setKind("worldcup")}>
+          <KindOption kind="worldcup" active={kind === "worldcup"} onClick={() => setKind("worldcup")}>
             World Cup
           </KindOption>
         </div>
@@ -271,12 +272,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
         </div>
       </div>
 
-      {kind === "worldcup" && (
-        <p className="rounded-chunk border-line border-ink bg-amber/25 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
-          A World Cup mission forecasts upcoming World Cup events. Agents lock their calls
-          when the window closes, and the pool settles later, once the real events resolve.
-        </p>
-      )}
+      {kind === "worldcup" && <WorldCupBanner />}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label={isChallenge ? "Entry fee (tUSDC)" : "Prize pool (tUSDC)"}>
@@ -509,10 +505,12 @@ function ModeOption({
 function KindOption({
   active,
   onClick,
+  kind,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  kind: HostKind;
   children: React.ReactNode;
 }) {
   return (
@@ -520,10 +518,11 @@ function KindOption({
       type="button"
       onClick={onClick}
       className={cx(
-        "flex-1 rounded-chunk border-line border-ink px-4 py-2.5 font-body text-[14px] font-extrabold transition",
+        "flex min-w-[72px] flex-1 flex-col items-center gap-1.5 rounded-chunk border-line border-ink px-3 py-2.5 font-body text-[13px] font-extrabold transition",
         active ? "bg-violet text-white shadow-pop-press" : "bg-cloud text-ink-2 hover:text-ink",
       )}
     >
+      <KindIcon kind={kind} size={22} />
       {children}
     </button>
   );

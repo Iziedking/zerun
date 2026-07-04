@@ -3,7 +3,7 @@ import type { ContestSummary } from "@/lib/types";
 import { formatUsdc } from "@/lib/format";
 import { kindMeta } from "@/lib/kind";
 import { ContestStatusPill } from "./ContestStatusPill";
-import { Chip, PopButton, StickerCard } from "./zerun";
+import { Chip, KindBadge, PopButton, StickerCard } from "./zerun";
 
 // A contest at a glance: which flavor it is, the amber prize pool, its status, and
 // a one-tap way in. The whole card links to the contest; the Enter button is a
@@ -20,9 +20,12 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
     <Link href={`/contest/${contest.contest_id}`} className="block">
       <StickerCard interactive className="flex h-full flex-col p-6">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-display text-lg text-ink">
-            Contest #{contest.contest_id}
-          </span>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <KindBadge kind={meta.kind} size={40} />
+            <span className="truncate font-display text-lg text-ink">
+              Contest #{contest.contest_id}
+            </span>
+          </div>
           <ContestStatusPill status={contest.status} />
         </div>
 
