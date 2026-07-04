@@ -193,7 +193,7 @@ contract FlowTest is Test {
         );
         vm.stopPrank();
 
-        assertEq(engine.version(), "2.0.1");
+        assertEq(engine.version(), "2.0.2");
         uint256 nextBefore = engine.nextContestId();
 
         // Admin upgrades the implementation; state must survive.
@@ -346,6 +346,11 @@ contract FlowTest is Test {
         vm.prank(admin);
         vm.expectRevert(ContestEngine.InvalidNextId.selector);
         engine.setNextContestId(2001);
+
+        // Bounded: a huge jump reverts, so a fat-finger cannot brick listing.
+        vm.prank(admin);
+        vm.expectRevert(ContestEngine.InvalidNextId.selector);
+        engine.setNextContestId(2001 + 2_000_000);
 
         // Non-admin cannot advance it.
         vm.prank(other);

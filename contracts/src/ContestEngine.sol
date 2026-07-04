@@ -227,7 +227,7 @@ contract ContestEngine is
 
     /// @notice Human-readable implementation version, bumped on each upgrade.
     function version() external pure virtual returns (string memory) {
-        return "2.0.1";
+        return "2.0.2";
     }
 
     // ============ Host path ============
@@ -496,14 +496,18 @@ contract ContestEngine is
     ///         the entry window's end, so a mission that resolves long after its
     ///         entry window still gives winners and entrants the full window to
     ///         claim before anyone can sweep.
-    function sweepUnclaimed(uint256 contestId) external {
+    function sweepUnclaimed(uint256 contestId) external whenNotPaused {
         Contest storage c = _contests[contestId];
         if (c.sponsor == address(0)) revert ContestDoesNotExist();
         if (c.status != ContestStatus.SETTLED && c.status != ContestStatus.CANCELLED) {
             revert ContestNotSettled();
         }
+        // The window runs from settle/cancel time. Fall back to the entry window's end
+        // for any contest resolved before `resolvedAt` existed, so its leftover funds
+        // stay recoverable instead of being locked in the immutable escrow forever.
+        uint256 anchor = c.resolvedAt != 0 ? uint256(c.resolvedAt) : uint256(c.endTime);
         // forge-lint: disable-next-line(block-timestamp)
-        if (c.resolvedAt == 0 || block.timestamp < uint256(c.resolvedAt) + CLAIM_WINDOW) {
+        if (block.timestamp < anchor + CLAIM_WINDOW) {
             revert ClaimWindowOpen();
         }
 
@@ -531,7 +535,9 @@ contract ContestEngine is
     ///         contests get fresh ids. Admin only, and strictly forward: it can never
     ///         rewind onto an id that already exists.
     function setNextContestId(uint256 newNext) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newNext <= _nextContestId) revert InvalidNextId();
+        // Strictly forward, and bounded so a fat-fingered huge value cannot brick
+        // listContest (its checked increment would overflow) with no way to repair it.
+        if (newNext <= _nextContestId || newNext > _nextContestId + 1_000_000) revert InvalidNextId();
         emit NextContestIdSet(_nextContestId, newNext);
         _nextContestId = newNext;
     }
