@@ -149,6 +149,7 @@ contract ContestEngine is
     event ContestParamSet(uint256 indexed contestId, bytes32 indexed key, uint256 value);
     event ListingFeeUpdated(uint16 oldBps, uint16 newBps);
     event PlatformFeeUpdated(uint16 oldBps, uint16 newBps);
+    event NextContestIdSet(uint256 oldNext, uint256 newNext);
 
     // ============ Errors ============
 
@@ -181,6 +182,7 @@ contract ContestEngine is
     error NothingToRefund();
     error NotEntered();
     error AlreadyRefunded();
+    error InvalidNextId();
 
     // ============ Initializer ============
 
@@ -225,7 +227,7 @@ contract ContestEngine is
 
     /// @notice Human-readable implementation version, bumped on each upgrade.
     function version() external pure virtual returns (string memory) {
-        return "2.0.0";
+        return "2.0.1";
     }
 
     // ============ Host path ============
@@ -520,6 +522,18 @@ contract ContestEngine is
         if (newBps > MAX_PLATFORM_FEE_BPS) revert FeeTooHigh();
         emit PlatformFeeUpdated(defaultPlatformFeeBps, newBps);
         defaultPlatformFeeBps = newBps;
+    }
+
+    /// @notice Advance the contest-id counter. A migration aid: when a fresh engine
+    ///         replaces a prior one, its counter restarts at 1 and would reissue ids
+    ///         that off-chain records (kept by contest id) already use, colliding with
+    ///         history. This moves the counter past the prior engine's last id so new
+    ///         contests get fresh ids. Admin only, and strictly forward: it can never
+    ///         rewind onto an id that already exists.
+    function setNextContestId(uint256 newNext) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newNext <= _nextContestId) revert InvalidNextId();
+        emit NextContestIdSet(_nextContestId, newNext);
+        _nextContestId = newNext;
     }
 
     /// @notice Emergency stop: blocks new listings, entries, claims, and refunds.

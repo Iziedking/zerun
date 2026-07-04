@@ -193,7 +193,7 @@ contract FlowTest is Test {
         );
         vm.stopPrank();
 
-        assertEq(engine.version(), "2.0.0");
+        assertEq(engine.version(), "2.0.1");
         uint256 nextBefore = engine.nextContestId();
 
         // Admin upgrades the implementation; state must survive.
@@ -319,6 +319,38 @@ contract FlowTest is Test {
         engine.claimPrize(contestId, award, proof);
         assertEq(usdc.balanceOf(winner), award);
         assertEq(usdc.balanceOf(admin), platformFee);
+    }
+
+    /// @dev The migration aid: advance the id counter so a fresh engine does not
+    ///      reissue ids a prior engine already used. Strictly forward and admin only.
+    function testSetNextContestId() public {
+        assertEq(engine.nextContestId(), 1);
+
+        // Admin advances the counter; the next listing takes the new id.
+        vm.prank(admin);
+        engine.setNextContestId(2000);
+        assertEq(engine.nextContestId(), 2000);
+
+        uint256 prizePool = 100e6;
+        usdc.mint(sponsor, prizePool);
+        vm.startPrank(sponsor);
+        usdc.approve(address(escrow), prizePool);
+        uint256 contestId = engine.listContest(
+            ContestType.SCOUT, address(0), keccak256("VOLUME"), prizePool, 1 days, 5_000, 1, 0, engine.MAX_TIER(), 0
+        );
+        vm.stopPrank();
+        assertEq(contestId, 2000);
+        assertEq(engine.nextContestId(), 2001);
+
+        // Strictly forward: cannot set to the current value or rewind.
+        vm.prank(admin);
+        vm.expectRevert(ContestEngine.InvalidNextId.selector);
+        engine.setNextContestId(2001);
+
+        // Non-admin cannot advance it.
+        vm.prank(other);
+        vm.expectRevert();
+        engine.setNextContestId(9999);
     }
 
     function testCancelStakedRefundsSponsor() public {
