@@ -106,6 +106,22 @@ export function decodePaymentHeader(header: string): `0x${string}` | null {
   }
 }
 
+// Claim a verified payment tx as spent. Returns true only the first time a given
+// txHash is presented, so one on-chain payment unlocks exactly one dossier read and
+// a captured X-PAYMENT header cannot be replayed for unlimited reads.
+export async function consumePaymentTx(
+  txHash: `0x${string}`,
+  forId: number,
+  opponentId: number,
+): Promise<boolean> {
+  const res = await query<{ tx_hash: string }>(
+    `insert into dossier_payments (tx_hash, for_agent, opponent_agent) values ($1,$2,$3)
+       on conflict (tx_hash) do nothing returning tx_hash`,
+    [txHash.toLowerCase(), forId, opponentId],
+  );
+  return res.rows.length > 0;
+}
+
 // Facilitator: confirm a payment settled on 0G. Reads the receipt and looks for a
 // testUSDC Transfer to payTo of at least the price.
 export async function verifyPaymentTx(txHash: `0x${string}`): Promise<boolean> {

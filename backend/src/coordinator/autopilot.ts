@@ -284,6 +284,14 @@ async function upgradeHouseTier(
 // anyone else; the mirror row follows.
 export async function seedHouseInto(contestId: number, target = HOUSE_SIZE): Promise<void> {
   const dep = loadDeployment();
+  // Entry-fee challenges are real-vs-real: house wallets are not funded or approved
+  // for the fee, so registerEntry would revert. Leave those seats for real
+  // challengers rather than fail silently on every fill attempt.
+  const { rows: metaRows } = await query<{ entry_fee: string | null }>(
+    "select entry_fee from contests_meta where contest_id = $1",
+    [contestId],
+  );
+  if ((metaRows[0]?.entry_fee ?? "0") !== "0") return;
   const { rows: inRows } = await query<{ agent_id: string }>(
     "select agent_id from contest_entries where contest_id = $1",
     [contestId],
@@ -485,10 +493,18 @@ async function fillClosingContests(): Promise<void> {
     const leadMs = Math.max(HOUSE_JOIN_LEAD_MS, need * HOUSE_ENTRY_CONFIRM_MS) + HOUSE_FILL_POLL_MS;
     if (endsAtMs - nowMs > leadMs) continue; // not close enough to the window yet
 
+    // Fill contests one at a time. House agents share a small roster of wallets, so
+    // running fills concurrently could make the same house wallet send two entries at
+    // once and drop one on a nonce clash, silently under-seating a contest. Sequential
+    // fills keep each house wallet's nonces in order; the poll already awaits this.
     fillingHouse.add(id);
-    void seedHouseInto(id, target)
-      .catch((e) => console.error(`autopilot: house fill for ${id} failed:`, (e as Error).message))
-      .finally(() => fillingHouse.delete(id));
+    try {
+      await seedHouseInto(id, target);
+    } catch (e) {
+      console.error(`autopilot: house fill for ${id} failed:`, (e as Error).message);
+    } finally {
+      fillingHouse.delete(id);
+    }
   }
 }
 

@@ -43,6 +43,15 @@ create table if not exists compute_trainings (
   created_at timestamptz not null default now()
 );
 
+-- x402 dossier payments already spent, so a single on-chain payment tx can unlock
+-- exactly one dossier read and can never be replayed for more.
+create table if not exists dossier_payments (
+  tx_hash        text primary key,
+  for_agent      bigint,
+  opponent_agent bigint,
+  created_at     timestamptz not null default now()
+);
+
 -- tUSDC faucet claims, so an operator is capped to 100 tUSDC per 7 days.
 create table if not exists usdc_claims (
   id         bigserial primary key,
@@ -144,6 +153,12 @@ alter table contests_meta add column if not exists ends_at timestamptz;
 
 -- Host-set cap on how many operators can join (app-level; 0 or null = no cap).
 alter table contests_meta add column if not exists max_operators int;
+
+-- Entry-fee challenge: the per-entrant fee (6dp string) and the collected fee pot.
+-- A contest has entry_fee '0'; a challenge builds its pot from these fees. fee_pool
+-- is mirrored from the chain as entrants join and at settlement.
+alter table contests_meta add column if not exists entry_fee text not null default '0';
+alter table contests_meta add column if not exists fee_pool text not null default '0';
 
 create table if not exists payouts (
   contest_id  bigint not null,

@@ -65,7 +65,7 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
   // the stored proofs with a freshly-computed root that no longer matches the
   // immutable on-chain root, so every claim then reverts with InvalidProof. Never
   // recompute a contest the chain has already resolved.
-  const onchainStatus = Number(contest.status); // 3 SETTLED, 4 CANCELLED
+  const onchainStatus = Number(contest.status); // 2 SCORING, 3 SETTLED, 4 CANCELLED
   if (onchainStatus === 3 || onchainStatus === 4) {
     await query("update contests_meta set status = $2 where contest_id = $1", [
       contestId,
@@ -78,6 +78,15 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
       settled: onchainStatus === 3,
       payouts: [],
     };
+  }
+  // SCORING: the score root is already posted on chain but settle has not finished.
+  // Recomputing here would produce a different root (the runners' 0G answers are not
+  // deterministic), overwrite the stored proofs, and then fail to re-post, leaving
+  // every winner's claim reverting with InvalidProof. Resume from the stored root
+  // instead of recomputing.
+  if (onchainStatus === 2) {
+    await resettleFromStored(contestId);
+    return { contestId, root: contest.finalRoot, posted: true, settled: true, payouts: [] };
   }
 
   // The pot is the staked base pool plus any collected entry fees (a challenge). The
@@ -102,6 +111,22 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
 
   const leaves = payouts.map((p) => payoutLeaf(p.operator as `0x${string}`, p.amount));
   const root = merkleRoot(leaves);
+
+  // The on-chain claim leaf is keccak(operator, amount) with no contestId, so two
+  // contests sharing a root would let one's winners drain the other's pool with
+  // recycled proofs. A collision needs an identical winner set and amounts, which is
+  // astronomically unlikely with real payouts, but refuse to post a duplicate root
+  // rather than open that door. Halting a settlement is safer than a cross-claimable
+  // pool; if this ever fires, it is a signal to investigate, not a routine event.
+  const dup = await query<{ contest_id: string }>(
+    "select contest_id from contests_meta where final_root = $1 and contest_id <> $2 limit 1",
+    [root, contestId],
+  );
+  if (dup.rows.length > 0) {
+    throw new Error(
+      `contest ${contestId}: refusing to post a score root already used by contest ${dup.rows[0]!.contest_id}`,
+    );
+  }
 
   for (let i = 0; i < payouts.length; i++) {
     const p = payouts[i]!;

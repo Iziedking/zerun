@@ -38,6 +38,7 @@ import {
   buildRequirements,
   decodePaymentHeader,
   verifyPaymentTx,
+  consumePaymentTx,
 } from "../runners/poker/x402.js";
 
 // Read API plus the admin/demo triggers. The live feed itself goes over the
@@ -629,7 +630,7 @@ app.get("/api/deployment", (c) => {
 
 app.get("/api/contests", async (c) => {
   const { rows } = await query(
-    `select contest_id, status, kind, puzzle_count, agent_count, max_operators, metric, prize_pool, final_root, created_at, settled_at
+    `select contest_id, status, kind, puzzle_count, agent_count, max_operators, metric, prize_pool, entry_fee, fee_pool, final_root, created_at, settled_at
        from contests_meta order by contest_id desc`,
   );
   return c.json({ contests: rows });
@@ -687,6 +688,11 @@ app.get("/api/dossiers/:opponentId", async (c) => {
   const txHash = decodePaymentHeader(header);
   if (!txHash || !(await verifyPaymentTx(txHash))) {
     return c.json({ error: "payment required or not verified", ...buildRequirements(resource, description) }, 402);
+  }
+  // One payment, one read: claim the tx as spent so a captured X-PAYMENT header
+  // (or a scraped transfer to payTo) cannot be replayed for unlimited dossiers.
+  if (!(await consumePaymentTx(txHash, forId, opponentId))) {
+    return c.json({ error: "this payment has already been used", ...buildRequirements(resource, description) }, 402);
   }
   return c.json({ dossier: dossier.text, stats: dossier.stats, paid: true, txHash });
 });
@@ -751,13 +757,13 @@ app.post("/api/contests/host", async (c) => {
   }
 
   await query(
-    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at, max_operators)
-       values ($1, 'open', $2, $3, $4, $5, to_timestamp($6), $7)
+    `insert into contests_meta (contest_id, status, puzzle_count, metric, prize_pool, kind, ends_at, max_operators, entry_fee, fee_pool)
+       values ($1, 'open', $2, $3, $4, $5, to_timestamp($6), $7, $8, $9)
        on conflict (contest_id) do update set
          puzzle_count = excluded.puzzle_count, kind = excluded.kind,
          prize_pool = excluded.prize_pool, ends_at = excluded.ends_at,
-         max_operators = excluded.max_operators`,
-    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : kind === "worldcup" ? "WORLDCUP" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators],
+         max_operators = excluded.max_operators, entry_fee = excluded.entry_fee`,
+    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : kind === "worldcup" ? "WORLDCUP" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators, con.entryFee.toString(), con.feePool.toString()],
   );
 
   // The house fills any empty seats near the end of the join window, so a real
@@ -834,8 +840,15 @@ app.post("/api/contests/:id/enter", async (c) => {
        on conflict (contest_id, agent_id) do nothing`,
     [id, agentId, operator],
   );
+  // Refresh the field count and the mirrored challenge pot together. The engine holds
+  // feePool == entryCount * entryFee (fee pulled in the same tx as the entry, one
+  // entry per operator), so the pot derives from the entry count with no chain read;
+  // a contest (entry_fee '0') stays at fee_pool '0'.
   await query(
-    `update contests_meta set agent_count = (select count(*) from contest_entries where contest_id = $1) where contest_id = $1`,
+    `update contests_meta set
+        agent_count = (select count(*) from contest_entries where contest_id = $1),
+        fee_pool = (entry_fee::numeric * (select count(*) from contest_entries where contest_id = $1))::text
+      where contest_id = $1`,
     [id],
   );
   return c.json({ ok: true });
