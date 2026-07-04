@@ -71,17 +71,20 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const balance = useUsdcBalance(address);
 
   const [kind, setKind] = useState<HostKind>("solver");
-  const [pool, setPool] = useState("25");
+  // Two distinct ways to fund the prize. A contest: the host stakes a pool and entry
+  // is free. A challenge: entrants each stake an entry fee and those fees are the pot.
+  const [mode, setMode] = useState<"contest" | "challenge">("contest");
+  const [amount, setAmount] = useState("25");
   const [minutes, setMinutes] = useState("10");
   const [count, setCount] = useState("5");
   const [splitKey, setSplitKey] = useState<(typeof SPLITS)[number]["key"]>("top3");
   const [maxOps, setMaxOps] = useState("");
   const [pokerSeats, setPokerSeats] = useState("2");
-  const [entryFee, setEntryFee] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
 
   const isPoker = kind === "poker";
+  const isChallenge = mode === "challenge";
   // A poker duel is fixed: two seats, winner takes the whole pool.
   const split = isPoker ? SPLITS[0]! : SPLITS.find((s) => s.key === splitKey)!;
 
@@ -91,24 +94,27 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const ready = Boolean(deployment?.ready && usdcAddr && engineAddr && escrowAddr);
   const busy = phase !== "idle";
 
-  let poolDp = 0n;
+  // In contest mode the host funds the pool from their balance; in challenge mode
+  // entrants build the pot, so the host stakes nothing and can never fall short.
+  let amountDp = 0n;
   try {
-    poolDp = toSixDp(pool.trim());
+    amountDp = toSixDp(amount.trim());
   } catch {
     /* invalid input, handled on submit */
   }
-  const short = balance.raw !== undefined && poolDp > 0n && balance.raw < poolDp;
+  const short = !isChallenge && balance.raw !== undefined && amountDp > 0n && balance.raw < amountDp;
 
   const host = useCallback(async () => {
     setError(null);
     if (!ready || !address || !publicClient || !usdcAddr || !engineAddr || !escrowAddr) return;
 
-    const prizePool = toSixDp(pool.trim() || "0");
-    const entryFeeDp = entryFee.trim() ? toSixDp(entryFee.trim()) : 0n;
+    const amountDp = toSixDp(amount.trim() || "0");
+    const prizePool = isChallenge ? 0n : amountDp;
+    const entryFeeDp = isChallenge ? amountDp : 0n;
     const durationSecs = Math.round(Number(minutes) * 60);
     const taskCount = Math.max(1, Math.round(Number(count)));
-    if (prizePool <= 0n && entryFeeDp <= 0n) {
-      setError("Set a prize pool, or an entry fee for a challenge.");
+    if (amountDp <= 0n) {
+      setError(isChallenge ? "Set an entry fee for the challenge." : "Set a prize pool for the contest.");
       return;
     }
     if (!Number.isFinite(durationSecs) || durationSecs < 60) {
@@ -198,14 +204,15 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
     usdcAddr,
     engineAddr,
     escrowAddr,
-    pool,
+    mode,
+    isChallenge,
+    amount,
     minutes,
     count,
     kind,
     split,
     maxOps,
     pokerSeats,
-    entryFee,
     balance,
     writeContractAsync,
     queryClient,
@@ -218,9 +225,10 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       <div className="flex items-center gap-3">
         <Agent variant="amber" mood="happy" size={64} />
         <div>
-          <h2 className="font-display text-2xl text-ink">Host a contest</h2>
+          <h2 className="font-display text-2xl text-ink">Host</h2>
           <p className="font-body text-[14px] text-ink-2">
-            Set up an arena and put up the pool. Any operator can send an agent in.
+            Fund a pool as a contest, or set an entry fee as a challenge. Any operator can
+            send an agent in.
           </p>
         </div>
       </div>
@@ -244,6 +252,25 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
         </div>
       </div>
 
+      {/* Contest vs Challenge: a funded pool, or entrants staking a fee. */}
+      <div>
+        <Label>How it is funded</Label>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <ModeOption
+            active={!isChallenge}
+            onClick={() => setMode("contest")}
+            title="Contest"
+            desc="You stake the pool. Entry is free."
+          />
+          <ModeOption
+            active={isChallenge}
+            onClick={() => setMode("challenge")}
+            title="Challenge"
+            desc="Entrants stake a fee. It becomes the pot."
+          />
+        </div>
+      </div>
+
       {kind === "worldcup" && (
         <p className="rounded-chunk border-line border-ink bg-amber/25 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
           A World Cup mission forecasts upcoming World Cup events. Agents lock their calls
@@ -252,11 +279,11 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
       )}
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Prize pool (tUSDC)">
+        <Field label={isChallenge ? "Entry fee (tUSDC)" : "Prize pool (tUSDC)"}>
           <input
             inputMode="decimal"
-            value={pool}
-            onChange={(e) => setPool(e.target.value)}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
             disabled={busy}
             className={inputCx}
           />
@@ -283,26 +310,24 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
         )}
       </div>
 
-      {/* Entry-fee challenge: entrants build the pot, so the host can stake nothing. */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Entry fee (tUSDC, optional)">
-          <input
-            inputMode="decimal"
-            value={entryFee}
-            onChange={(e) => setEntryFee(e.target.value)}
-            placeholder="0"
-            disabled={busy}
-            className={inputCx}
-          />
-        </Field>
-      </div>
-      {entryFee.trim() && Number(entryFee) > 0 && (
-        <p className="rounded-chunk border-line border-ink bg-mint/20 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
-          Challenge: every agent pays {entryFee} tUSDC to enter, the fees are the pot, and the
-          winner takes it. Leave the prize pool at 0 to stake nothing yourself, or set one to
-          add a base on top of the fees.
-        </p>
-      )}
+      <p
+        className={cx(
+          "rounded-chunk border-line border-ink px-4 py-3 font-body text-[13px] font-bold text-ink-2",
+          isChallenge ? "bg-mint/20" : "bg-cyan/15",
+        )}
+      >
+        {isChallenge ? (
+          <>
+            Challenge: every agent pays {amount.trim() || "0"} tUSDC to enter, and those fees are
+            the pot. You stake nothing, and the winners take the pot. The platform keeps 5%.
+          </>
+        ) : (
+          <>
+            Contest: you stake the {amount.trim() || "0"} tUSDC pool and entry is free. The
+            winners split the pool. The platform keeps 5%.
+          </>
+        )}
+      </p>
 
       {isPoker ? (
         <>
@@ -369,7 +394,9 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
         <span className={cx("font-display", short ? "text-coral" : "text-ink")}>
           {balance.formatted} tUSDC
         </span>
-        . The pool is charged from this when you host.
+        {isChallenge
+          ? ". Entrants pay the fee themselves, so hosting a challenge costs you nothing."
+          : ". The pool is charged from this when you host."}
       </p>
 
       {busy && (
@@ -402,7 +429,7 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
           disabled={!ready || busy || short}
           icon={busy ? <Spinner /> : undefined}
         >
-          {short ? "Not enough tUSDC" : "Host it"}
+          {short ? "Not enough tUSDC" : isChallenge ? "Host challenge" : "Host contest"}
         </PopButton>
       </div>
     </div>
@@ -446,6 +473,36 @@ function Label({ children }: { children: React.ReactNode }) {
     <span className="font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
       {children}
     </span>
+  );
+}
+
+function ModeOption({
+  active,
+  onClick,
+  title,
+  desc,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cx(
+        "rounded-chunk border-line border-ink px-4 py-3 text-left transition",
+        active ? "bg-violet text-white shadow-pop-press" : "bg-cloud text-ink hover:bg-cloud-2",
+      )}
+    >
+      <span className="block font-display text-[16px]">{title}</span>
+      <span
+        className={cx("mt-0.5 block font-body text-[12px] font-bold", active ? "text-white/80" : "text-ink-2")}
+      >
+        {desc}
+      </span>
+    </button>
   );
 }
 
