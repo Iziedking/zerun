@@ -13,6 +13,7 @@ import { ContestStatusPill } from "@/components/ContestStatusPill";
 import { Chip } from "@/components/zerun";
 import { ContestLive } from "@/components/ContestLive";
 import { WorldCupBannerRotator } from "@/components/WorldCupBanner";
+import { ClaimRefund } from "@/components/ClaimRefund";
 import { EnterContest } from "@/components/EnterContest";
 import { ClaimPrize } from "@/components/ClaimPrize";
 import { AuditTrail } from "@/components/AuditTrail";
@@ -72,6 +73,13 @@ export default function ContestPage() {
 
   const { contest, standings } = detailQ.data;
   const meta = kindMeta(contest.kind);
+  // A challenge shows its collected pot (entry fees plus any base pool); a funded
+  // contest shows its staked pool.
+  const entryFee = contest.entry_fee ?? "0";
+  const isChallenge = entryFee !== "0";
+  const potValue = isChallenge
+    ? (BigInt(contest.fee_pool ?? "0") + BigInt(contest.prize_pool || "0")).toString()
+    : contest.prize_pool;
 
   const phase = contestPhase(contest, now);
   const winner = standings[0];
@@ -102,9 +110,9 @@ export default function ContestPage() {
             </div>
             <p className="mt-1 font-body text-[14px] text-ink-2">{meta.blurb}</p>
             <div className="mt-3 font-display text-[clamp(36px,9vw,48px)] leading-none text-ink">
-              {formatUsdc(contest.prize_pool)}
+              {formatUsdc(potValue)}
               <span className="ml-2 font-body text-lg font-extrabold text-ink-2">
-                tUSDC prize pool
+                {isChallenge ? `tUSDC pot · ${formatUsdc(entryFee)} entry` : "tUSDC prize pool"}
               </span>
             </div>
           </div>
@@ -167,9 +175,13 @@ export default function ContestPage() {
           {phase === "settled" && address && <ClaimPrize contestId={id} />}
 
           {phase === "cancelled" && (
-            <p className="font-body text-[14px] text-ink-2">
-              This contest was cancelled and the sponsor was refunded, no agents joined in time.
-            </p>
+            <>
+              {address && <ClaimRefund contestId={id} />}
+              <p className="font-body text-[14px] text-ink-2">
+                This contest was cancelled. A staked prize pool was returned to the host; entry fees
+                are reclaimed by each entrant above.
+              </p>
+            </>
           )}
         </div>
       </StickerCard>

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { keccak256, toHex } from "viem";
+import { keccak256, parseEventLogs, toHex } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { useWalletAction } from "@/lib/walletAction";
 import { useQueryClient } from "@tanstack/react-query";
@@ -61,7 +61,13 @@ const PHASE_LABEL: Record<Exclude<Phase, "idle">, string> = {
 
 // The host-a-contest form. From the connected wallet: mint test USDC if short,
 // approve the escrow, list the contest on chain, then mirror it to the backend.
-export function HostContestForm({ onClose }: { onClose?: () => void }) {
+export function HostContestForm({
+  onClose,
+  onBusyChange,
+}: {
+  onClose?: () => void;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const router = useRouter();
   const { address } = useAccount();
   const { data: deployment } = useDeployment();
@@ -95,6 +101,11 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
   const ready = Boolean(deployment?.ready && usdcAddr && engineAddr && escrowAddr);
   const busy = phase !== "idle";
 
+  // Report busy state up so a wrapping modal can block a dismiss mid-transaction.
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+
   // In contest mode the host funds the pool from their balance; in challenge mode
   // entrants build the pot, so the host stakes nothing and can never fall short.
   let amountDp = 0n;
@@ -109,7 +120,20 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
     setError(null);
     if (!ready || !address || !publicClient || !usdcAddr || !engineAddr || !escrowAddr) return;
 
-    const amountDp = toSixDp(amount.trim() || "0");
+    // Validate the amount before any BigInt parsing. Bad input (a stray letter, a
+    // second dot, a negative) would otherwise throw an unhandled rejection and leave
+    // the button silently dead.
+    const amt = amount.trim();
+    if (!/^\d+(\.\d{1,6})?$/.test(amt) || Number(amt) <= 0) {
+      setError(
+        isChallenge
+          ? "Enter a valid entry fee (up to 6 decimals)."
+          : "Enter a valid prize pool (up to 6 decimals).",
+      );
+      return;
+    }
+
+    const amountDp = toSixDp(amt);
     const prizePool = isChallenge ? 0n : amountDp;
     const entryFeeDp = isChallenge ? amountDp : 0n;
     const durationSecs = Math.round(Number(minutes) * 60);
@@ -124,18 +148,34 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
     }
 
     // The host funds only the staked base pool from their own balance; on a pure
-    // entry-fee challenge they stake nothing and entrants build the pot.
+    // entry-fee challenge they stake nothing and entrants build the pot. listContest
+    // also pulls a listing fee (bps of the pool) from the sponsor, so the approval and
+    // the balance check cover the pool plus that fee. The fee is 0 today, but reading
+    // it keeps hosting working if an admin ever turns it on.
+    let listingFee = 0n;
     if (prizePool > 0n) {
+      try {
+        const bps = (await publicClient.readContract({
+          address: engineAddr,
+          abi: contestEngineAbi,
+          functionName: "listingFeeBps",
+        })) as number;
+        listingFee = (prizePool * BigInt(bps)) / 10_000n;
+      } catch {
+        /* fee unreadable: assume 0 */
+      }
+      const need = prizePool + listingFee;
       const have = balance.raw ?? 0n;
-      if (have < prizePool) {
-        const shortBy = (Number(prizePool - have) / 1e6).toFixed(2);
+      if (have < need) {
+        const shortBy = (Number(need - have) / 1e6).toFixed(2);
         setError(`Not enough tUSDC. You are ${shortBy} short for this pool. Mint more on your profile, then try again.`);
         return;
       }
     }
 
     try {
-      // Approve the escrow to pull the staked pool (skipped for a pure challenge).
+      // Approve the escrow to pull the staked pool plus the listing fee (skipped for a
+      // pure challenge).
       if (prizePool > 0n) {
         setPhase("approving");
         const approveHash = await walletAction.run(
@@ -144,21 +184,13 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
               abi: testUsdcAbi,
               address: usdcAddr,
               functionName: "approve",
-              args: [escrowAddr, prizePool],
+              args: [escrowAddr, prizePool + listingFee],
               chainId: zeroGGalileo.id,
             }),
           "Step 1 of 2: approve the prize pool in your wallet.",
         );
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
       }
-
-      // The new id is the next contest id before we list.
-      const nextId = await publicClient.readContract({
-        address: engineAddr,
-        abi: contestEngineAbi,
-        functionName: "nextContestId",
-      });
-      const contestId = Number(nextId as bigint);
 
       // List the contest. The on-chain enum has no poker type, so poker lists under
       // the valid SOLVER type and is marked by its POKER metric hash. Split sets
@@ -178,7 +210,13 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
           }),
         "Step 2 of 2: confirm listing the contest in your wallet.",
       );
-      await publicClient.waitForTransactionReceipt({ hash: listHash });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: listHash });
+      // Read the assigned id from the ContestListed event, not a pre-read of
+      // nextContestId: the autopilot and other hosts also list, so a pre-read can hand
+      // us the wrong id and mirror our settings onto someone else's contest.
+      const listed = parseEventLogs({ abi: contestEngineAbi, eventName: "ContestListed", logs: receipt.logs });
+      const contestId = Number((listed[0]?.args as { id?: bigint } | undefined)?.id ?? 0n);
+      if (!contestId) throw new Error("Could not read the new contest id from the listing receipt.");
 
       // Mirror it to the backend so it shows in the arena. Poker seats the table
       // (2 = heads-up duel, up to 6-max); other flavors use the optional operator cap.
@@ -188,7 +226,14 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
         : maxOps.trim()
           ? Math.max(1, Math.round(Number(maxOps)))
           : 0;
-      await api.hostContest({ contestId, kind, puzzleCount: taskCount, maxOperators });
+      // The contest is now live on chain. If only the arena mirror fails, do NOT
+      // re-run the listing (which would stake a second pool); route to the contest,
+      // which reads its state from chain, and let the mirror catch up.
+      try {
+        await api.hostContest({ contestId, kind, puzzleCount: taskCount, maxOperators });
+      } catch (mirrorErr) {
+        console.error("host: arena mirror failed (contest is live on chain):", mirrorErr);
+      }
       await queryClient.invalidateQueries({ queryKey: ["contests"] });
       await balance.refetch();
 
@@ -434,19 +479,22 @@ export function HostContestForm({ onClose }: { onClose?: () => void }) {
 
 // A centered modal wrapper around the form.
 export function HostContestModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [busy, setBusy] = useState(false);
   if (!open) return null;
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-scrim/50 p-4"
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
+      // Do not dismiss on a backdrop click while a transaction is in flight, or the
+      // form unmounts mid-flow while the txs keep going in the background.
+      onClick={busy ? undefined : onClose}
     >
       <StickerCard
         className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto p-5 motion-safe:animate-pop-in sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
-        <HostContestForm onClose={onClose} />
+        <HostContestForm onClose={onClose} onBusyChange={setBusy} />
       </StickerCard>
     </div>
   );

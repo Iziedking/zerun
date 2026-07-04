@@ -87,7 +87,17 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
         </BoardTab>
       </div>
 
-      {tab === "duels" ? (
+      {isLoading ? (
+        <Grid>
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-56 animate-pulse rounded-chunk-lg border-line border-ink bg-cloud-2"
+              aria-hidden
+            />
+          ))}
+        </Grid>
+      ) : tab === "duels" ? (
         duels.length ? (
           <>
             <Grid>
@@ -104,16 +114,6 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
         ) : (
           <DuelsEmpty />
         )
-      ) : isLoading ? (
-        <Grid>
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="h-56 animate-pulse rounded-chunk-lg border-line border-ink bg-cloud-2"
-              aria-hidden
-            />
-          ))}
-        </Grid>
       ) : tab === "live" ? (
         live.length ? (
           <>

@@ -11,6 +11,13 @@ import { Chip, KindBadge, PopButton, StickerCard } from "./zerun";
 export function ContestCard({ contest }: { contest: ContestSummary }) {
   const meta = kindMeta(contest.kind);
   const isDuel = contest.max_operators === 2;
+  // A challenge sets an entry fee; its pot is the collected fees plus any base pool
+  // the host staked on top. A funded contest shows its staked pool as before.
+  const entryFee = contest.entry_fee ?? "0";
+  const isChallenge = entryFee !== "0";
+  const potValue = isChallenge
+    ? (BigInt(contest.fee_pool ?? "0") + BigInt(contest.prize_pool || "0")).toString()
+    : contest.prize_pool;
   const s = (contest.status || "").toLowerCase();
   const live = s === "running" || s === "active";
   const done = s === "settled" || s === "scored" || s === "cancelled";
@@ -31,6 +38,7 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Chip tone={meta.tone}>{meta.label}</Chip>
+          {isChallenge && <Chip tone="won">Challenge</Chip>}
           {isDuel && <Chip tone="hot">1v1</Chip>}
         </div>
 
@@ -51,13 +59,17 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
           </span>
           <div className="min-w-0">
             <div className="font-display text-4xl leading-none text-ink">
-              {formatUsdc(contest.prize_pool)}
+              {formatUsdc(potValue)}
               <span className="ml-1.5 text-base font-body font-extrabold text-ink-2">
                 tUSDC
               </span>
             </div>
             <div className="mt-0.5 font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
-              {isDuel ? "prize pool, winner takes all" : "prize pool, split among the top finishers"}
+              {isChallenge
+                ? `${formatUsdc(entryFee)} entry · pot ${isDuel ? "winner takes all" : "split among the top finishers"}`
+                : isDuel
+                  ? "prize pool, winner takes all"
+                  : "prize pool, split among the top finishers"}
             </div>
           </div>
         </div>

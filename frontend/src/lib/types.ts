@@ -56,7 +56,11 @@ export interface ContestSummary {
   // Seat cap. 2 marks a 1v1 duel; null is an open multi-agent contest.
   max_operators?: number | null;
   metric: string;
-  prize_pool: string; // USDC 6dp string
+  prize_pool: string; // USDC 6dp string (host-staked pool; '0' for a pure challenge)
+  // Entry-fee challenge: the per-entrant fee and the collected pot so far, 6dp
+  // strings. entry_fee '0' means a funded contest; > '0' means a challenge.
+  entry_fee?: string;
+  fee_pool?: string;
   final_root: string | null;
   created_at: string | number | null;
   settled_at: string | number | null;

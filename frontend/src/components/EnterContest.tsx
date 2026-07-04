@@ -51,11 +51,16 @@ export function EnterContest({
 
   // The on-chain entry fee (a challenge). registerEntry pulls it, so the operator
   // approves the escrow for it first.
-  const { data: onchainContest } = useReadContract({
+  const {
+    data: onchainContest,
+    isSuccess: feeReady,
+    isError: feeError,
+  } = useReadContract({
     address: engineAddr,
     abi: contestEngineAbi,
     functionName: "getContest",
     args: [BigInt(contestId)],
+    chainId: zeroGGalileo.id,
     query: { enabled: Boolean(engineAddr) },
   });
   const entryFee = (onchainContest?.entryFee ?? 0n) as bigint;
@@ -88,6 +93,17 @@ export function EnterContest({
     setError(null);
     if (!engineAddr || !address || !publicClient || agentId === "") {
       setError("Pick one of your agents first.");
+      return;
+    }
+    // The entry fee decides whether we must approve first. Never send registerEntry
+    // until that on-chain read has resolved, or a challenge entry would skip the
+    // approve and revert on allowance.
+    if (!feeReady) {
+      setError("Reading the contest terms, one moment. Try again.");
+      return;
+    }
+    if (entryFee > 0n && (!escrowAddr || !usdcAddr)) {
+      setError("Still loading contract addresses. Try again in a moment.");
       return;
     }
     setBusy(true);
@@ -139,6 +155,7 @@ export function EnterContest({
     publicClient,
     agentId,
     contestId,
+    feeReady,
     writeContractAsync,
     walletAction,
     queryClient,
@@ -225,11 +242,16 @@ export function EnterContest({
       <PopButton
         type="button"
         onClick={enter}
-        disabled={busy || agentId === ""}
+        disabled={busy || agentId === "" || !feeReady}
         icon={busy ? <Spinner /> : undefined}
       >
-        Enter contest
+        {feeReady ? "Enter contest" : "Loading terms…"}
       </PopButton>
+      {feeError && (
+        <span className="w-full font-body text-[13px] font-bold text-coral">
+          Could not read the contest terms. Check your connection and refresh.
+        </span>
+      )}
       {error && (
         <span className="w-full font-body text-[13px] font-bold text-coral">{error}</span>
       )}
