@@ -6,7 +6,12 @@ import { computePlan } from "../runners/computeLevels.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
-import { onchainEntryCount, syncEntriesFromChain, keepOnchainEntrants } from "./contestOps.js";
+import {
+  onchainEntryCount,
+  syncEntriesFromChain,
+  keepOnchainEntrants,
+  isUnderfilledDuel,
+} from "./contestOps.js";
 import {
   CONTEST_TYPE,
   agentRegistryAbi,
@@ -172,7 +177,9 @@ export async function runAnalystContest(contestId: number): Promise<RunResult> {
   // with no matching on-chain registerEntry, so the payout root can hold only real
   // entrants. If that leaves no field, cancel and refund the sponsor.
   entries = await keepOnchainEntrants(contestId, entries);
-  if (entries.length === 0) {
+  if (entries.length === 0 || (await isUnderfilledDuel(contestId, entries.length))) {
+    // No field, or a duel that never got its second agent: cancel and refund rather
+    // than run a one-sided event.
     broadcast({ type: "status", contestId, payload: { status: "no-entries" } });
     await cancelContest(contestId);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };

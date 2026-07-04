@@ -185,6 +185,19 @@ export async function keepOnchainEntrants<T extends { operator: string }>(
   return entries.filter((_, i) => entered[i] === true);
 }
 
+// A duel (a two-seat contest) needs both seats filled to run; a duel that reaches
+// its deadline with one entrant should cancel and refund rather than hold a
+// one-sided event. Returns true when the field is below the contest's minimum: two
+// for a duel (max_operators == 2), one for an open contest. (Poker enforces its own
+// heads-up minimum in its runner and never reaches this.)
+export async function isUnderfilledDuel(contestId: number, entryCount: number): Promise<boolean> {
+  const { rows } = await query<{ max_operators: number | null }>(
+    "select max_operators from contests_meta where contest_id = $1",
+    [contestId],
+  );
+  return rows[0]?.max_operators === 2 && entryCount < 2;
+}
+
 // Rebuild a contest's entries in the database from the on-chain EntryRegistered
 // events, so a lagged or missed POST /enter mirror cannot drop an entrant.
 // Best effort: returns how many entries it reconciled.
