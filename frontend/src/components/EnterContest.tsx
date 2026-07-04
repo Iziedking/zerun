@@ -108,20 +108,34 @@ export function EnterContest({
     }
     setBusy(true);
     try {
-      // A challenge pulls the entry fee on registerEntry, so approve the escrow first.
+      // A challenge pulls the entry fee on registerEntry, so the escrow must be
+      // approved first. Only approve if the existing allowance does not already cover
+      // the fee: re-approving every time adds a needless popup and, worse, races the
+      // spend (the wallet estimates registerEntry against a node that may still show
+      // the stale allowance and blocks it). Skipping the redundant approve avoids both.
+      let approved = false;
       if (entryFee > 0n && escrowAddr && usdcAddr) {
-        const approveHash = await walletAction.run(
-          () =>
-            writeContractAsync({
-              abi: testUsdcAbi,
-              address: usdcAddr,
-              functionName: "approve",
-              args: [escrowAddr, entryFee],
-              chainId: zeroGGalileo.id,
-            }),
-          "Step 1 of 2: approve the entry fee in your wallet.",
-        );
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        const current = (await publicClient.readContract({
+          address: usdcAddr,
+          abi: testUsdcAbi,
+          functionName: "allowance",
+          args: [address, escrowAddr],
+        })) as bigint;
+        if (current < entryFee) {
+          const approveHash = await walletAction.run(
+            () =>
+              writeContractAsync({
+                abi: testUsdcAbi,
+                address: usdcAddr,
+                functionName: "approve",
+                args: [escrowAddr, entryFee],
+                chainId: zeroGGalileo.id,
+              }),
+            "Step 1 of 2: approve the entry fee in your wallet.",
+          );
+          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          approved = true;
+        }
       }
 
       const hash = await walletAction.run(
@@ -134,7 +148,9 @@ export function EnterContest({
             chainId: zeroGGalileo.id,
           }),
         entryFee > 0n
-          ? "Step 2 of 2: pay the fee and send your agent in."
+          ? approved
+            ? "Step 2 of 2: pay the fee and send your agent in."
+            : "Confirm in your wallet to pay the fee and send your agent in."
           : "Approve in your wallet to send your agent in.",
       );
       await publicClient.waitForTransactionReceipt({ hash });

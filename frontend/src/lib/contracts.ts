@@ -16,6 +16,7 @@ export const CONTEST_TYPE = { scout: 0, analyst: 1, solver: 2, poker: 3 } as con
 export const testUsdcAbi = parseAbi([
   "function mint(address to, uint256 amount)",
   "function approve(address spender, uint256 amount) returns (bool)",
+  "function allowance(address owner, address spender) view returns (uint256)",
   "function balanceOf(address) view returns (uint256)",
   "function decimals() view returns (uint8)",
 ]);
