@@ -8,8 +8,11 @@ import { Agent, Chip, LoadMore, PopButton, StickerCard, cx } from "./zerun";
 
 type Tab = "live" | "recent" | "duels";
 
-// How many settled contests to show before "load more".
+// How many cards to show per tab before "load more". Every list stays short and
+// tappable rather than an endless scroll.
 const RECENT_PAGE = 6;
+const LIVE_PAGE = 9;
+const DUELS_PAGE = 9;
 
 // "Live" covers anything still in play; "Recent" is settled.
 function isLive(c: ContestSummary): boolean {
@@ -33,6 +36,8 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
   // back to Recent on its own depending on what the arena currently holds.
   const [picked, setPicked] = useState<Tab | null>(null);
   const [recentShown, setRecentShown] = useState(RECENT_PAGE);
+  const [liveShown, setLiveShown] = useState(LIVE_PAGE);
+  const [duelsShown, setDuelsShown] = useState(DUELS_PAGE);
 
   const contests = data?.contests ?? [];
   const live = useMemo(() => contests.filter(isLive), [contests]);
@@ -44,11 +49,13 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
     [contests],
   );
   const recentVisible = recent.slice(0, recentShown);
+  const liveVisible = live.slice(0, liveShown);
   // Every 1v1 duel, live or settled, newest first. Poker and prediction duels.
   const duels = useMemo(
     () => contests.filter(isDuel).sort((a, b) => Number(b.contest_id) - Number(a.contest_id)),
     [contests],
   );
+  const duelsVisible = duels.slice(0, duelsShown);
 
   // Open on Live, but show Recent results when nothing is live so the arena
   // never greets a visitor with an empty board between contests.
@@ -82,11 +89,18 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
 
       {tab === "duels" ? (
         duels.length ? (
-          <Grid>
-            {duels.map((c) => (
-              <ContestCard key={c.contest_id} contest={c} />
-            ))}
-          </Grid>
+          <>
+            <Grid>
+              {duelsVisible.map((c) => (
+                <ContestCard key={c.contest_id} contest={c} />
+              ))}
+            </Grid>
+            <LoadMore
+              className="mt-6"
+              remaining={duels.length - duelsVisible.length}
+              onMore={() => setDuelsShown((n) => n + DUELS_PAGE)}
+            />
+          </>
         ) : (
           <DuelsEmpty />
         )
@@ -102,11 +116,18 @@ export function ArenaBoard({ onHost }: { onHost?: () => void }) {
         </Grid>
       ) : tab === "live" ? (
         live.length ? (
-          <Grid>
-            {live.map((c) => (
-              <ContestCard key={c.contest_id} contest={c} />
-            ))}
-          </Grid>
+          <>
+            <Grid>
+              {liveVisible.map((c) => (
+                <ContestCard key={c.contest_id} contest={c} />
+              ))}
+            </Grid>
+            <LoadMore
+              className="mt-6"
+              remaining={live.length - liveVisible.length}
+              onMore={() => setLiveShown((n) => n + LIVE_PAGE)}
+            />
+          </>
         ) : (
           <Empty
             text="No contests live right now. Host one, or check back as the arena fills."
