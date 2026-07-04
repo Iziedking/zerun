@@ -40,6 +40,7 @@ import {
   verifyPaymentTx,
   consumePaymentTx,
 } from "../runners/poker/x402.js";
+import { verifyAgentOwner } from "../auth/agentSig.js";
 
 // Read API plus the admin/demo triggers. The live feed itself goes over the
 // WebSocket; these endpoints serve initial loads, lookups, and the proofs
@@ -672,10 +673,21 @@ app.get("/api/dossiers/:opponentId", async (c) => {
   const dossier = await buildDossier(opponentId);
   if (!dossier) return c.json({ error: "this agent has no duel history to scout yet" }, 404);
 
+  // The free-allotment path spends the requesting agent's own reads, so it must be
+  // authenticated as that agent's owner (via signed headers). Otherwise anyone could
+  // pass ?for=<victim> to burn a victim's free reads and read the dossier for free.
+  // Unauthenticated callers can still read through the paid x402 path below.
+  const forOwner = c.req.header("x-zerun-owner");
+  const forIssued = Number(c.req.header("x-zerun-issued") ?? 0);
+  const forSig = c.req.header("x-zerun-signature") as `0x${string}` | undefined;
+  const authed =
+    Boolean(forOwner && forIssued && forSig) &&
+    (await verifyAgentOwner("scout", forId, { owner: forOwner, issuedAt: forIssued, signature: forSig })).ok;
+
   const level = await getAgentCompute(forId);
   const allot = freeAllotment(level);
   const used = await freeUsed(forId);
-  if (used < allot) {
+  if (authed && used < allot) {
     await consumeFree(forId);
     return c.json({ dossier: dossier.text, stats: dossier.stats, paid: false, freeRemaining: allot - used - 1 });
   }
@@ -860,10 +872,19 @@ app.post("/api/agents", async (c) => {
   const owner = String(body.owner ?? "").toLowerCase();
   const name = String(body.name ?? "").slice(0, 60) || `Agent #${agentId}`;
   if (!agentId || !owner) return c.json({ error: "agentId and owner required" }, 400);
+  // Owner-signed: the name/owner mirror is public data, so require a wallet signature
+  // proving the caller is the agent's on-chain owner. Without this anyone could rename
+  // any agent by naming its public owner address.
+  const auth = await verifyAgentOwner("name agent", agentId, {
+    owner,
+    issuedAt: Number(body.issuedAt),
+    signature: body.signature,
+  });
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
   await query(
     `insert into agents_meta (agent_id, owner, name) values ($1,$2,$3)
        on conflict (agent_id) do update set name = excluded.name`,
-    [agentId, owner, name],
+    [agentId, auth.owner, name],
   );
   return c.json({ ok: true });
 });
@@ -886,13 +907,14 @@ app.post("/api/agents/:id/skin", async (c) => {
     return c.json({ error: "skin image is missing or too large (max ~900 KB)" }, 400);
   }
 
-  // Only the agent's owner can set its skin.
-  const ownRows = await query<{ owner: string }>(
-    "select owner from agents_meta where agent_id = $1",
-    [agentId],
-  );
-  if (ownRows.rows.length === 0) return c.json({ error: "unknown agent" }, 404);
-  if (ownRows.rows[0]!.owner.toLowerCase() !== owner) return c.json({ error: "not your agent" }, 403);
+  // Only the agent's on-chain owner can set its skin. A wallet signature proves it;
+  // the DB owner check alone is spoofable because owner addresses are public.
+  const auth = await verifyAgentOwner("set skin", agentId, {
+    owner,
+    issuedAt: Number(body.issuedAt),
+    signature: body.signature,
+  });
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
 
   // Skins live on 0G Storage. Upload the image and keep its root hash; the bytes
   // are served back from 0G, not from the database. If storage is off (local dev

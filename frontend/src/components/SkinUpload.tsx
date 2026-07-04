@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
+import { useAgentAuth } from "@/lib/agentAuth";
 import { PopButton } from "./zerun";
 import { Spinner } from "./ui";
 
@@ -39,6 +40,7 @@ export function SkinUpload({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  const signAuth = useAgentAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -59,7 +61,16 @@ export function SkinUpload({
       try {
         const { mime, dataB64 } = await readAsBase64(file);
         setPreview(`data:${mime};base64,${dataB64}`);
-        await api.uploadSkin(agentId, { owner, mime, dataB64 });
+        // Prove ownership with a wallet signature; the backend binds it to the agent's
+        // on-chain owner so only the owner can set a skin.
+        const auth = await signAuth("set skin", agentId);
+        await api.uploadSkin(agentId, {
+          owner,
+          mime,
+          dataB64,
+          issuedAt: auth.issuedAt,
+          signature: auth.signature,
+        });
         await queryClient.invalidateQueries({ queryKey: ["agents"] });
         await queryClient.invalidateQueries({ queryKey: ["operator"] });
       } catch (e) {
@@ -69,7 +80,7 @@ export function SkinUpload({
         setBusy(false);
       }
     },
-    [agentId, owner, queryClient],
+    [agentId, owner, queryClient, signAuth],
   );
 
   return (

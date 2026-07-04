@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Grandstander:wght@900&amp;display=swap');
+      .disp { font-family: 'Grandstander','Baloo 2',system-ui,sans-serif; font-weight: 900; }
+    </style>
+  </defs>
+
+  <!-- Violet sticker tile -->
+  <rect x="40" y="40" width="432" height="432" rx="108" fill="#6C4CF1" stroke="#171449" stroke-width="16"/>
+  <!-- soft top sheen -->
+  <ellipse cx="256" cy="150" rx="150" ry="46" fill="#FFFFFF" opacity="0.12"/>
+  <!-- Z -->
+  <text x="256" y="372" class="disp" font-size="320" fill="#FFFFFF" text-anchor="middle">Z</text>
+</svg>

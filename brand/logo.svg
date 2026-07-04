@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="240" viewBox="0 0 780 240" fill="none">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Grandstander:wght@900&amp;display=swap');
+      .disp { font-family: 'Grandstander','Baloo 2',system-ui,sans-serif; font-weight: 900; }
+    </style>
+  </defs>
+
+  <!-- Z tile with pop shadow -->
+  <rect x="44" y="72" width="116" height="116" rx="26" fill="#171449"/>
+  <rect x="36" y="64" width="116" height="116" rx="26" fill="#6C4CF1" stroke="#171449" stroke-width="6"/>
+  <text x="94" y="142" class="disp" font-size="78" fill="#FFFFFF" text-anchor="middle">Z</text>
+
+  <!-- Wordmark -->
+  <g transform="rotate(-2 200 130)">
+    <text x="180" y="164" class="disp" font-size="138" fill="#171449">Zerun</text>
+  </g>
+</svg>

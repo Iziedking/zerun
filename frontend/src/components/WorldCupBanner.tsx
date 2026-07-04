@@ -216,19 +216,49 @@ export function WorldCupBanner({
   );
 }
 
-// Cycles through the banner set during a live session, so the World Cup arena
-// feels alive. Holds on one banner under reduced-motion.
+// Cycles through the banner set during a live session, so the World Cup arena feels
+// alive. Holds on one banner under reduced-motion (reacting live if the user toggles
+// it), and gives a pause/play control so auto-updating content is dismissible
+// (WCAG 2.2.2).
 export function WorldCupBannerRotator({ className }: { className?: string }) {
   const [i, setI] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [reduced, setReduced] = useState(false);
+
   useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-    ) {
-      return;
-    }
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduced(mq.matches);
+    const onChange = () => setReduced(mq.matches);
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (paused || reduced) return;
     const t = setInterval(() => setI((n) => (n + 1) % WORLD_CUP_BANNER_COUNT), 5000);
     return () => clearInterval(t);
-  }, []);
-  return <WorldCupBanner variant={i} className={className} />;
+  }, [paused, reduced]);
+
+  return (
+    <div className={cx("relative", className)}>
+      <WorldCupBanner variant={i} />
+      {!reduced && (
+        <button
+          type="button"
+          onClick={() => setPaused((p) => !p)}
+          aria-label={paused ? "Resume the rotating banner" : "Pause the rotating banner"}
+          className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-pill border-line border-ink bg-cloud text-ink shadow-pop-press"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+            {paused ? (
+              <path d="M4 2.5l7 4.5-7 4.5z" fill="currentColor" />
+            ) : (
+              <path d="M4 2.5h2v9H4zM8 2.5h2v9H8z" fill="currentColor" />
+            )}
+          </svg>
+        </button>
+      )}
+    </div>
+  );
 }

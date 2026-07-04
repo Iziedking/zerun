@@ -3,7 +3,7 @@ import type { ContestSummary } from "@/lib/types";
 import { formatUsdc } from "@/lib/format";
 import { kindMeta } from "@/lib/kind";
 import { ContestStatusPill } from "./ContestStatusPill";
-import { Chip, KindBadge, PopButton, StickerCard } from "./zerun";
+import { Chip, KindBadge, popButtonClass, StickerCard } from "./zerun";
 
 // A contest at a glance: which flavor it is, the amber prize pool, its status, and
 // a one-tap way in. The whole card links to the contest; the Enter button is a
@@ -84,9 +84,11 @@ export function ContestCard({ contest }: { contest: ContestSummary }) {
         </div>
 
         <div className="mt-5 pt-1">
-          <PopButton type="button" className="w-full" tabIndex={-1}>
+          {/* The whole card is the link, so the CTA is a styled span, not a nested
+              button (interactive-inside-interactive is invalid and confuses a11y). */}
+          <span className={popButtonClass("primary", "md", "w-full")} aria-hidden>
             {cta}
-          </PopButton>
+          </span>
         </div>
       </StickerCard>
     </Link>

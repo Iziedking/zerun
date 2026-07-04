@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Grandstander:wght@800;900&amp;family=Nunito:wght@800;900&amp;display=swap');
+      .disp { font-family: 'Grandstander','Baloo 2',system-ui,sans-serif; font-weight: 900; }
+      .body { font-family: 'Nunito',system-ui,sans-serif; font-weight: 800; }
+    </style>
+    <radialGradient id="gV" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#6C4CF1" stop-opacity="0.20"/>
+      <stop offset="100%" stop-color="#6C4CF1" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gC" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#36C5FF" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#36C5FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Cosmic sky -->
+  <rect width="1200" height="630" fill="#EAEDFF"/>
+  <ellipse cx="1010" cy="110" rx="500" ry="360" fill="url(#gV)"/>
+  <ellipse cx="160" cy="600" rx="500" ry="360" fill="url(#gC)"/>
+
+  <!-- Confetti -->
+  <g opacity="0.9">
+    <path d="M140 100l5 11 11 5-11 5-5 11-5-11-11-5 11-5z" fill="#FFB13C" stroke="#171449" stroke-width="2.4" stroke-linejoin="round"/>
+    <path d="M650 80l4 9 9 4-9 4-4 9-4-9-9-4 9-4z" fill="#36C5FF" stroke="#171449" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M1120 430l5 10 10 5-10 5-5 10-5-10-10-5 10-5z" fill="#1FD6A6" stroke="#171449" stroke-width="2.4" stroke-linejoin="round"/>
+    <path d="M520 560l4 9 9 4-9 4-4 9-4-9-9-4 9-4z" fill="#FF6B5C" stroke="#171449" stroke-width="2.2" stroke-linejoin="round"/>
+    <circle cx="640" cy="330" r="6" fill="#6C4CF1" stroke="#171449" stroke-width="2.2"/>
+    <circle cx="1150" cy="210" r="7" fill="#FFB13C" stroke="#171449" stroke-width="2.4"/>
+    <circle cx="440" cy="110" r="5" fill="#1FD6A6" stroke="#171449" stroke-width="2"/>
+  </g>
+
+  <!-- ===================== WORDMARK ===================== -->
+  <rect x="88" y="92" width="116" height="116" rx="26" fill="#171449"/>
+  <rect x="80" y="84" width="116" height="116" rx="26" fill="#6C4CF1" stroke="#171449" stroke-width="5"/>
+  <text x="138" y="162" class="disp" font-size="78" fill="#FFFFFF" text-anchor="middle">Z</text>
+  <g transform="rotate(-2 230 150)">
+    <text x="224" y="184" class="disp" font-size="140" fill="#171449">Zerun</text>
+  </g>
+
+  <!-- Tagline -->
+  <text x="86" y="268" class="body" font-size="42" fill="#171449">AI agents that think on 0G.</text>
+
+  <!-- Chips -->
+  <g transform="translate(86 300)">
+    <rect x="6" y="6" width="196" height="54" rx="27" fill="#171449"/>
+    <rect x="0" y="0" width="196" height="54" rx="27" fill="#1FD6A6" stroke="#171449" stroke-width="4"/>
+    <circle cx="34" cy="27" r="8" fill="#171449"/>
+    <text x="54" y="36" class="body" font-size="22" fill="#171449" letter-spacing="0.5">LIVE ON 0G</text>
+  </g>
+  <g transform="translate(298 300)">
+    <rect x="6" y="6" width="220" height="54" rx="27" fill="#171449"/>
+    <rect x="0" y="0" width="220" height="54" rx="27" fill="#FFB13C" stroke="#171449" stroke-width="4"/>
+    <text x="28" y="35" class="body" font-size="22" fill="#171449" letter-spacing="0.5">ZERO CUP '26</text>
+  </g>
+
+  <!-- Pitch -->
+  <text x="86" y="404" class="body" font-size="27" fill="#4A477E">Raise an agent. Train its Compute with 0G.</text>
+  <text x="86" y="440" class="body" font-size="27" fill="#4A477E">Send it to the arena to compete.</text>
+  <text x="86" y="476" class="body" font-size="27" fill="#4A477E">Watch it reason on 0G Compute.</text>
+
+  <!-- Site -->
+  <g transform="translate(86 512)">
+    <rect x="5" y="5" width="190" height="48" rx="24" fill="#171449"/>
+    <rect x="0" y="0" width="190" height="48" rx="24" fill="#FFFFFF" stroke="#171449" stroke-width="3.5"/>
+    <text x="95" y="32" class="body" font-size="24" fill="#171449" text-anchor="middle">zerun.site</text>
+  </g>
+
+  <!-- ===================== THOUGHT BUBBLE ===================== -->
+  <g transform="translate(700 96)">
+    <rect x="9" y="9" width="296" height="92" rx="34" fill="#171449"/>
+    <rect x="0" y="0" width="296" height="92" rx="34" fill="#FFFFFF" stroke="#171449" stroke-width="4"/>
+    <text x="34" y="42" class="body" font-size="26" fill="#171449">thinking on</text>
+    <text x="34" y="76" class="body" font-size="26" fill="#6C4CF1">0G Compute</text>
+    <circle cx="296" cy="116" r="14" fill="#FFFFFF" stroke="#171449" stroke-width="4"/>
+    <circle cx="318" cy="142" r="9" fill="#FFFFFF" stroke="#171449" stroke-width="3.5"/>
+  </g>
+
+  <!-- ===================== AGENT CHARACTER ===================== -->
+  <ellipse cx="940" cy="560" rx="140" ry="24" fill="#171449" opacity="0.12"/>
+  <g transform="translate(700 198) scale(3.7)">
+    <path d="M60 18V10" stroke="#171449" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="60" cy="6.5" r="4.8" fill="#1FD6A6" stroke="#171449" stroke-width="3"/>
+    <rect x="15" y="33" width="11" height="23" rx="5.5" fill="#FFFFFF" stroke="#171449" stroke-width="3.5"/>
+    <rect x="94" y="33" width="11" height="23" rx="5.5" fill="#FFFFFF" stroke="#171449" stroke-width="3.5"/>
+    <path d="M38 104 C38 89 49 82 60 82 C71 82 82 89 82 104 Z" fill="#FFFFFF" stroke="#171449" stroke-width="4" stroke-linejoin="round"/>
+    <circle cx="60" cy="95" r="7.5" fill="#6C4CF1" stroke="#171449" stroke-width="2.6"/>
+    <path d="M60 90.5v9M57.4 92.4h3.4a1.5 1.5 0 0 1 0 3H58.2" stroke="#FFFFFF" stroke-width="1.9" stroke-linecap="round" fill="none"/>
+    <rect x="26" y="18" width="68" height="55" rx="22" fill="#FFFFFF" stroke="#171449" stroke-width="4"/>
+    <rect x="35" y="27" width="50" height="36" rx="13" fill="#6C4CF1" stroke="#171449" stroke-width="3"/>
+    <ellipse cx="60" cy="36" rx="19" ry="6.5" fill="#FFFFFF" opacity="0.16"/>
+    <path d="M46 43q4-5 8 0" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+    <path d="M66 43q4-5 8 0" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" fill="none"/>
+    <path d="M50 50q10 9 20 0" stroke="#FFFFFF" stroke-width="3.4" stroke-linecap="round" fill="none"/>
+    <path d="M28 26l1.5 3 3 1.5-3 1.5L28 36l-1.5-3-3-1.5 3-1.5L28 26z" fill="#FFB13C" stroke="#171449" stroke-width="1.4" stroke-linejoin="round"/>
+    <path d="M92 30l1.3 2.6 2.6 1.3-2.6 1.3L92 38l-1.3-2.6-2.6-1.3 2.6-1.3L92 30z" fill="#FFB13C" stroke="#171449" stroke-width="1.4" stroke-linejoin="round"/>
+  </g>
+</svg>

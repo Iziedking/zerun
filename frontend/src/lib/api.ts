@@ -57,8 +57,13 @@ export const api = {
 
   agents: (owner: string) =>
     req<{ agents: AgentRecord[] }>(`/api/agents?owner=${owner}`),
-  registerAgent: (body: { agentId: number; owner: string; name: string }) =>
-    req<unknown>("/api/agents", { method: "POST", body: JSON.stringify(body) }),
+  registerAgent: (body: {
+    agentId: number;
+    owner: string;
+    name: string;
+    issuedAt: number;
+    signature: string;
+  }) => req<unknown>("/api/agents", { method: "POST", body: JSON.stringify(body) }),
 
   // An operator hosted a contest from their own wallet; mirror it in the arena.
   hostContest: (body: {
@@ -75,7 +80,7 @@ export const api = {
   // Upload a custom skin for an agent (base64 with the data: prefix stripped).
   uploadSkin: (
     id: number | string,
-    body: { owner: string; mime: string; dataB64: string },
+    body: { owner: string; mime: string; dataB64: string; issuedAt: number; signature: string },
   ) =>
     req<{ ok: boolean; skinRoot: string | null }>(`/api/agents/${id}/skin`, {
       method: "POST",

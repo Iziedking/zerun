@@ -25,6 +25,21 @@ const SIZES: Record<Size, string> = {
   lg: "px-6 py-3.5 text-base",
 };
 
+// The button's visual classes, exported so a non-interactive element (a span inside a
+// link, where a nested button would be invalid) can share the exact look.
+export function popButtonClass(variant: Variant = "primary", size: Size = "md", className?: string): string {
+  return cx(
+    "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-chunk border-line border-ink font-body font-extrabold",
+    "shadow-pop transition-[transform,box-shadow,background-color] duration-150 ease-spring",
+    "hover:-translate-x-px hover:-translate-y-px hover:shadow-pop-lg",
+    "active:translate-x-[2px] active:translate-y-[2px] active:shadow-pop-press",
+    "disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-pop",
+    VARIANTS[variant],
+    SIZES[size],
+    className,
+  );
+}
+
 // The chunky CTA. Squishes into the page on press, grows on hover, spring motion.
 export const PopButton = forwardRef<HTMLButtonElement, PopButtonProps>(
   function PopButton(
@@ -32,20 +47,7 @@ export const PopButton = forwardRef<HTMLButtonElement, PopButtonProps>(
     ref,
   ) {
     return (
-      <button
-        ref={ref}
-        className={cx(
-          "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-chunk border-line border-ink font-body font-extrabold",
-          "shadow-pop transition-[transform,box-shadow,background-color] duration-150 ease-spring",
-          "hover:-translate-x-px hover:-translate-y-px hover:shadow-pop-lg",
-          "active:translate-x-[2px] active:translate-y-[2px] active:shadow-pop-press",
-          "disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-pop",
-          VARIANTS[variant],
-          SIZES[size],
-          className,
-        )}
-        {...rest}
-      >
+      <button ref={ref} className={popButtonClass(variant, size, className)} {...rest}>
         {icon && (
           <span className="grid place-items-center" aria-hidden>
             {icon}

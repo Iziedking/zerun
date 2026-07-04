@@ -16,6 +16,7 @@ import { useAgents, useContests } from "@/lib/useAgents";
 import { useUsdcBalance } from "@/lib/useChainData";
 import { kindMeta } from "@/lib/kind";
 import { api } from "@/lib/api";
+import { useAgentAuth } from "@/lib/agentAuth";
 import { formatUsdc } from "@/lib/format";
 import { friendlyError } from "@/lib/errors";
 import { useWalletAction } from "@/lib/walletAction";
@@ -60,6 +61,7 @@ function OnboardingInner() {
   const { writeContractAsync } = useWriteContract();
   const walletAction = useWalletAction();
   const queryClient = useQueryClient();
+  const signAuth = useAgentAuth();
 
   const agentsQ = useAgents(address);
   const contestsQ = useContests();
@@ -135,7 +137,14 @@ function OnboardingInner() {
 
       const id = Number(newId);
       setAgentId(id);
-      await api.registerAgent({ agentId: id, owner: address, name: `Agent #${id}` });
+      const auth = await signAuth("name agent", id);
+      await api.registerAgent({
+        agentId: id,
+        owner: address,
+        name: `Agent #${id}`,
+        issuedAt: auth.issuedAt,
+        signature: auth.signature,
+      });
       await queryClient.invalidateQueries({ queryKey: ["agents"] });
       setCelebrate(true);
       setStep(1);
@@ -144,7 +153,7 @@ function OnboardingInner() {
     } finally {
       setBusy(false);
     }
-  }, [registryAddr, address, publicClient, writeContractAsync, queryClient]);
+  }, [registryAddr, address, publicClient, writeContractAsync, queryClient, signAuth]);
 
   // Step b: name it. Stored via POST /api/agents; the name shows under the character.
   const saveName = useCallback(async () => {
@@ -157,7 +166,14 @@ function OnboardingInner() {
     if (!address || agentId === null) return;
     setBusy(true);
     try {
-      await api.registerAgent({ agentId, owner: address, name: trimmed });
+      const auth = await signAuth("name agent", agentId);
+      await api.registerAgent({
+        agentId,
+        owner: address,
+        name: trimmed,
+        issuedAt: auth.issuedAt,
+        signature: auth.signature,
+      });
       await queryClient.invalidateQueries({ queryKey: ["agents"] });
       setStep(2);
     } catch (e) {
@@ -165,7 +181,7 @@ function OnboardingInner() {
     } finally {
       setBusy(false);
     }
-  }, [name, address, agentId, queryClient]);
+  }, [name, address, agentId, queryClient, signAuth]);
 
   // Step c: top up test USDC via the CAPPED backend faucet (100 tUSDC per wallet
   // per week), not a direct contract mint. This is what stops claiming several

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { keccak256, parseEventLogs, toHex } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
@@ -480,18 +480,62 @@ export function HostContestForm({
 // A centered modal wrapper around the form.
 export function HostContestModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [busy, setBusy] = useState(false);
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  // Escape to close (unless a tx is in flight), initial focus into the dialog, a Tab
+  // focus-trap so keyboard focus can't wander behind the modal, and focus restored to
+  // the trigger on close.
+  useEffect(() => {
+    if (!open) return;
+    const prevFocus = document.activeElement as HTMLElement | null;
+    const focusables = () =>
+      Array.from(
+        overlayRef.current?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+    focusables()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key === "Tab") {
+        const items = focusables();
+        if (items.length === 0) return;
+        const first = items[0]!;
+        const last = items[items.length - 1]!;
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      prevFocus?.focus?.();
+    };
+  }, [open, busy, onClose]);
+
   if (!open) return null;
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-scrim/50 p-4"
       role="dialog"
       aria-modal="true"
+      aria-label="Host a contest"
       // Do not dismiss on a backdrop click while a transaction is in flight, or the
       // form unmounts mid-flow while the txs keep going in the background.
       onClick={busy ? undefined : onClose}
     >
       <StickerCard
-        className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto p-5 motion-safe:animate-pop-in sm:p-6"
+        className="my-auto max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto p-5 outline-none motion-safe:animate-pop-in sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <HostContestForm onClose={onClose} onBusyChange={setBusy} />

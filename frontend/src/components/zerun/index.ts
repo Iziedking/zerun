@@ -1,5 +1,5 @@
 export { cx } from "./cx";
-export { PopButton } from "./PopButton";
+export { PopButton, popButtonClass } from "./PopButton";
 export { StickerCard } from "./StickerCard";
 export { Chip, type ChipTone } from "./Chip";
 export { CoinStat } from "./CoinStat";
