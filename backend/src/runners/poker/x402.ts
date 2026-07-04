@@ -10,7 +10,7 @@ import {
   testUsdcAbi,
   waitReceipt,
 } from "../../chain/contracts.js";
-import { buildDossier } from "./dossier.js";
+import { buildDossier, type PokerStats } from "./dossier.js";
 
 // x402 micropayments for opponent dossiers, on 0G. The Coinbase-hosted facilitator
 // does not support 0G Galileo, so this implements the x402 flow natively: a dossier
@@ -167,6 +167,7 @@ export interface DossierAccess {
   paid: boolean; // whether this read required an x402 payment
   txHash?: string; // the payment tx, when paid
   priceUsdc?: string; // the price paid, for the feed
+  stats?: PokerStats; // structured tendencies, so the buyer can model the opponent
 }
 
 // Acquire the opponent's dossier for an agent, honoring the free allotment and paying
@@ -184,11 +185,11 @@ export async function acquireDossier(
   const used = await freeUsed(requesterId);
   if (used < allot) {
     await consumeFree(requesterId);
-    return { text: d.text, paid: false };
+    return { text: d.text, paid: false, stats: d.stats };
   }
 
   const txHash = await coordinatorPay();
   const ok = await verifyPaymentTx(txHash);
   if (!ok) return { text: null, paid: false }; // unverified payment: play without the edge
-  return { text: d.text, paid: true, txHash, priceUsdc: PRICE_USDC };
+  return { text: d.text, paid: true, txHash, priceUsdc: PRICE_USDC, stats: d.stats };
 }

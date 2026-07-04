@@ -1,8 +1,6 @@
 import { encodeAbiParameters, keccak256 } from "viem";
 import { query } from "../db/pool.js";
-import { callModel } from "../compute/client.js";
 import { getAgentCompute } from "../runners/traitStore.js";
-import { computePlan } from "../runners/computeLevels.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, cancelContest, type RunResult } from "./finalize.js";
@@ -19,24 +17,26 @@ import {
   type Action,
   type Seat,
 } from "../runners/poker/table.js";
-import { POKER_SYSTEM, buildUserPrompt, parseAction, consensusAction } from "../runners/poker/decide.js";
-import { recordDuel } from "../runners/poker/dossier.js";
+import { decideStrategy, policyForTier, type Policy } from "../runners/poker/strategy.js";
+import { recordDuel, type PokerStats } from "../runners/poker/dossier.js";
 import { acquireDossier } from "../runners/poker/x402.js";
 import { runPokerTable } from "./runPokerTable.js";
 
-// The poker duel loop. Two agents play heads-up No-Limit Hold'em on 0G Compute for
-// a fixed window; every decision is a paced inference call and lands on the live
-// feed. The deck for each hand is seeded from (contestId, handIndex) so the deal is
-// provable. The agent with more chips at the cutoff wins the pool through the same
-// settlement path as the other kinds. Only a real player can be paid: if a real
-// player loses to a house agent, the contest refunds its sponsor instead.
+// The poker duel loop. Two agents play heads-up No-Limit Hold'em over a bounded
+// number of hands, each decision resolved by the deterministic, tier-scaled strategy
+// engine (the 0G-hybrid grind: strategy authored once on 0G, then played out at
+// machine speed). Retiring the old per-move 0G call is what makes a match always
+// terminate instead of hanging under the rate limit. The deck for each hand is seeded
+// from (contestId, handIndex) so the deal is provable, and the decisions replay
+// exactly from the same seeds and each agent's tier. The agent with more chips at the
+// cutoff wins the pool through the shared settlement path. Only a real player can be
+// paid: if a real player loses to a house agent, the contest refunds its sponsor.
 
 const MATCH_MS = Number(process.env.POKER_MATCH_SECONDS ?? "300") * 1000;
 const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "200");
+// A small pause between decisions keeps the live duel watchable. Decisions are now
+// instant, so this is purely cosmetic pacing, not a rate-limit workaround.
 const DECISION_SPACING_MS = Number(process.env.POKER_DECISION_SPACING_MS ?? "400");
-// Most passes a tough (facing-a-bet) decision samples for self-consistency, capped
-// so a match still plays a watchable number of hands under the 0G rate limit.
-const POKER_MAX_SAMPLES = Number(process.env.POKER_MAX_SAMPLES_PER_SPOT ?? "3");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -62,6 +62,26 @@ async function readEntries(contestId: number): Promise<Entry[]> {
     agentName: r.name ?? `Agent #${r.agent_id}`,
     isHouse: Boolean(r.is_house),
   }));
+}
+
+// Turn a scouted opponent's tendencies into a small, bounded tweak to our own
+// policy. Against a loose or aggressive opponent, whose bets are less credible, we
+// relax our call discipline a touch (call wider); against a tight, passive one we
+// tighten. The shift is capped at +-0.03 so intel is an edge, not a cheat, and never
+// rewrites a tier's fundamentals. Null when the sample is too thin to trust.
+function scoutOverride(tier: number, opp: PokerStats): Partial<Policy> | null {
+  const decisions = opp.folds + opp.checks + opp.calls + opp.raises;
+  if (opp.hands < 20 || decisions === 0) return null;
+  const foldPct = opp.folds / decisions;
+  const af = opp.raises / Math.max(1, opp.calls);
+  let d = 0;
+  if (foldPct < 0.15) d -= 0.02;
+  else if (foldPct > 0.4) d += 0.02;
+  if (af > 1.5) d -= 0.01;
+  else if (af < 0.6) d += 0.01;
+  d = Math.max(-0.03, Math.min(0.03, d));
+  if (d === 0) return null;
+  return { callMarginBase: policyForTier(tier).callMarginBase + d };
 }
 
 // The deterministic, verifiable deck seed for a hand.
@@ -117,12 +137,12 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
 
   const levelOf = new Map<number, number>();
   for (const p of players) levelOf.set(p.agentId, await getAgentCompute(p.agentId));
-  const planOf = new Map<number, ReturnType<typeof computePlan>>();
-  for (const p of players) planOf.set(p.agentId, computePlan(levelOf.get(p.agentId)!));
   // Prefetch each agent's dossier on its opponent before the clock starts, so a
   // scouting read never stalls a hand. The dossier is edge information: how the
   // opponent has played across its past duels.
-  const dossierOf = new Map<number, string>();
+  // Scouting no longer feeds a prompt; it tunes the buyer's opponent model. A
+  // scouted agent gets a small, bounded policy tweak against this specific opponent.
+  const overrideOf = new Map<number, Partial<Policy>>();
   for (const seat of [0, 1] as const) {
     const me = players[seat];
     const opponent = players[seat === 0 ? 1 : 0];
@@ -132,7 +152,10 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
       () => null,
     );
     if (access?.text) {
-      dossierOf.set(me.agentId, access.text);
+      if (access.stats) {
+        const ov = scoutOverride(levelOf.get(me.agentId) ?? 0, access.stats);
+        if (ov) overrideOf.set(me.agentId, ov);
+      }
       const how = access.paid ? `paid ${access.priceUsdc} tUSDC via x402 to scout` : "scouted";
       broadcast({
         type: "status",
@@ -180,40 +203,47 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
       const seat = t.toAct;
       const entry = players[seat];
       const view = viewFor(t);
-      const plan = planOf.get(entry.agentId)!;
+      const tier = levelOf.get(entry.agentId) ?? 0; // policyForTier clamps to 0..4
+      const dseq = decisionSeq[seat];
 
+      // The deterministic, tier-scaled decision. No network call, so a hand resolves
+      // instantly and a match always terminates. The seed makes bluff and semibluff
+      // rolls reproducible from (contestId, handIndex, seat, decisionIndex), so the
+      // whole duel replays exactly from its stored seeds.
       type Res = { text: string; source: string; provider: string; model: string; chatID: string | null; verified: boolean | null; latencyMs: number };
-      // Facing a bet is a tough spot; higher tiers sample several independent reads
-      // and take the majority (self-consistency), so more compute plays sharper. Free
-      // spots (a check-through) stay single-shot to keep the hand count up.
-      const nSamples = view.toCall > 0 ? Math.min(plan.samples, POKER_MAX_SAMPLES) : 1;
-      const params = {
-        systemPrompt: POKER_SYSTEM,
-        userPrompt: buildUserPrompt(view, dossierOf.get(entry.agentId)),
-        maxTokens: plan.maxTokens,
-        temperature: plan.temperature,
-        models: plan.models,
-      };
-      let res: Res;
       let action: Action;
+      let reason: string;
       try {
-        if (nSamples <= 1) {
-          res = await callModel(params);
-          action = parseAction(res.text, view.legal);
-        } else {
-          const reads: { r: Res; a: Action }[] = [];
-          for (let k = 0; k < nSamples; k++) {
-            const r = await callModel(params);
-            reads.push({ r, a: parseAction(r.text, view.legal) });
-          }
-          action = consensusAction(reads.map((x) => x.a));
-          res = (reads.find((x) => x.a.type === action.type) ?? reads[0]!).r;
-        }
+        const decision = decideStrategy({
+          hole: t.holes[seat],
+          board: t.board,
+          legal: view.legal,
+          pot: t.handPut[0] + t.handPut[1],
+          toCall: view.legal.callAmount,
+          street: t.street,
+          inPosition: seat === t.button, // heads-up: the button has position postflop
+          tier,
+          seed: (contestId * 1_000_003 + handIndex * 131 + seat * 17 + dseq) >>> 0,
+          // Scouted opponent model now; P3 folds in a 0G-authored policy anchored on 0G Storage.
+          policyOverride: overrideOf.get(entry.agentId),
+        });
+        action = decision.action;
+        reason = decision.reason;
       } catch (err) {
-        console.error(`poker ${contestId}: decision failed for agent ${entry.agentId}:`, (err as Error).message);
-        res = { text: "", source: "error", provider: "error", model: "error", chatID: null, verified: null, latencyMs: 0 };
+        console.error(`poker ${contestId}: strategy error for agent ${entry.agentId}:`, (err as Error).message);
         action = view.legal.canCheck ? { type: "check" } : { type: "call" };
+        reason = "safe default";
       }
+      const clampedTier = Math.max(0, Math.min(4, Math.floor(tier)));
+      const res: Res = {
+        text: reason,
+        source: "strategy",
+        provider: "deterministic",
+        model: `tier-${clampedTier}-policy`,
+        chatID: null,
+        verified: null,
+        latencyMs: 0,
+      };
 
       applyAction(t, action);
       const label = (t.log[t.log.length - 1] ?? "").replace(/^seat \d+ /, "");
