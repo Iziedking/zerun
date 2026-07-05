@@ -28,7 +28,7 @@ import { runAnalystContest } from "../coordinator/runAnalystContest.js";
 import { runPokerContest } from "../coordinator/runPokerContest.js";
 import { runWorldCupContest } from "../coordinator/runWorldCupContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
-import { scheduleHouseFill } from "../coordinator/autopilot.js";
+import { scheduleHouseFill, coordinatorGasBalance } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { buildDossier } from "../runners/poker/dossier.js";
 import {
@@ -742,6 +742,18 @@ function clampPuzzleCount(raw: unknown, fallback: number): number {
 // Register a contest an operator hosted on chain (they ran mint, approve, and
 // listContest from their own wallet). We confirm it on chain and mirror it so it
 // shows in the arena; the due-sweeper settles it when the window closes.
+// Coordinator gas at a glance for the admin panel, so a low balance is caught before
+// it stalls agents, settlement, or cancels (the failure the judges hit).
+app.get("/api/admin/gas", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  try {
+    const g = await coordinatorGasBalance();
+    return c.json({ og: g.og, min: g.min, low: g.low, wei: g.wei.toString() });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
+
 app.post("/api/contests/host", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const id = Number(body.contestId);

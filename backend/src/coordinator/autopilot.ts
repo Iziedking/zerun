@@ -102,6 +102,47 @@ const HOUSE_BASELINE = Number(process.env.AUTOPILOT_HOUSE_BASELINE ?? "2");
 // runs them. This is the main source of the gap between a window closing and the run
 // starting, so keep it short. Tunable with AUTOPILOT_SWEEP_SECONDS.
 const SWEEP_MS = Number(process.env.AUTOPILOT_SWEEP_SECONDS ?? "12") * 1000;
+
+// Coordinator gas guard. The coordinator wallet pays for 0G Compute inference and for
+// every settlement, cancel, and refund tx. If it runs dry, agents error and contests
+// stop settling, which is what bit the live demo during judging. This watches the
+// balance, warns loudly the moment it drops below the floor, and pauses auto-open so
+// the arena does not create contests it cannot settle. Tunable via env.
+const MIN_GAS_WEI = parseEther(process.env.COORDINATOR_MIN_GAS_0G ?? "2");
+const GAS_CHECK_MS = Number(process.env.COORDINATOR_GAS_CHECK_SECONDS ?? "60") * 1000;
+let coordGasLow = false;
+export function coordinatorGasLow(): boolean {
+  return coordGasLow;
+}
+export async function coordinatorGasBalance(): Promise<{ wei: bigint; og: number; low: boolean; min: number }> {
+  const wei = await publicClient.getBalance({ address: coordinatorAccount().address });
+  return { wei, og: Number(wei) / 1e18, low: wei < MIN_GAS_WEI, min: Number(MIN_GAS_WEI) / 1e18 };
+}
+
+async function startGasGuard(): Promise<void> {
+  const addr = coordinatorAccount().address;
+  const floor = process.env.COORDINATOR_MIN_GAS_0G ?? "2";
+  for (;;) {
+    try {
+      const wei = await publicClient.getBalance({ address: addr });
+      const og = (Number(wei) / 1e18).toFixed(3);
+      const was = coordGasLow;
+      coordGasLow = wei < MIN_GAS_WEI;
+      if (coordGasLow && !was) {
+        console.warn(
+          `⚠️  COORDINATOR GAS LOW: ${og} 0G (floor ${floor}). Top up ${addr} now or agents, settlement, and cancels will fail.`,
+        );
+      } else if (!coordGasLow && was) {
+        console.log(`coordinator gas recovered: ${og} 0G`);
+      } else if (coordGasLow) {
+        console.warn(`coordinator gas still low: ${og} 0G — top up ${addr}`);
+      }
+    } catch (err) {
+      console.error("gas guard: balance check failed:", (err as Error).message);
+    }
+    await sleep(GAS_CHECK_MS);
+  }
+}
 const RUN_TIMEOUT_MS = 1_200_000; // paced 0G calls make a full field take longer
 
 // The wait before the next open: the fixed override, or a jittered draw around
@@ -589,6 +630,12 @@ async function startOpenLoop(): Promise<void> {
   // model cannot out-forecast an event it has no data on), so they run only every
   // Nth cycle. Set AUTOPILOT_ANALYST_EVERY=0 for solver-only, 2 for an even split.
   for (;;) {
+    // Do not open contests the coordinator cannot afford to settle.
+    if (coordinatorGasLow()) {
+      console.warn("autopilot: coordinator gas low, holding auto-open until it is topped up");
+      await sleep(GAS_CHECK_MS);
+      continue;
+    }
     let held = false;
     try {
       const open = await openContestCount().catch(() => 0);
@@ -648,11 +695,12 @@ export function startAutopilot(): void {
     return;
   }
 
-  // Settlement, World Cup resolution, and house fills run whenever the coordinator
-  // is up, independent of the AUTOPILOT toggle. Otherwise user-hosted contests
-  // (poker duels, challenges, missions) never get run, settled, cancelled, or
-  // resolved, and sit OPEN forever. AUTOPILOT only controls whether the platform
-  // also opens its own contests.
+  // Settlement, World Cup resolution, house fills, and the gas guard run whenever the
+  // coordinator is up, independent of the AUTOPILOT toggle. Otherwise user-hosted
+  // contests (poker duels, challenges, missions) never get run, settled, cancelled, or
+  // resolved, and sit OPEN forever. AUTOPILOT only controls whether the platform also
+  // opens its own contests.
+  void startGasGuard();
   void startDueSweeper();
   void startWorldCupResolver();
   void startHouseFillPoll();
