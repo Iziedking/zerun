@@ -15,11 +15,14 @@ export interface WorldCupMarket {
   eventTitle: string; // e.g. "World Cup Winner"
   endDate: string | null;
   price: number | null; // market-implied Yes probability at pick time
+  marketType: string; // e.g. "totals", "spreads", "both_teams_to_score"
+  matchSubject: string; // e.g. "Brazil vs. Norway"
 }
 
 interface RawEvent {
   title?: string;
   slug?: string;
+  endDate?: string;
   markets?: RawMarket[];
 }
 
@@ -34,12 +37,37 @@ interface RawMarket {
   closed?: boolean;
   active?: boolean;
   umaResolutionStatus?: string;
+  sportsMarketType?: string; // e.g. "totals", "spreads", "both_teams_to_score"
 }
 
-// The Polymarket tag that scopes to World Cup markets only: today's games and their
-// props (moneyline, spread, totals, both-teams-to-score), plus brackets and futures.
-// Authoritative, unlike a fuzzy text search that dragged in unrelated events. Tunable.
-const WORLDCUP_TAG_SLUG = process.env.WORLDCUP_TAG_SLUG ?? "world-cup";
+// The Polymarket tag that carries the actual World Cup MATCH games. The plain
+// "world-cup" tag returns only tournament futures and props ("World Cup Winner",
+// "Golden Boot") that resolve at tournament end weeks away; the real per-match
+// markets (moneyline, spread, totals, both-teams-to-score, ...) live under
+// "fifa-world-cup" with related_tags, as separate events whose slug starts with
+// "fifwc-<home>-<away>-<date>" and which settle the same day they are played.
+// A mission wants same-day-resolving games, so we source those. Tunable.
+const WORLDCUP_TAG_SLUG = process.env.WORLDCUP_TAG_SLUG ?? "fifa-world-cup";
+
+// How many days ahead to pull games for, so tomorrow's slate is already in the pool
+// when the mission rolls over at 00:00. Only same-day games are ever drawn into a
+// mission (see drawUnused); this window just keeps the pool warm.
+const WORLDCUP_LOOKAHEAD_DAYS = Number(process.env.WORLDCUP_LOOKAHEAD_DAYS ?? "8");
+
+// A match-game event, as opposed to a tournament future/prop. Match events use the
+// slug convention fifwc-<home>-<away>-<YYYY-MM-DD>[-variant]; futures do not.
+function isMatchGame(e: RawEvent): boolean {
+  return /^fifwc-[a-z]{3}-[a-z]{3}-\d{4}-\d{2}-\d{2}/.test(e.slug ?? "");
+}
+
+// The match subject shared by every variant of a game, e.g. the event title
+// "Brazil vs. Norway - More Markets" reduces to "Brazil vs. Norway". Used to keep a
+// mission from stacking multiple lines off the same fixture.
+function matchSubjectOf(eventTitle: string | undefined): string {
+  const t = (eventTitle ?? "").trim();
+  const dash = t.indexOf(" - ");
+  return (dash > 0 ? t.slice(0, dash) : t).trim();
+}
 
 function parseJsonArray(s: string | undefined): string[] {
   if (!s) return [];
@@ -63,16 +91,27 @@ function resolutionOf(m: RawMarket): { resolved: boolean; winnerIndex: number | 
 }
 
 async function fetchWorldCupEvents(): Promise<RawEvent[]> {
+  // Window the fetch to games ending from the start of today through the lookahead so
+  // the pool holds today's slate plus a few days out; a match event's endDate is its
+  // kickoff-plus-play-time, so this captures the games that resolve within each day.
+  const now = new Date();
+  const min = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const max = new Date(min.getTime() + WORLDCUP_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000);
   const url =
-    "https://gamma-api.polymarket.com/events?closed=false&limit=300&order=endDate&ascending=true&tag_slug=" +
-    encodeURIComponent(WORLDCUP_TAG_SLUG);
+    "https://gamma-api.polymarket.com/events?closed=false&limit=500&order=endDate&ascending=true" +
+    `&related_tags=true&end_date_min=${encodeURIComponent(min.toISOString())}` +
+    `&end_date_max=${encodeURIComponent(max.toISOString())}` +
+    `&tag_slug=${encodeURIComponent(WORLDCUP_TAG_SLUG)}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
   try {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) throw new Error(`Polymarket events responded ${res.status}`);
     const data = (await res.json()) as RawEvent[];
-    return Array.isArray(data) ? data : [];
+    if (!Array.isArray(data)) return [];
+    // Keep only real match games; drop tournament futures/props so the mission pool is
+    // exclusively same-day-resolving fixtures.
+    return data.filter(isMatchGame);
   } finally {
     clearTimeout(timer);
   }
@@ -103,13 +142,14 @@ export async function syncWorldCupMarkets(): Promise<number> {
       const { resolved, winnerIndex } = resolutionOf(m);
       await query(
         `insert into worldcup_markets
-           (condition_id, question, description, group_title, event_title, end_date, price, resolved, winner_index, updated_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
+           (condition_id, question, description, group_title, event_title, end_date, price, resolved, winner_index, market_type, match_subject, updated_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now())
          on conflict (condition_id) do update set
            question = excluded.question, description = excluded.description,
            group_title = excluded.group_title, event_title = excluded.event_title,
            end_date = excluded.end_date, price = excluded.price, resolved = excluded.resolved,
-           winner_index = excluded.winner_index, updated_at = now()`,
+           winner_index = excluded.winner_index, market_type = excluded.market_type,
+           match_subject = excluded.match_subject, updated_at = now()`,
         [
           conditionId,
           question,
@@ -120,6 +160,8 @@ export async function syncWorldCupMarkets(): Promise<number> {
           price,
           resolved,
           winnerIndex,
+          m.sportsMarketType ?? null,
+          matchSubjectOf(e.title),
         ],
       );
       upserts += 1;
@@ -264,27 +306,20 @@ async function bumpCycle(): Promise<number> {
   return rows[0]?.cycle ?? 1;
 }
 
-async function drawUnused(cycle: number, count: number): Promise<WorldCupMarket[]> {
-  const { rows } = await query<{
-    condition_id: string;
-    question: string;
-    description: string | null;
-    group_title: string | null;
-    event_title: string | null;
-    end_date: string | null;
-    price: number | null;
-  }>(
-    `select condition_id, question, description, group_title, event_title, end_date::text as end_date, price
-       from worldcup_markets
-      where resolved = false and last_used_cycle < $1
-        and end_date is not null
-        and end_date >= date_trunc('day', now())
-        and end_date <  date_trunc('day', now()) + interval '1 day'
-      order by random()
-      limit $2`,
-    [cycle, count],
-  );
-  return rows.map((r) => ({
+interface DrawRow {
+  condition_id: string;
+  question: string;
+  description: string | null;
+  group_title: string | null;
+  event_title: string | null;
+  end_date: string | null;
+  price: number | null;
+  market_type: string | null;
+  match_subject: string | null;
+}
+
+function toMarket(r: DrawRow): WorldCupMarket {
+  return {
     conditionId: r.condition_id,
     question: r.question,
     description: r.description ?? "",
@@ -292,7 +327,58 @@ async function drawUnused(cycle: number, count: number): Promise<WorldCupMarket[
     eventTitle: r.event_title ?? "",
     endDate: r.end_date,
     price: r.price,
-  }));
+    marketType: r.market_type ?? "",
+    matchSubject: r.match_subject ?? "",
+  };
+}
+
+async function drawUnused(cycle: number, count: number): Promise<WorldCupMarket[]> {
+  // Pull a wide same-day candidate set (not just `count`), then diversify: prefer a
+  // spread across distinct prediction types (totals, spreads, BTTS, ...) and distinct
+  // fixtures so a mission reads as a varied slate rather than five lines off one game.
+  // A market only qualifies if it has a live price to grade the P&L against.
+  const { rows } = await query<DrawRow>(
+    `select condition_id, question, description, group_title, event_title, end_date::text as end_date,
+            price, market_type, match_subject
+       from worldcup_markets
+      where resolved = false and last_used_cycle < $1
+        and price is not null and price > 0 and price < 1
+        and end_date is not null
+        and end_date >= date_trunc('day', now())
+        and end_date <  date_trunc('day', now()) + interval '1 day'
+      order by random()
+      limit 200`,
+    [cycle],
+  );
+  return diversify(rows.map(toMarket), count);
+}
+
+// Greedily pick `count` markets favouring variety: on each pass take the candidate
+// whose (marketType, matchSubject) pair is least represented so far, so distinct
+// prediction types and distinct games come first, then fill from what remains.
+function diversify(pool: WorldCupMarket[], count: number): WorldCupMarket[] {
+  const picked: WorldCupMarket[] = [];
+  const typeSeen = new Map<string, number>();
+  const gameSeen = new Map<string, number>();
+  const remaining = [...pool];
+  while (picked.length < count && remaining.length > 0) {
+    let bestIdx = 0;
+    let bestScore = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const m = remaining[i]!;
+      // Lower is better: penalise repeating a type, and (more lightly) a fixture.
+      const score = (typeSeen.get(m.marketType) ?? 0) * 2 + (gameSeen.get(m.matchSubject) ?? 0);
+      if (score < bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    const chosen = remaining.splice(bestIdx, 1)[0]!;
+    picked.push(chosen);
+    typeSeen.set(chosen.marketType, (typeSeen.get(chosen.marketType) ?? 0) + 1);
+    gameSeen.set(chosen.matchSubject, (gameSeen.get(chosen.matchSubject) ?? 0) + 1);
+  }
+  return picked;
 }
 
 // Draw the next mission's markets from the pool: unresolved markets not yet used in

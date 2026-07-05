@@ -46,8 +46,20 @@ async function readEntries(contestId: number): Promise<Entry[]> {
 // The mission's markets: reuse the ones already drawn for this contest (so a restart
 // mid-run does not redraw a different set), otherwise draw a fresh mission and store it.
 async function missionMarketsFor(contestId: number): Promise<WorldCupMarket[]> {
-  const { rows } = await query<{ market_idx: number; condition_id: string; question: string; price: number | null }>(
-    "select market_idx, condition_id, question, price from worldcup_mission_markets where contest_id = $1 order by market_idx asc",
+  const { rows } = await query<{
+    market_idx: number;
+    condition_id: string;
+    question: string;
+    price: number | null;
+    market_type: string | null;
+    match_subject: string | null;
+  }>(
+    `select mm.market_idx, mm.condition_id, mm.question, mm.price,
+            wm.market_type, wm.match_subject
+       from worldcup_mission_markets mm
+       left join worldcup_markets wm on wm.condition_id = mm.condition_id
+      where mm.contest_id = $1
+      order by mm.market_idx asc`,
     [contestId],
   );
   if (rows.length > 0) {
@@ -59,6 +71,8 @@ async function missionMarketsFor(contestId: number): Promise<WorldCupMarket[]> {
       eventTitle: "",
       price: r.price,
       endDate: null,
+      marketType: r.market_type ?? "",
+      matchSubject: r.match_subject ?? "",
     }));
   }
   const { rows: cfg } = await query<{ puzzle_count: number }>(

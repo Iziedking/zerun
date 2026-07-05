@@ -216,6 +216,13 @@ create table if not exists worldcup_mission_markets (
 alter table worldcup_markets add column if not exists price double precision;
 alter table worldcup_mission_markets add column if not exists price double precision;
 
+-- The Polymarket sportsMarketType (e.g. "totals", "spreads", "both_teams_to_score"),
+-- and the match subject (e.g. "Brazil vs. Norway"). Used to draw a mission that spans
+-- distinct prediction types across distinct games rather than five near-identical lines
+-- from one market family.
+alter table worldcup_markets add column if not exists market_type text;
+alter table worldcup_markets add column if not exists match_subject text;
+
 -- Pre-built World Cup intel cache: a research brief per market (history, stats, the
 -- pundit read), built once and reused across agents and missions, refreshed on a TTL.
 -- The live-sentiment half of the intel pack is fetched fresh at forecast time and not
