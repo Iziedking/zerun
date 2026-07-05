@@ -139,6 +139,10 @@ export const api = {
   // Support tools, gated by the admin token (sent as a header).
   adminCheck: (token: string) =>
     req<{ ok: boolean }>("/api/admin/check", { headers: { "x-admin-token": token } }),
+  adminGas: (token: string) =>
+    req<{ og: number; min: number; low: boolean; wei: string }>("/api/admin/gas", {
+      headers: { "x-admin-token": token },
+    }),
   adminAgent: (id: number, token: string) =>
     req<{
       agent: {

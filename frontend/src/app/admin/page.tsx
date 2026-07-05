@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { shortAddr, formatUsdc } from "@/lib/format";
-import { StickerCard, PopButton } from "@/components/zerun";
+import { StickerCard, PopButton, cx } from "@/components/zerun";
 
 const INPUT =
   "w-full rounded-chunk border-line border-ink bg-cloud px-4 py-2.5 font-body text-[15px] text-ink shadow-pop-press outline-none placeholder:text-ink-3 focus:-translate-y-px";
@@ -24,6 +24,7 @@ export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [gas, setGas] = useState<Awaited<ReturnType<typeof api.adminGas>> | null>(null);
 
   // agent tools
   const [agentId, setAgentId] = useState("");
@@ -53,6 +54,7 @@ export default function AdminPage() {
       await api.adminCheck(t);
       setSaved(t);
       setAuthed(true);
+      api.adminGas(t).then(setGas).catch(() => {});
     } catch {
       setMsg({ ok: false, text: "That token was not accepted." });
     } finally {
@@ -144,6 +146,40 @@ export default function AdminPage() {
           Lock
         </PopButton>
       </header>
+
+      {/* Coordinator gas: the wallet that pays for 0G Compute and every settlement,
+          cancel, and refund. Red when low, so it is caught before it stalls the arena. */}
+      {gas && (
+        <StickerCard
+          className={cx(
+            "flex flex-wrap items-center justify-between gap-3 p-4",
+            gas.low && "border-coral bg-coral/10",
+          )}
+        >
+          <div>
+            <div className="font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
+              Coordinator gas
+            </div>
+            <div className={cx("font-display text-2xl", gas.low ? "text-coral" : "text-ink")}>
+              {gas.og.toFixed(2)} 0G
+            </div>
+            {gas.low && (
+              <div className="mt-0.5 font-body text-[13px] font-bold text-coral">
+                Low (floor {gas.min} 0G). Top up the coordinator now, or agents, settlement, and
+                cancels will fail.
+              </div>
+            )}
+          </div>
+          <PopButton
+            type="button"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => api.adminGas(saved).then(setGas).catch(() => {})}
+          >
+            Refresh
+          </PopButton>
+        </StickerCard>
+      )}
 
       {/* ---- Operator: balances, grant tUSDC (the "cannot host" fix) ---- */}
       <StickerCard className="space-y-4 p-5">
