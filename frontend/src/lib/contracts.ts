@@ -34,8 +34,18 @@ export const contestEngineAbi = parseAbi([
   // Emitted by listContest; read the assigned id from this rather than pre-reading
   // nextContestId, which races other listings.
   "event ContestListed(uint256 indexed id, address indexed sponsor, uint8 indexed cType, address protocolTarget, uint256 prizePool, uint256 entryFee)",
-  // Custom errors, so viem can decode reverts (e.g. a prize already claimed).
+  // Custom errors, so viem can decode reverts into named errors the UI can explain.
   "error AlreadyClaimed()",
   "error InvalidProof()",
   "error ContestNotSettled()",
+  "error ContestEnded()",
+  "error ContestNotOpen()",
+  "error AlreadyEntered()",
+  "error OperatorAlreadyEntered()",
+  "error NotAgentOwner()",
+  "error TierNotAllowed(uint16 agentTier, uint16 minTier, uint16 maxTier)",
+  "error RefundNotAvailable()",
+  "error NothingToRefund()",
+  "error NotEntered()",
+  "error AlreadyRefunded()",
 ]);

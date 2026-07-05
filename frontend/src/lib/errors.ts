@@ -28,8 +28,26 @@ export function friendlyError(
   if (/insufficient funds|insufficient balance|gas required|out of gas|exceeds balance/.test(msg)) {
     return "Not enough 0G for gas. Grab some from the faucet and retry.";
   }
-  // The contract turned it down.
-  if (/revert|execution reverted|already entered|already claimed|not allowed|unauthorized|too low/.test(msg)) {
+  // Named contract reverts, decoded by viem from the ABI. Give the real reason.
+  if (/contestended/.test(msg)) {
+    return "The join window closed before your entry landed. This contest is no longer taking agents. Enter earlier next time.";
+  }
+  if (/contestnotopen/.test(msg)) {
+    return "This contest is not open for entries right now.";
+  }
+  if (/operatoralreadyentered|alreadyentered/.test(msg)) {
+    return "You already have an agent in this contest.";
+  }
+  if (/notagentowner/.test(msg)) {
+    return "That agent is not owned by this wallet.";
+  }
+  if (/tiernotallowed/.test(msg)) {
+    return "This agent's tier is outside this contest's range.";
+  }
+  if (/alreadyrefunded/.test(msg)) return "That entry fee has already been refunded.";
+  if (/notentered/.test(msg)) return "This wallet did not enter that contest.";
+  // Any other contract rejection.
+  if (/revert|execution reverted|not allowed|unauthorized|too low/.test(msg)) {
     return "The chain said no on that one. Check the details and try again.";
   }
   // Connection or backend hiccup.
