@@ -35,15 +35,10 @@ interface RawMarket {
   umaResolutionStatus?: string;
 }
 
-// Events whose title or slug looks like the World Cup. Kept loose on purpose: the
-// gamma search is fuzzy, so we re-filter what it returns.
-const WORLDCUP_RE = /world[\s-]?cup|fifa/i;
-// Search phrases to seed the event pull (the API search is fuzzy, so we union a few
-// and then filter by WORLDCUP_RE). Tunable without a code change.
-const EVENT_QUERIES = (process.env.WORLDCUP_EVENT_QUERIES ?? "world cup,fifa world cup")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+// The Polymarket tag that scopes to World Cup markets only: today's games and their
+// props (moneyline, spread, totals, both-teams-to-score), plus brackets and futures.
+// Authoritative, unlike a fuzzy text search that dragged in unrelated events. Tunable.
+const WORLDCUP_TAG_SLUG = process.env.WORLDCUP_TAG_SLUG ?? "world-cup";
 
 function parseJsonArray(s: string | undefined): string[] {
   if (!s) return [];
@@ -66,10 +61,10 @@ function resolutionOf(m: RawMarket): { resolved: boolean; winnerIndex: number | 
   return { resolved: true, winnerIndex: yesWon ? 0 : 1 };
 }
 
-async function fetchEvents(search: string): Promise<RawEvent[]> {
+async function fetchWorldCupEvents(): Promise<RawEvent[]> {
   const url =
-    "https://gamma-api.polymarket.com/events?closed=false&limit=100&order=volume&ascending=false&search=" +
-    encodeURIComponent(search);
+    "https://gamma-api.polymarket.com/events?closed=false&limit=300&order=endDate&ascending=true&tag_slug=" +
+    encodeURIComponent(WORLDCUP_TAG_SLUG);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
   try {
@@ -87,23 +82,15 @@ async function fetchEvents(search: string): Promise<RawEvent[]> {
 // (last_used_cycle) is preserved across syncs; only the content and resolution state
 // are refreshed.
 export async function syncWorldCupMarkets(): Promise<number> {
-  const byEvent = new Map<string, RawEvent>();
-  for (const q of EVENT_QUERIES) {
-    let events: RawEvent[] = [];
-    try {
-      events = await fetchEvents(q);
-    } catch {
-      continue; // one failed query should not sink the whole sync
-    }
-    for (const e of events) {
-      const tag = `${e.title ?? ""} ${e.slug ?? ""}`;
-      if (!WORLDCUP_RE.test(tag)) continue;
-      byEvent.set(e.slug ?? e.title ?? JSON.stringify(e), e);
-    }
+  let events: RawEvent[] = [];
+  try {
+    events = await fetchWorldCupEvents();
+  } catch {
+    return 0; // a failed sync leaves the existing pool untouched
   }
 
   let upserts = 0;
-  for (const e of byEvent.values()) {
+  for (const e of events) {
     for (const m of e.markets ?? []) {
       const outcomes = parseJsonArray(m.outcomes);
       if (outcomes.length !== 2) continue; // binary Yes/No only
@@ -252,6 +239,9 @@ async function drawUnused(cycle: number, count: number): Promise<WorldCupMarket[
     `select condition_id, question, description, group_title, event_title, end_date::text as end_date
        from worldcup_markets
       where resolved = false and last_used_cycle < $1
+        and end_date is not null
+        and end_date >= date_trunc('day', now())
+        and end_date <  date_trunc('day', now()) + interval '1 day'
       order by random()
       limit $2`,
     [cycle, count],
