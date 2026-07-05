@@ -3,7 +3,7 @@ import {
   syncWorldCupMarkets,
   missionOutcomes,
   refreshMissionResolutions,
-  tallyForecasts,
+  tallyPnl,
   type Forecast,
 } from "../runners/worldcup.js";
 import { excludeHouseFor, scoringField } from "./runWorldCupContest.js";
@@ -65,8 +65,9 @@ async function readForecasts(contestId: number): Promise<Forecast[]> {
 async function gradeAndSettle(contestId: number): Promise<void> {
   const outcomes = await missionOutcomes(contestId);
   const forecasts = await readForecasts(contestId);
-  const tally = tallyForecasts(
+  const pnl = tallyPnl(
     forecasts,
+    outcomes.map((o) => ({ marketIdx: o.marketIdx, price: o.price })),
     outcomes.map((o) => ({ marketIdx: o.marketIdx, winnerIndex: o.winnerIndex })),
   );
 
@@ -75,12 +76,16 @@ async function gradeAndSettle(contestId: number): Promise<void> {
   const scores: AgentScore[] = [];
   for (const f of field) {
     if (f.isHouse && excludeHouse) continue;
-    const t = tally.get(f.agentId) ?? { correct: 0, totalLatencyMs: 0 };
+    const rec = pnl.get(f.agentId) ?? { pnl: 0, totalLatencyMs: 0 };
+    // Only agents that beat the market (positive P&L) are eligible to win. The pool
+    // splits by rank, so encode the P&L as the ranking score; order is what matters. If
+    // no one beats the market, no scores are added and finalizeContest refunds.
+    if (rec.pnl <= 0) continue;
     scores.push({
       agentId: f.agentId,
       operator: f.operator,
-      correct: t.correct,
-      totalLatencyMs: t.totalLatencyMs,
+      correct: Math.max(1, Math.round(rec.pnl * 1_000_000)),
+      totalLatencyMs: rec.totalLatencyMs,
       computeLevel: f.level,
     });
   }
@@ -88,7 +93,7 @@ async function gradeAndSettle(contestId: number): Promise<void> {
   broadcast({
     type: "status",
     contestId,
-    payload: { status: "running", detail: "World Cup events resolved; scoring the mission" },
+    payload: { status: "running", detail: "World Cup events resolved; scoring on prediction-market P&L" },
   });
   await finalizeContest(contestId, rankAgents(scores));
 }

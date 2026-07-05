@@ -14,6 +14,7 @@ export interface WorldCupMarket {
   groupTitle: string; // e.g. "Spain"
   eventTitle: string; // e.g. "World Cup Winner"
   endDate: string | null;
+  price: number | null; // market-implied Yes probability at pick time
 }
 
 interface RawEvent {
@@ -97,15 +98,17 @@ export async function syncWorldCupMarkets(): Promise<number> {
       const conditionId = (m.conditionId ?? "").trim();
       const question = (m.question ?? "").trim();
       if (!conditionId || question.length < 8) continue;
+      const prices = parseJsonArray(m.outcomePrices);
+      const price = prices.length === 2 && Number.isFinite(Number(prices[0])) ? Number(prices[0]) : null;
       const { resolved, winnerIndex } = resolutionOf(m);
       await query(
         `insert into worldcup_markets
-           (condition_id, question, description, group_title, event_title, end_date, resolved, winner_index, updated_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8, now())
+           (condition_id, question, description, group_title, event_title, end_date, price, resolved, winner_index, updated_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9, now())
          on conflict (condition_id) do update set
            question = excluded.question, description = excluded.description,
            group_title = excluded.group_title, event_title = excluded.event_title,
-           end_date = excluded.end_date, resolved = excluded.resolved,
+           end_date = excluded.end_date, price = excluded.price, resolved = excluded.resolved,
            winner_index = excluded.winner_index, updated_at = now()`,
         [
           conditionId,
@@ -114,6 +117,7 @@ export async function syncWorldCupMarkets(): Promise<number> {
           m.groupItemTitle ?? null,
           e.title ?? null,
           m.endDate ?? null,
+          price,
           resolved,
           winnerIndex,
         ],
@@ -160,17 +164,20 @@ export interface MissionOutcome {
   conditionId: string;
   resolved: boolean;
   winnerIndex: number | null;
+  price: number | null; // the Yes price fixed with the mission, for P&L grading
 }
 
-// The resolution state of a mission's markets, joined from the pool.
+// The resolution state of a mission's markets, joined from the pool, with the price the
+// mission was priced at.
 export async function missionOutcomes(contestId: number): Promise<MissionOutcome[]> {
   const { rows } = await query<{
     market_idx: number;
     condition_id: string;
     resolved: boolean | null;
     winner_index: number | null;
+    price: number | null;
   }>(
-    `select mm.market_idx, mm.condition_id, wm.resolved, wm.winner_index
+    `select mm.market_idx, mm.condition_id, mm.price, wm.resolved, wm.winner_index
        from worldcup_mission_markets mm
        left join worldcup_markets wm on wm.condition_id = mm.condition_id
       where mm.contest_id = $1
@@ -182,6 +189,7 @@ export async function missionOutcomes(contestId: number): Promise<MissionOutcome
     conditionId: r.condition_id,
     resolved: Boolean(r.resolved),
     winnerIndex: r.winner_index,
+    price: r.price,
   }));
 }
 
@@ -215,6 +223,35 @@ export function tallyForecasts(
   return out;
 }
 
+// Prediction-market P&L grading. An agent earns by beating the market in the direction
+// it actually settled: with the market's Yes price p, the agent's Yes probability q, and
+// outcome o (1 if Yes won, i.e. winnerIndex 0), one market pays `(q - p) * (o - p)`.
+// Matching the market (q = p) scores 0; disagreeing and being right pays, being wrong
+// costs, and conviction scales both. The mission P&L is the sum across resolved markets;
+// the resolver ranks by it and pays the top, refunding if none beat the market.
+export function tallyPnl(
+  forecasts: Forecast[],
+  prices: { marketIdx: number; price: number | null }[],
+  outcomes: { marketIdx: number; winnerIndex: number | null }[],
+): Map<number, { pnl: number; totalLatencyMs: number }> {
+  const priceByIdx = new Map(prices.map((p) => [p.marketIdx, p.price]));
+  const winByIdx = new Map(outcomes.map((o) => [o.marketIdx, o.winnerIndex]));
+  const out = new Map<number, { pnl: number; totalLatencyMs: number }>();
+  for (const f of forecasts) {
+    const rec = out.get(f.agentId) ?? { pnl: 0, totalLatencyMs: 0 };
+    rec.totalLatencyMs += f.latencyMs;
+    const p = priceByIdx.get(f.marketIdx);
+    const winner = winByIdx.get(f.marketIdx);
+    if (typeof p === "number" && winner !== undefined && winner !== null && f.probYes !== null) {
+      const outcome = winner === 0 ? 1 : 0; // winnerIndex 0 = Yes resolved
+      const q = Math.max(0, Math.min(1, f.probYes));
+      rec.pnl += (q - p) * (outcome - p);
+    }
+    out.set(f.agentId, rec);
+  }
+  return out;
+}
+
 async function currentCycle(): Promise<number> {
   const { rows } = await query<{ cycle: number }>("select cycle from worldcup_state where id = 1");
   return rows[0]?.cycle ?? 1;
@@ -235,8 +272,9 @@ async function drawUnused(cycle: number, count: number): Promise<WorldCupMarket[
     group_title: string | null;
     event_title: string | null;
     end_date: string | null;
+    price: number | null;
   }>(
-    `select condition_id, question, description, group_title, event_title, end_date::text as end_date
+    `select condition_id, question, description, group_title, event_title, end_date::text as end_date, price
        from worldcup_markets
       where resolved = false and last_used_cycle < $1
         and end_date is not null
@@ -253,6 +291,7 @@ async function drawUnused(cycle: number, count: number): Promise<WorldCupMarket[
     groupTitle: r.group_title ?? "",
     eventTitle: r.event_title ?? "",
     endDate: r.end_date,
+    price: r.price,
   }));
 }
 

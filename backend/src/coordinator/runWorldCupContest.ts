@@ -46,8 +46,8 @@ async function readEntries(contestId: number): Promise<Entry[]> {
 // The mission's markets: reuse the ones already drawn for this contest (so a restart
 // mid-run does not redraw a different set), otherwise draw a fresh mission and store it.
 async function missionMarketsFor(contestId: number): Promise<WorldCupMarket[]> {
-  const { rows } = await query<{ market_idx: number; condition_id: string; question: string }>(
-    "select market_idx, condition_id, question from worldcup_mission_markets where contest_id = $1 order by market_idx asc",
+  const { rows } = await query<{ market_idx: number; condition_id: string; question: string; price: number | null }>(
+    "select market_idx, condition_id, question, price from worldcup_mission_markets where contest_id = $1 order by market_idx asc",
     [contestId],
   );
   if (rows.length > 0) {
@@ -57,6 +57,7 @@ async function missionMarketsFor(contestId: number): Promise<WorldCupMarket[]> {
       description: "",
       groupTitle: "",
       eventTitle: "",
+      price: r.price,
       endDate: null,
     }));
   }
@@ -77,9 +78,9 @@ async function missionMarketsFor(contestId: number): Promise<WorldCupMarket[]> {
   }
   for (let i = 0; i < picked.length; i++) {
     await query(
-      `insert into worldcup_mission_markets (contest_id, market_idx, condition_id, question)
-         values ($1,$2,$3,$4) on conflict (contest_id, market_idx) do nothing`,
-      [contestId, i, picked[i]!.conditionId, picked[i]!.question],
+      `insert into worldcup_mission_markets (contest_id, market_idx, condition_id, question, price)
+         values ($1,$2,$3,$4,$5) on conflict (contest_id, market_idx) do nothing`,
+      [contestId, i, picked[i]!.conditionId, picked[i]!.question, picked[i]!.price],
     );
   }
   return picked;

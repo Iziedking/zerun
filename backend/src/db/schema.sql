@@ -210,6 +210,12 @@ create table if not exists worldcup_mission_markets (
   primary key (contest_id, market_idx)
 );
 
+-- The market's Yes price (Polymarket implied probability) at forecast time, fixed with
+-- the mission, plus the live price on the pool. The prediction-market P&L grader scores
+-- an agent by how well it beat this price in the direction the market actually settled.
+alter table worldcup_markets add column if not exists price double precision;
+alter table worldcup_mission_markets add column if not exists price double precision;
+
 -- Pre-built World Cup intel cache: a research brief per market (history, stats, the
 -- pundit read), built once and reused across agents and missions, refreshed on a TTL.
 -- The live-sentiment half of the intel pack is fetched fresh at forecast time and not
