@@ -138,6 +138,25 @@ export function EnterContest({
         }
       }
 
+      // Estimate the entry on our own node, which has already seen the approve (we
+      // waited for its receipt), and hand the wallet an explicit gas limit. That makes
+      // the wallet skip its own estimation, which otherwise reverts against a node that
+      // has not yet indexed the fresh approve and silently blocks the entry. Fall back
+      // to a safe fixed limit if the estimate itself is unavailable.
+      let gas: bigint;
+      try {
+        const est = await publicClient.estimateContractGas({
+          address: engineAddr,
+          abi: contestEngineAbi,
+          functionName: "registerEntry",
+          args: [BigInt(contestId), BigInt(agentId), 0n],
+          account: address,
+        });
+        gas = (est * 12n) / 10n; // 20% headroom
+      } catch {
+        gas = 600_000n;
+      }
+
       const hash = await walletAction.run(
         () =>
           writeContractAsync({
@@ -146,6 +165,7 @@ export function EnterContest({
             functionName: "registerEntry",
             args: [BigInt(contestId), BigInt(agentId), 0n],
             chainId: zeroGGalileo.id,
+            gas,
           }),
         entryFee > 0n
           ? approved
@@ -158,6 +178,9 @@ export function EnterContest({
       setDone(true);
       await queryClient.invalidateQueries({ queryKey: ["contest", String(contestId)] });
     } catch (e) {
+      // Log the raw error so the exact cause (revert reason, rejection, RPC error) is
+      // visible in the console while we stabilize the entry flow.
+      console.error(`enter contest ${contestId} failed:`, e);
       setError(friendlyError(e, "Could not send your agent in. Try again."));
     } finally {
       setBusy(false);
