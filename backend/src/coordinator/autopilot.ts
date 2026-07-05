@@ -284,13 +284,14 @@ async function upgradeHouseTier(
 // anyone else; the mirror row follows.
 export async function seedHouseInto(contestId: number, target = HOUSE_SIZE): Promise<void> {
   const dep = loadDeployment();
-  // Entry-fee challenges are real-vs-real: house wallets are not funded or approved
-  // for the fee, so registerEntry would revert. Leave those seats for real
-  // challengers rather than fail silently on every fill attempt.
-  const { rows: metaRows } = await query<{ entry_fee: string | null }>(
-    "select entry_fee from contests_meta where contest_id = $1",
+  // House agents never enter duels (a duel is real-vs-real by rule) and never enter
+  // challenges (they cannot pay the entry fee). The house only fills open, staked
+  // contests. A duel that never gets its second real agent cancels and refunds.
+  const { rows: metaRows } = await query<{ entry_fee: string | null; max_operators: number | null }>(
+    "select entry_fee, max_operators from contests_meta where contest_id = $1",
     [contestId],
   );
+  if (metaRows[0]?.max_operators === 2) return;
   if ((metaRows[0]?.entry_fee ?? "0") !== "0") return;
   const { rows: inRows } = await query<{ agent_id: string }>(
     "select agent_id from contest_entries where contest_id = $1",
