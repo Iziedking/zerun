@@ -27,6 +27,7 @@ export const contestEngineAbi = parseAbi([
   "function claimRefund(uint256 contestId)",
   "function operatorEntered(uint256, address) view returns (bool)",
   "function refundClaimed(uint256, address) view returns (bool)",
+  "function prizeClaimed(uint256, address) view returns (bool)",
   "function getContest(uint256) view returns ((uint8 contestType,uint8 status,uint16 winnerCutBps,uint16 topN,uint16 platformFeeBps,address sponsor,address protocolTarget,bytes32 metric,uint64 startTime,uint64 endTime,uint256 prizePool,bytes32 finalRoot,uint16 minTier,uint16 maxTier,uint256 entryFee,uint256 feePool,uint64 resolvedAt))",
   "function listContest(uint8 cType, address protocolTarget, bytes32 metric, uint256 prizePool, uint64 duration, uint16 winnerCutBps, uint16 topN, uint16 minTier, uint16 maxTier, uint256 entryFee) returns (uint256)",
   "function nextContestId() view returns (uint256)",
