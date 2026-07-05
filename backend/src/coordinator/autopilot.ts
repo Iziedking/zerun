@@ -641,15 +641,30 @@ export function autopilotEnabled(): boolean {
 }
 
 export function startAutopilot(): void {
-  if (!autopilotEnabled()) return;
-  const cadence = FIXED_INTERVAL_MS
-    ? `every ${FIXED_INTERVAL_MS / 1000}s`
-    : `~${PER_DAY}/day (±${Math.round(GAP_JITTER * 100)}%)`;
-  console.log(
-    `autopilot: on. opening ${cadence}, ${WINDOW_S}s window, ${POOL_USDC} tUSDC pool, max ${MAX_OPEN} open.`,
-  );
-  void startOpenLoop();
+  // The coordinator needs its signer key to send any settlement transaction.
+  if (!config.signerKey) {
+    console.warn("coordinator: no signer key; settlement and autopilot are both off.");
+    return;
+  }
+
+  // Settlement, World Cup resolution, and house fills run whenever the coordinator
+  // is up, independent of the AUTOPILOT toggle. Otherwise user-hosted contests
+  // (poker duels, challenges, missions) never get run, settled, cancelled, or
+  // resolved, and sit OPEN forever. AUTOPILOT only controls whether the platform
+  // also opens its own contests.
   void startDueSweeper();
-  void startHouseFillPoll();
   void startWorldCupResolver();
+  void startHouseFillPoll();
+
+  if (autopilotEnabled()) {
+    const cadence = FIXED_INTERVAL_MS
+      ? `every ${FIXED_INTERVAL_MS / 1000}s`
+      : `~${PER_DAY}/day (±${Math.round(GAP_JITTER * 100)}%)`;
+    console.log(
+      `autopilot: on. opening ${cadence}, ${WINDOW_S}s window, ${POOL_USDC} tUSDC pool, max ${MAX_OPEN} open.`,
+    );
+    void startOpenLoop();
+  } else {
+    console.log("coordinator: settlement, World Cup resolver, and house fill running; auto-open is off.");
+  }
 }
