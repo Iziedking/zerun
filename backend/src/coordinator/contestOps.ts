@@ -191,11 +191,16 @@ export async function keepOnchainEntrants<T extends { operator: string }>(
 // for a duel (max_operators == 2), one for an open contest. (Poker enforces its own
 // heads-up minimum in its runner and never reaches this.)
 export async function isUnderfilledDuel(contestId: number, entryCount: number): Promise<boolean> {
-  const { rows } = await query<{ max_operators: number | null }>(
-    "select max_operators from contests_meta where contest_id = $1",
+  const { rows } = await query<{ max_operators: number | null; entry_fee: string | null }>(
+    "select max_operators, entry_fee from contests_meta where contest_id = $1",
     [contestId],
   );
-  return rows[0]?.max_operators === 2 && entryCount < 2;
+  if (rows[0]?.max_operators === 2 && entryCount < 2) return true;
+  // A challenge's pot is its entry fees, so a single entrant has no one to beat and
+  // nothing to win (they would just pay the platform fee on their own money). Cancel
+  // and refund rather than run a one-sided event. The house never fills challenges.
+  if ((rows[0]?.entry_fee ?? "0") !== "0" && entryCount < 2) return true;
+  return false;
 }
 
 // Rebuild a contest's entries in the database from the on-chain EntryRegistered

@@ -6,7 +6,7 @@ import { getAgentCompute } from "../runners/traitStore.js";
 import { computePlan } from "../runners/computeLevels.js";
 import { broadcast } from "./ws.js";
 import { cancelContest, type RunResult } from "./finalize.js";
-import { onchainEntryCount, syncEntriesFromChain, keepOnchainEntrants } from "./contestOps.js";
+import { onchainEntryCount, syncEntriesFromChain, keepOnchainEntrants, isUnderfilledDuel } from "./contestOps.js";
 import { contestEngineAbi, coordinatorAddress, loadDeployment, publicClient } from "../chain/contracts.js";
 
 // The World Cup Prediction Mission runner. It runs once when the join window closes:
@@ -171,7 +171,10 @@ export async function runWorldCupContest(contestId: number): Promise<RunResult> 
   }
 
   entries = await keepOnchainEntrants(contestId, entries);
-  if (entries.length === 0) {
+  if (entries.length === 0 || (await isUnderfilledDuel(contestId, entries.length))) {
+    // No field, a duel missing its second agent, or a challenge with a single
+    // entrant (the pot is entry fees; alone there is nothing to win): cancel and
+    // refund rather than run a one-sided mission.
     broadcast({ type: "status", contestId, payload: { status: "no-entries" } });
     await cancelContest(contestId);
     return notSettled;
