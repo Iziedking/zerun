@@ -521,11 +521,16 @@ async function fillClosingContests(): Promise<void> {
     if (fillingHouse.has(id)) continue; // a fill for this contest is already running
     const endsAtMs = Number(r.ends_at_ms ?? 0);
     if (endsAtMs <= nowMs) continue; // window already closed
-    // Poker fills the whole table; everything else only tops up to a small baseline so
-    // real players take the seats and the house joins late (a small fill has a short
-    // lead). A capped contest never fills past its seat cap.
+    // Poker fills the whole table. A funded contest with an explicit seat cap (extra
+    // space the host opened) also fills that space: any seat still empty near close is
+    // taken by a house agent so the contest runs full rather than under-seated. An
+    // uncapped contest only tops up to a small baseline. In every case real players get
+    // almost the whole window first (the house joins in the final seconds, scaled lead
+    // below) and the fill is bounded by the house roster. Duels and challenges are
+    // refused inside seedHouseInto, so this never seats the house into those.
     const cap = r.max_operators ?? HOUSE_SIZE;
-    const target = r.kind === "poker" ? cap : Math.min(cap, HOUSE_BASELINE);
+    const capped = r.max_operators != null;
+    const target = r.kind === "poker" || capped ? cap : Math.min(cap, HOUSE_BASELINE);
     const need = target - (r.agent_count ?? 0);
     if (need <= 0) continue; // already at the target field
 

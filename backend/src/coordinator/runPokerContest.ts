@@ -3,6 +3,7 @@ import { query } from "../db/pool.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
+import { recordScore, broadcastStandings } from "./standings.js";
 import { finalizeContest, cancelContest, type RunResult } from "./finalize.js";
 import { onchainEntryCount, syncEntriesFromChain, keepOnchainEntrants } from "./contestOps.js";
 import { contestEngineAbi, coordinatorAddress, loadDeployment, publicClient } from "../chain/contracts.js";
@@ -285,6 +286,11 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     });
 
     stacks = [t.stacks[0], t.stacks[1]];
+    // Reveal the live chip stacks in the standings: chips are what decides the duel,
+    // so the table ranks on them and updates hand by hand instead of showing zeroes.
+    await recordScore(contestId, players[0].agentId, t.stacks[0], "chips");
+    await recordScore(contestId, players[1].agentId, t.stacks[1], "chips");
+    await broadcastStandings(contestId).catch(() => {});
     button = button === 0 ? 1 : 0;
     handIndex += 1;
   }

@@ -140,6 +140,20 @@ create table if not exists solve_runs (
 );
 create index if not exists solve_runs_contest_idx on solve_runs (contest_id, id);
 
+-- The live "winning metric" per agent per contest: the number the standings rank on
+-- and that decides the winner, which differs by kind (poker = chip stack, world cup =
+-- prediction P&L, the rest = correct answers). Runners upsert this as play advances so
+-- the standings reveal real, live data instead of a placeholder zero. Correct-answer
+-- kinds do not need a row (the standings derive their score from solve_runs verdicts).
+create table if not exists contest_scores (
+  contest_id  bigint not null,
+  agent_id    bigint not null,
+  score       double precision not null default 0,
+  metric      text not null default 'points',  -- "chips" | "P&L" | "correct"
+  updated_at  timestamptz not null default now(),
+  primary key (contest_id, agent_id)
+);
+
 -- Self-consistency record: how many passes ran for an answer and how many backed
 -- the winning one. Part of the provable audit (better builds vote more tightly).
 alter table solve_runs add column if not exists samples int;

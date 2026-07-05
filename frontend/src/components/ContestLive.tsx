@@ -118,6 +118,8 @@ export function ContestLive({
           totalLatencyMs: s.totalLatencyMs,
           computeLevel: s.computeLevel,
           passes: s.passes,
+          score: s.score,
+          metric: s.metric,
         })),
       );
     } else if (msg.type === "status") {

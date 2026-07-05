@@ -76,6 +76,10 @@ export interface StandingRow {
   rank: number;
   computeLevel?: number;
   passes?: number;
+  // The value the contest ranks on (chips / P&L / correct) and its label, so the
+  // standings show the number that decides the winner. Optional for older callers.
+  score?: number;
+  metric?: string;
 }
 
 export interface SettledPayout {

@@ -6,6 +6,26 @@ import { agentVariant, Chip, SkinnedAgent, StickerCard } from "./zerun";
 const TIER = ["Base", "Spark", "Sharp", "Deep", "Elite", "Apex"];
 const tierName = (l?: number) => TIER[Math.max(0, Math.min(5, l ?? 0))] ?? "Base";
 
+// The big number is whatever decides the winner for this contest kind: chips for a
+// poker duel, prediction P&L for World Cup, or correct answers otherwise.
+function formatScore(s: Standing): string {
+  const metric = s.metric ?? "correct";
+  const v = s.score ?? s.correct;
+  if (metric === "chips") return Math.round(v).toLocaleString();
+  if (metric === "P&L") return `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+  return String(s.correct);
+}
+
+// The caption under the score names the metric, so it is obvious what the number is.
+// Correct-answer kinds keep the richer 0G signal (passes solved, else total latency).
+function scoreLabel(s: Standing): string {
+  const metric = s.metric ?? "correct";
+  if (metric === "chips") return "chips";
+  if (metric === "P&L") return "P&L";
+  if (s.passes != null && s.passes > 0) return `${s.passes} passes`;
+  return formatLatency(s.totalLatencyMs);
+}
+
 export function StandingsTable({
   standings,
   highlight,
@@ -62,11 +82,9 @@ export function StandingsTable({
                 </span>
               </div>
               <div className="shrink-0 text-right">
-                <div className="font-display text-lg text-ink">{s.correct}</div>
+                <div className="font-display text-lg text-ink">{formatScore(s)}</div>
                 <div className="font-mono text-[11px] text-ink-3">
-                  {s.passes != null && s.passes > 0
-                    ? `${s.passes} passes`
-                    : formatLatency(s.totalLatencyMs)}
+                  {scoreLabel(s)}
                 </div>
               </div>
             </li>

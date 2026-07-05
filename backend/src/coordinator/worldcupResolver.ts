@@ -10,6 +10,7 @@ import { excludeHouseFor, scoringField } from "./runWorldCupContest.js";
 import { finalizeContest, cancelContest } from "./finalize.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
+import { recordScore, broadcastStandings } from "./standings.js";
 
 // The World Cup deferred-settlement loop. World Cup missions do not settle when the
 // join window closes; they park in `awaiting_resolution` while the real events play
@@ -60,6 +61,26 @@ async function readForecasts(contestId: number): Promise<Forecast[]> {
     probYes: r.prob_yes,
     latencyMs: r.latency_ms,
   }));
+}
+
+// Record each agent's running prediction P&L from the markets that have resolved so
+// far, and push it to the standings, so the World Cup table reveals real P&L accruing
+// through the day rather than a placeholder until the very end. Markets not yet
+// resolved contribute nothing (tallyPnl skips them).
+async function recordLivePnl(
+  contestId: number,
+  outcomes: Awaited<ReturnType<typeof missionOutcomes>>,
+): Promise<void> {
+  const forecasts = await readForecasts(contestId);
+  const pnl = tallyPnl(
+    forecasts,
+    outcomes.map((o) => ({ marketIdx: o.marketIdx, price: o.price })),
+    outcomes.map((o) => ({ marketIdx: o.marketIdx, winnerIndex: o.winnerIndex })),
+  );
+  for (const [agentId, rec] of pnl) {
+    await recordScore(contestId, agentId, rec.pnl, "P&L");
+  }
+  await broadcastStandings(contestId).catch(() => {});
 }
 
 async function gradeAndSettle(contestId: number): Promise<void> {
@@ -121,6 +142,9 @@ export async function resolveAwaitingMissions(): Promise<void> {
       await refreshMissionResolutions(pending).catch(() => {});
       outcomes = await missionOutcomes(contestId);
     }
+
+    // Reveal the running P&L from whatever has resolved so far, live each tick.
+    await recordLivePnl(contestId, outcomes).catch(() => {});
 
     const resolvedCount = outcomes.filter((o) => o.resolved).length;
     const done = outcomes.length > 0 && resolvedCount === outcomes.length;

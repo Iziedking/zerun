@@ -44,6 +44,9 @@ export function pushStandings(
     rank: r.rank,
     computeLevel: r.computeLevel ?? 0,
     passes: r.passes ?? 0,
+    // Correct-answer kinds rank on the correct count; that is their winning metric.
+    score: r.correct,
+    metric: "correct",
   }));
   broadcast({ type: "standings", contestId, payload: rows });
 }

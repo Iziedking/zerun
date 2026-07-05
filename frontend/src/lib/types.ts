@@ -82,6 +82,10 @@ export interface Standing {
   totalLatencyMs: number;
   computeLevel?: number;
   passes?: number;
+  // The value that decides the winner (poker chips, World Cup P&L, or correct answers)
+  // and its label, so the standings show the deciding number, live.
+  score?: number;
+  metric?: string;
 }
 
 export interface ContestDetail {
@@ -236,6 +240,8 @@ export interface WsStandingPayload {
   rank: number;
   computeLevel?: number;
   passes?: number;
+  score?: number;
+  metric?: string;
 }
 
 export interface WsStatusPayload {

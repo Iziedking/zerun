@@ -2,6 +2,12 @@ import { shortAddr, shortId, formatLatency } from "@/lib/format";
 import { Chip } from "./zerun/Chip";
 import { ExplorerLink } from "./ExplorerLink";
 
+// A 20-byte hex account. Only these get an explorer link; strategy-engine labels
+// like "deterministic" are not on-chain providers and render as plain text.
+function isAddress(v: string): boolean {
+  return /^0x[0-9a-fA-F]{40}$/.test(v);
+}
+
 interface Props {
   provider: string;
   model: string;
@@ -47,10 +53,14 @@ export function ProvenanceBadge({
             provider
           </dt>
           <dd className="truncate text-[12px]">
-            {provider ? (
+            {provider && isAddress(provider) ? (
               <ExplorerLink kind="address" value={provider} label={shortAddr(provider, 6, 4)} />
             ) : (
-              <span className="font-mono text-ink">·</span>
+              // A non-address provider (e.g. the deterministic strategy engine) is not a
+              // real on-chain account, so show it as plain text with no explorer link.
+              <span className="truncate font-mono text-ink" title={provider}>
+                {provider || "·"}
+              </span>
             )}
           </dd>
         </div>
