@@ -1,23 +1,24 @@
 import { encodeAbiParameters, keccak256 } from "viem";
 import { query } from "../db/pool.js";
-import { callModel } from "../compute/client.js";
 import { getAgentCompute } from "../runners/traitStore.js";
-import { computePlan } from "../runners/computeLevels.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
+import { recordScore, broadcastStandings } from "./standings.js";
 import { finalizeContest, cancelContest, type RunResult } from "./finalize.js";
 import { contestEngineAbi, coordinatorAddress, loadDeployment, publicClient } from "../chain/contracts.js";
 import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
 import { shuffle, handLabels } from "../runners/poker/cards.js";
 import { startHand, applyAction, viewFor } from "../runners/poker/multi.js";
 import type { Action } from "../runners/poker/table.js";
-import { POKER_SYSTEM, buildUserPrompt, parseAction } from "../runners/poker/decide.js";
+import { decideStrategy } from "../runners/poker/strategy.js";
 
 // Multi-player (up to 6-max) poker table. Two-seat duels stay on the heads-up path;
 // runPokerContest hands off here when three or more agents entered. Same shape as the
-// duel runner: agents decide on 0G Compute, the seeded deck makes each deal provable,
-// the full match is stored to 0G Storage, and the chip leader at the cutoff takes the
-// pool through the shared settlement. Only a real player can be paid.
+// duel runner: every decision comes from the deterministic, tier-scaled strategy
+// engine (the 0G-hybrid grind — strategy authored on 0G, then played at machine
+// speed), so a table always terminates instead of hanging on per-move inference. The
+// seeded deck makes each deal provable, the full match is stored to 0G Storage, and
+// the chip leader at the cutoff takes the pool. Only a real player can be paid.
 
 const MATCH_MS = Number(process.env.POKER_MATCH_SECONDS ?? "300") * 1000;
 const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "200");
@@ -61,8 +62,15 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
 
   const levelOf = new Map<number, number>();
   for (const p of players) levelOf.set(p.agentId, await getAgentCompute(p.agentId));
-  const planOf = new Map<number, ReturnType<typeof computePlan>>();
-  for (const p of players) planOf.set(p.agentId, computePlan(levelOf.get(p.agentId)!));
+
+  // A recovered table (already 'running' when we start): the match is deterministic
+  // from its seeds, so replay at machine speed instead of another real-time run. This
+  // is what lets a table survive a backend restart mid-match and still settle promptly.
+  const { rows: stRows } = await query<{ status: string }>(
+    "select status from contests_meta where contest_id = $1",
+    [contestId],
+  );
+  const spacingMs = stRows[0]?.status === "running" ? 0 : DECISION_SPACING_MS;
 
   await query("update contests_meta set status = 'running' where contest_id = $1", [contestId]);
   broadcast({
@@ -89,38 +97,43 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
       const seat = t.toAct;
       const entry = players[seat]!;
       const view = viewFor(t);
-      const plan = planOf.get(entry.agentId)!;
+      const tier = levelOf.get(entry.agentId) ?? 0;
+      const dseq = decisionSeq[seat] ?? 0;
 
-      let res: { text: string; source: string; provider: string; model: string; chatID: string | null; verified: boolean | null; latencyMs: number };
+      // The deterministic, tier-scaled decision — same engine as the duel. No network
+      // call, so a full table always terminates, and the seed makes every choice
+      // reproducible from (contestId, handIndex, seat, decisionIndex).
       let action: Action;
+      let reason: string;
       try {
-        res = await callModel({
-          systemPrompt: POKER_SYSTEM,
-          userPrompt: buildUserPrompt(
-            {
-              seat: view.seat,
-              holeCards: view.holeCards,
-              board: view.board,
-              street: view.street,
-              myStack: view.myStack,
-              oppStack: 0,
-              pot: view.pot,
-              toCall: view.toCall,
-              legal: view.legal,
-              history: view.history,
-            },
-            undefined,
-          ),
-          maxTokens: plan.maxTokens,
-          temperature: plan.temperature,
-          models: plan.models,
+        const decision = decideStrategy({
+          hole: t.holes[seat]!,
+          board: t.board,
+          legal: view.legal,
+          pot: view.pot,
+          toCall: view.legal.callAmount,
+          street: t.street,
+          inPosition: seat === t.button, // the button acts last postflop
+          tier,
+          seed: (contestId * 1_000_003 + handIndex * 131 + seat * 17 + dseq) >>> 0,
         });
-        action = parseAction(res.text, view.legal);
+        action = decision.action;
+        reason = decision.reason;
       } catch (err) {
-        console.error(`poker table ${contestId}: decision failed for agent ${entry.agentId}:`, (err as Error).message);
-        res = { text: "", source: "error", provider: "error", model: "error", chatID: null, verified: null, latencyMs: 0 };
+        console.error(`poker table ${contestId}: strategy error for agent ${entry.agentId}:`, (err as Error).message);
         action = view.legal.canCheck ? { type: "check" } : { type: "call" };
+        reason = "safe default";
       }
+      const clampedTier = Math.max(0, Math.min(4, Math.floor(tier)));
+      const res = {
+        text: reason,
+        source: "strategy",
+        provider: "deterministic",
+        model: `tier-${clampedTier}-policy`,
+        chatID: null,
+        verified: null,
+        latencyMs: 0,
+      };
 
       applyAction(t, action);
       const label = (t.log[t.log.length - 1] ?? "").replace(/^seat \d+ /, "");
@@ -128,7 +141,7 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
       decisionSeq[seat] = di + 1;
       await recordDecision(contestId, entry, di, view.street, view.holeCards, view.board, label, res);
       handActions.push({ seat, agentId: entry.agentId, action: label, allin: t.stacks[seat] === 0, source: res.source, chatID: res.chatID });
-      await sleep(DECISION_SPACING_MS);
+      if (spacingMs > 0) await sleep(spacingMs);
     }
 
     matchLog.push({
@@ -140,6 +153,13 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
       stacksAfter: [...t.stacks],
     });
     stacks = [...t.stacks];
+    // Reveal live chip stacks in the standings after each hand. Best effort.
+    try {
+      for (let s = 0; s < n; s++) await recordScore(contestId, players[s]!.agentId, stacks[s]!, "chips");
+      await broadcastStandings(contestId);
+    } catch {
+      /* standings are cosmetic mid-match; the settle path recomputes them */
+    }
     // Move the button to the next seat that still has chips.
     for (let i = 1; i <= n; i++) {
       const nb = (button + i) % n;

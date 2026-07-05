@@ -19,7 +19,7 @@ import {
   type Seat,
 } from "../runners/poker/table.js";
 import { decideStrategy, policyForTier, type Policy } from "../runners/poker/strategy.js";
-import { recordDuel, type PokerStats } from "../runners/poker/dossier.js";
+import { recordDuel, buildDossier, type PokerStats } from "../runners/poker/dossier.js";
 import { acquireDossier } from "../runners/poker/x402.js";
 import { runPokerTable } from "./runPokerTable.js";
 
@@ -138,6 +138,21 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
 
   const levelOf = new Map<number, number>();
   for (const p of players) levelOf.set(p.agentId, await getAgentCompute(p.agentId));
+
+  // A recovered match: this contest already started running once (the process
+  // restarted mid-match, or the sweeper picked it up again). The duel is fully
+  // deterministic from its seeds, so replay it at machine speed with no cosmetic
+  // pacing, and do not pay or broadcast scouting again — the first run already did.
+  // Without this, every backend restart replayed in-flight duels in real time (5 more
+  // minutes each) and re-paid the x402 scout, flooding the feed with duplicate
+  // payments and making matches look like they never end.
+  const { rows: stRows } = await query<{ status: string }>(
+    "select status from contests_meta where contest_id = $1",
+    [contestId],
+  );
+  const recovered = stRows[0]?.status === "running";
+  const spacingMs = recovered ? 0 : DECISION_SPACING_MS;
+
   // Prefetch each agent's dossier on its opponent before the clock starts, so a
   // scouting read never stalls a hand. The dossier is edge information: how the
   // opponent has played across its past duels.
@@ -147,6 +162,16 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   for (const seat of [0, 1] as const) {
     const me = players[seat];
     const opponent = players[seat === 0 ? 1 : 0];
+    if (recovered) {
+      // Rebuild the same opponent model without a second payment: the override
+      // derives from the opponent's stats, so the replayed decisions match.
+      const d = await buildDossier(opponent.agentId).catch(() => null);
+      if (d?.stats) {
+        const ov = scoutOverride(levelOf.get(me.agentId) ?? 0, d.stats);
+        if (ov) overrideOf.set(me.agentId, ov);
+      }
+      continue;
+    }
     // Free within the agent's tier allotment, otherwise paid for with an x402 tUSDC
     // micropayment on 0G. Either way it resolves here, before the clock starts.
     const access = await acquireDossier(me.agentId, levelOf.get(me.agentId) ?? 0, opponent.agentId).catch(
@@ -263,7 +288,7 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
         }),
       });
       handActions.push({ seat, agentId: entry.agentId, action: label, allin: t.stacks[seat] === 0, source: res.source, chatID: res.chatID });
-      await sleep(DECISION_SPACING_MS);
+      if (spacingMs > 0) await sleep(spacingMs);
     }
 
     matchLog.push({
@@ -288,9 +313,14 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     stacks = [t.stacks[0], t.stacks[1]];
     // Reveal the live chip stacks in the standings: chips are what decides the duel,
     // so the table ranks on them and updates hand by hand instead of showing zeroes.
-    await recordScore(contestId, players[0].agentId, t.stacks[0], "chips");
-    await recordScore(contestId, players[1].agentId, t.stacks[1], "chips");
-    await broadcastStandings(contestId).catch(() => {});
+    // Best effort: a standings write must never kill a live match.
+    try {
+      await recordScore(contestId, players[0].agentId, t.stacks[0], "chips");
+      await recordScore(contestId, players[1].agentId, t.stacks[1], "chips");
+      await broadcastStandings(contestId);
+    } catch {
+      /* standings are cosmetic mid-match; the settle path recomputes them */
+    }
     button = button === 0 ? 1 : 0;
     handIndex += 1;
   }
