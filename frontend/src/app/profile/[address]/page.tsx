@@ -9,6 +9,7 @@ import { useUsdcBalance } from "@/lib/useChainData";
 import { kindMeta } from "@/lib/kind";
 import { formatUsdc, shortAddr } from "@/lib/format";
 import type { OperatorProfile } from "@/lib/types";
+import { InlineClaimButton } from "@/components/InlineClaimButton";
 import { SkinUpload } from "@/components/SkinUpload";
 import { DashboardAgentCard } from "@/components/DashboardAgentCard";
 import { WalletReady } from "@/components/WalletReady";
@@ -75,11 +76,14 @@ function ProfileBody({
   const primary = agents[0];
 
   const [historyShown, setHistoryShown] = useState(HISTORY_PAGE);
+  const [claimed, setClaimed] = useState<Set<number>>(new Set());
   const visibleMatches = matches.slice(0, historyShown);
 
-  // Prizes the owner has won but not yet claimed.
+  // Prizes the owner has won but not yet claimed (a just-claimed one clears at once).
   const unclaimed = isMe
-    ? matches.filter((m) => m.amount && Number(m.amount) > 0 && !m.claimed)
+    ? matches.filter(
+        (m) => m.amount && Number(m.amount) > 0 && !m.claimed && !claimed.has(Number(m.contest_id)),
+      )
     : [];
 
   return (
@@ -90,23 +94,26 @@ function ProfileBody({
             You have {unclaimed.length} prize{unclaimed.length > 1 ? "s" : ""} to claim
           </h3>
           <p className="mt-1 font-body text-[14px] text-ink-2">
-            Open each contest and claim your tUSDC. The nudge clears once you have claimed.
+            Claim right here, or open a contest for the full result. The nudge clears once you
+            have claimed.
           </p>
           <ul className="mt-3 space-y-2">
             {unclaimed.map((m) => (
-              <li key={m.contest_id}>
+              <li
+                key={m.contest_id}
+                className="flex items-center justify-between gap-2 rounded-chunk border-line border-ink bg-cloud px-4 py-2.5"
+              >
                 <Link
                   href={`/contest/${m.contest_id}`}
-                  className="flex items-center justify-between rounded-chunk border-line border-ink bg-cloud px-4 py-2.5 transition hover:bg-violet/5"
+                  className="flex flex-1 items-center justify-between gap-3 transition hover:opacity-80"
                 >
                   <span className="font-display text-base text-ink">Contest #{m.contest_id}</span>
-                  <span className="flex items-center gap-3">
-                    <span className="font-display text-base text-ink">
-                      {formatUsdc(m.amount)} tUSDC
-                    </span>
-                    <Chip tone="won">Claim</Chip>
-                  </span>
+                  <span className="font-display text-base text-ink">{formatUsdc(m.amount)} tUSDC</span>
                 </Link>
+                <InlineClaimButton
+                  contestId={Number(m.contest_id)}
+                  onClaimed={() => setClaimed((s) => new Set(s).add(Number(m.contest_id)))}
+                />
               </li>
             ))}
           </ul>
