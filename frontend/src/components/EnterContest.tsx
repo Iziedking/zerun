@@ -144,9 +144,15 @@ export function EnterContest({
           }),
         "Approve the entry fee. You will confirm the entry itself next.",
       );
-      await publicClient.waitForTransactionReceipt({ hash });
+      await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
       await refetchAllowance();
     } catch (e) {
+      // The receipt wait can time out or the RPC can race a tx that actually landed
+      // (the wallet shows "completed" while we show an error). The chain is the truth:
+      // if the allowance now covers the fee, the approve succeeded — carry on to the
+      // enter step instead of showing a false failure.
+      const { data: fresh } = await refetchAllowance();
+      if (((fresh ?? 0n) as bigint) >= entryFee) return;
       console.error(`approve entry fee for ${contestId} failed:`, e);
       setError(friendlyError(e, "Could not approve the entry fee. Try again."));
     } finally {
@@ -202,11 +208,30 @@ export function EnterContest({
           ? "Confirm to pay the fee and send your agent in."
           : "Approve in your wallet to send your agent in.",
       );
-      await publicClient.waitForTransactionReceipt({ hash });
+      await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
       await api.enter(contestId, { agentId: Number(agentId), operator: address });
       setDone(true);
       await queryClient.invalidateQueries({ queryKey: ["contest", String(contestId)] });
     } catch (e) {
+      // Same truth-check as the approve: if the entry actually landed on chain (a
+      // receipt timeout or a lagging RPC threw after success), finish the flow rather
+      // than showing a false failure on a registered entry.
+      try {
+        const entered = await publicClient.readContract({
+          address: engineAddr,
+          abi: contestEngineAbi,
+          functionName: "operatorEntered",
+          args: [BigInt(contestId), address],
+        });
+        if (entered) {
+          await api.enter(contestId, { agentId: Number(agentId), operator: address }).catch(() => {});
+          setDone(true);
+          await queryClient.invalidateQueries({ queryKey: ["contest", String(contestId)] });
+          return;
+        }
+      } catch {
+        /* fall through to the error message */
+      }
       console.error(`enter contest ${contestId} failed:`, e);
       setError(friendlyError(e, "Could not send your agent in. Try again."));
     } finally {
