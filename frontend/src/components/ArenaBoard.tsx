@@ -14,10 +14,19 @@ const RECENT_PAGE = 6;
 const LIVE_PAGE = 9;
 const DUELS_PAGE = 9;
 
-// "Live" covers anything still in play; "Recent" is settled.
+// "Live" covers anything still in play; "Recent" is settled. A World Cup mission that
+// has locked its forecasts and is waiting on the real games to resolve
+// (awaiting_resolution) is still in play, not finished, so it belongs in Live too —
+// otherwise it vanishes from Live and only surfaces in the Duels cross-cut.
 function isLive(c: ContestSummary): boolean {
   const s = (c.status || "").toLowerCase();
-  return s === "open" || s === "pending" || s === "running" || s === "active";
+  return (
+    s === "open" ||
+    s === "pending" ||
+    s === "running" ||
+    s === "active" ||
+    s === "awaiting_resolution"
+  );
 }
 function isSettled(c: ContestSummary): boolean {
   const s = (c.status || "").toLowerCase();

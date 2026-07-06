@@ -99,7 +99,7 @@ app.get("/api/stats", async (c) => {
     `select
        (select count(*)::int from contests_meta) as contests,
        (select count(*)::int from contests_meta where status = 'settled') as settled,
-       (select count(*)::int from contests_meta where status in ('open','pending','running','active')) as live,
+       (select count(*)::int from contests_meta where status in ('open','pending','running','active','awaiting_resolution')) as live,
        (select count(*)::int from agents_meta) as agents,
        (select count(*)::int from solve_runs where source = '0g-compute') as og_calls,
        (select coalesce(sum(prize_pool::numeric), 0)::text from contests_meta where status = 'settled') as settled_pool`,
