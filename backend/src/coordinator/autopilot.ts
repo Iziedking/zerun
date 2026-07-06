@@ -573,23 +573,35 @@ const inFlight = new Set<number>();
 async function runOnce(id: number, kind: ContestKind): Promise<void> {
   if (inFlight.has(id)) return;
   inFlight.add(id);
-  await ensureContestMeta(id).catch(() => {});
-  const runner =
-    kind === "analyst"
-      ? runAnalystContest
-      : kind === "poker"
-        ? runPokerContest
-        : kind === "worldcup"
-          ? runWorldCupContest
-          : runContest;
-  const work = runner(id).finally(() => inFlight.delete(id));
-  work.catch(() => {});
-  await Promise.race([
-    work,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("watchdog")), RUN_TIMEOUT_MS)),
-  ]).catch((err) => {
-    console.error(`autopilot: contest ${id} watchdog: ${(err as Error).message}`);
-  });
+  try {
+    await ensureContestMeta(id).catch(() => {});
+    const runner =
+      kind === "analyst"
+        ? runAnalystContest
+        : kind === "poker"
+          ? runPokerContest
+          : kind === "worldcup"
+            ? runWorldCupContest
+            : runContest;
+    const work = runner(id);
+    work.catch(() => {}); // the awaiter below handles errors; avoid an unhandled rejection
+    // Race the run against a watchdog. Releasing the in-flight slot in the finally
+    // (rather than only when `work` resolves) is critical: a runner that HANGS — a 0G
+    // Compute call or an RPC read that never returns — would otherwise never clear the
+    // slot, and since the sweeper skips any in-flight contest, that contest would sit
+    // OPEN forever, never retried and never even reaching the stale-refund path. With
+    // the slot freed after the watchdog fires, the next sweep retries it, or refunds
+    // it once it is stale. The hung promise, if it ever settles, no longer holds the
+    // slot.
+    await Promise.race([
+      work,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("watchdog")), RUN_TIMEOUT_MS)),
+    ]).catch((err) => {
+      console.error(`autopilot: contest ${id} watchdog: ${(err as Error).message}`);
+    });
+  } finally {
+    inFlight.delete(id);
+  }
 }
 
 async function startDueSweeper(): Promise<void> {
