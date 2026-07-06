@@ -242,6 +242,10 @@ export function HostContestForm({
       onClose?.();
       router.push(`/contest/${contestId}`);
     } catch (e) {
+      // Log the raw error so a failing host (e.g. a wallet-side RPC or gas issue that
+      // the friendly copy cannot name) is diagnosable from the browser console instead
+      // of hidden behind the generic message.
+      console.error("host contest failed:", e);
       setError(friendlyError(e, "Could not host the contest. Give it another go."));
       setPhase("idle");
     }
