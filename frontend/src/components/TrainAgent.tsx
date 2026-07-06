@@ -5,7 +5,7 @@ import { useAccount, usePublicClient, useSendTransaction } from "wagmi";
 import { useWalletAction } from "@/lib/walletAction";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { parseEther } from "viem";
-import { api } from "@/lib/api";
+import { api, reportClientError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { zeroGGalileo, LEGACY_TX } from "@/lib/chain";
 import { Chip, PopButton, cx } from "./zerun";
@@ -96,6 +96,7 @@ export function TrainAgent({
         await queryClient.invalidateQueries({ queryKey: ["operator"] });
       } else {
         // The payment stays remembered, so clicking again finishes it for free.
+        reportClientError(`train-agent:${agentId}`, e, { address });
         setError(
           friendlyError(
             e,

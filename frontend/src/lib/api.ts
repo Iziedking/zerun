@@ -37,6 +37,30 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+// Report a client-side failure to the backend so it lands in the container logs.
+// Fire-and-forget: it must never throw or block the flow it is reporting on. Used
+// for wallet-transaction failures (host, enter, train) that never reach the server
+// otherwise, so they can be traced from `docker logs` instead of a user's console.
+export function reportClientError(
+  context: string,
+  error: unknown,
+  extra?: { address?: string },
+): void {
+  try {
+    const e = error as { shortMessage?: string; message?: string; stack?: string };
+    const message = e?.shortMessage || e?.message || String(error);
+    const detail = e?.stack || "";
+    void fetch(`${API_URL}/api/client-error`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ context, message, detail, address: extra?.address }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* reporting must never break the caller */
+  }
+}
+
 export const api = {
   deployment: () => req<Deployment>("/api/deployment"),
   computeStatus: () => req<ComputeStatus>("/api/compute/status"),

@@ -60,6 +60,33 @@ function adminOk(c: { req: { header: (k: string) => string | undefined } }): boo
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 
+// Client-side failure sink. Some failures (hosting, entering, training) happen in
+// a wallet transaction that goes straight from the browser to the 0G RPC and never
+// touches this backend, so they leave no server trace. The frontend posts them here
+// so the real error lands in the container logs (docker logs / the platform console)
+// where it can be traced, instead of only living in a user's browser console. Best
+// effort and size-capped; it only writes to stderr, never to the database.
+app.post("/api/client-error", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    context?: unknown;
+    message?: unknown;
+    detail?: unknown;
+    address?: unknown;
+  };
+  const clip = (v: unknown, n: number) => String(v ?? "").slice(0, n);
+  const context = clip(body.context, 120) || "unknown";
+  const message = clip(body.message, 500);
+  const detail = clip(body.detail, 4000);
+  const address = clip(body.address, 60);
+  const ua = clip(c.req.header("user-agent"), 200);
+  console.error(
+    `[client-error] context=${context} address=${address || "-"} ua=${ua}\n  message=${message}${
+      detail ? `\n  detail=${detail}` : ""
+    }`,
+  );
+  return c.body(null, 204);
+});
+
 app.get("/api/compute/status", (c) =>
   c.json({ mode: computeMode(), configured: computeConfigured() }),
 );

@@ -9,7 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { contestEngineAbi, testUsdcAbi, CONTEST_TYPE } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
 import { useUsdcBalance } from "@/lib/useChainData";
-import { api } from "@/lib/api";
+import { api, reportClientError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { zeroGGalileo, LEGACY_TX } from "@/lib/chain";
 import { Agent, Chip, KindIcon, PopButton, StickerCard, cx } from "./zerun";
@@ -243,9 +243,11 @@ export function HostContestForm({
       router.push(`/contest/${contestId}`);
     } catch (e) {
       // Log the raw error so a failing host (e.g. a wallet-side RPC or gas issue that
-      // the friendly copy cannot name) is diagnosable from the browser console instead
-      // of hidden behind the generic message.
+      // the friendly copy cannot name) is diagnosable from the browser console, and
+      // report it to the backend so it also lands in the container logs (the wallet tx
+      // never reaches the server otherwise, so this is the only server-side trace).
       console.error("host contest failed:", e);
+      reportClientError("host-contest", e, { address });
       setError(friendlyError(e, "Could not host the contest. Give it another go."));
       setPhase("idle");
     }

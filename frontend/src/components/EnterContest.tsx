@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { contestEngineAbi, testUsdcAbi } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
 import { useAgents } from "@/lib/useAgents";
-import { api } from "@/lib/api";
+import { api, reportClientError } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { zeroGGalileo, LEGACY_TX } from "@/lib/chain";
 import type { ContestSummary, Standing } from "@/lib/types";
@@ -155,6 +155,7 @@ export function EnterContest({
       const { data: fresh } = await refetchAllowance();
       if (((fresh ?? 0n) as bigint) >= entryFee) return;
       console.error(`approve entry fee for ${contestId} failed:`, e);
+      reportClientError(`approve-fee:${contestId}`, e, { address });
       setError(friendlyError(e, "Could not approve the entry fee. Try again."));
     } finally {
       setBusy(false);
@@ -235,6 +236,7 @@ export function EnterContest({
         /* fall through to the error message */
       }
       console.error(`enter contest ${contestId} failed:`, e);
+      reportClientError(`enter-contest:${contestId}`, e, { address });
       setError(friendlyError(e, "Could not send your agent in. Try again."));
     } finally {
       setBusy(false);

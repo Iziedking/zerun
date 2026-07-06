@@ -63,6 +63,33 @@ const setupPromises = new Map<string, Promise<ProviderHandle>>();
 // answer. Tunable with COMPUTE_MIN_INTERVAL_MS.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const MIN_CALL_INTERVAL_MS = Number(process.env.COMPUTE_MIN_INTERVAL_MS ?? "7000");
+
+// Cap every 0G broker SDK call (broker creation, ledger funding, provider setup,
+// header signing, TEE verification). Those calls hit the 0G chain/RPC and have no
+// timeout of their own, so a stalled RPC would hang the whole contest run until the
+// 20-minute settlement watchdog fired. This makes a stall fail fast — generous enough
+// for an on-chain tx to mine, far below the watchdog. Tunable via env. A timed-out
+// funding tx that later mines is harmless: the next call reads the funded ledger and
+// proceeds; only the JS wait is abandoned, not the transaction.
+const BROKER_TIMEOUT_MS = Number(process.env.COMPUTE_BROKER_TIMEOUT_MS ?? "45000");
+function withTimeout<T>(label: string, p: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`0G broker ${label} timed out after ${BROKER_TIMEOUT_MS}ms`)),
+      BROKER_TIMEOUT_MS,
+    );
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e as Error);
+      },
+    );
+  });
+}
 let inflight: Promise<unknown> = Promise.resolve();
 let lastCallStart = 0;
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
@@ -90,7 +117,12 @@ function getWallet(): ethers.Wallet {
 
 async function getBroker(): Promise<Broker> {
   if (!brokerPromise) {
-    brokerPromise = createZGComputeNetworkBroker(getWallet());
+    // Reset the cached promise if creation fails or times out, so the next call
+    // rebuilds a fresh broker instead of forever returning the same rejected promise.
+    brokerPromise = withTimeout("createBroker", createZGComputeNetworkBroker(getWallet())).catch((e) => {
+      brokerPromise = null;
+      throw e;
+    });
   }
   return brokerPromise;
 }
@@ -98,7 +130,7 @@ async function getBroker(): Promise<Broker> {
 // Read the current ledger balance in 0G, or null if no ledger exists yet.
 async function ledgerBalanceOg(broker: Broker): Promise<number | null> {
   try {
-    const ledger = await broker.ledger.getLedger();
+    const ledger = await withTimeout("getLedger", broker.ledger.getLedger());
     // The ledger stores balances at 1e18. Be tolerant of the exact field name
     // across SDK minor versions.
     const raw =
@@ -117,11 +149,11 @@ export async function ensureLedger(): Promise<number> {
   const target = config.compute.ledgerOg;
   const current = await ledgerBalanceOg(broker);
   if (current === null) {
-    await broker.ledger.addLedger(target);
+    await withTimeout("addLedger", broker.ledger.addLedger(target));
     return target;
   }
   if (current < target) {
-    await broker.ledger.depositFund(target - current);
+    await withTimeout("depositFund", broker.ledger.depositFund(target - current));
     return target;
   }
   return current;
@@ -154,7 +186,7 @@ function readService(s: unknown) {
 async function pickProvider(broker: Broker): Promise<string> {
   if (config.compute.pinnedProvider) return config.compute.pinnedProvider;
 
-  const services = (await broker.inference.listService()).map(readService);
+  const services = (await withTimeout("listService", broker.inference.listService())).map(readService);
   if (!services.length) throw new Error("0G Compute returned no live providers");
 
   const chat = services.filter((s) => s.serviceType === "chatbot");
@@ -174,7 +206,7 @@ export async function listProviders(): Promise<
   { provider: string; model: string; serviceType: string; verifiability: string; healthy: boolean; teeTarget: string }[]
 > {
   const broker = await getBroker();
-  return (await broker.inference.listService()).map(readService);
+  return (await withTimeout("listService", broker.inference.listService())).map(readService);
 }
 
 // Bring one provider to a ready state (acknowledge signer, fund its sub-account,
@@ -191,7 +223,7 @@ async function getHandleFor(broker: Broker, provider: string): Promise<ProviderH
       // is best effort: if it is already acknowledged, or the provider does not
       // require it, the inference still works, so a failure here must not stop us.
       try {
-        await broker.inference.acknowledgeProviderSigner(provider);
+        await withTimeout("acknowledgeProviderSigner", broker.inference.acknowledgeProviderSigner(provider));
       } catch (err) {
         console.warn(`acknowledgeProviderSigner skipped: ${(err as Error).message}`);
       }
@@ -201,12 +233,15 @@ async function getHandleFor(broker: Broker, provider: string): Promise<ProviderH
       // transfer reverting here does not block inference.
       try {
         const locked = BigInt(config.compute.perProviderOg) * 10n ** 18n;
-        await broker.ledger.transferFund(provider, "inference", locked);
+        await withTimeout("transferFund", broker.ledger.transferFund(provider, "inference", locked));
       } catch (err) {
         console.warn(`transferFund skipped: ${(err as Error).message}`);
       }
 
-      const { endpoint, model } = await broker.inference.getServiceMetadata(provider);
+      const { endpoint, model } = await withTimeout(
+        "getServiceMetadata",
+        broker.inference.getServiceMetadata(provider),
+      );
       const h: ProviderHandle = { provider, endpoint, model };
       handles.set(provider, h);
       return h;
@@ -257,7 +292,7 @@ export async function ensureReadyFor(preferredModels?: string[]): Promise<Provid
   const broker = await getBroker();
   await ensureLedger();
 
-  const services = (await broker.inference.listService()).map(readService);
+  const services = (await withTimeout("listService", broker.inference.listService())).map(readService);
   for (const want of preferredModels) {
     const match = services.find((s) => s.serviceType === "chatbot" && s.model === want && s.healthy);
     if (match) return getHandleFor(broker, match.provider);
@@ -288,7 +323,10 @@ export async function computeChat(params: {
   // One request at a time. Latency is measured around the actual call, not the
   // time spent waiting in the queue, so the speed tiebreak stays fair.
   return serialize(async () => {
-    const headers = await broker.inference.getRequestHeaders(h.provider, params.userPrompt);
+    const headers = await withTimeout(
+      "getRequestHeaders",
+      broker.inference.getRequestHeaders(h.provider, params.userPrompt),
+    );
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.compute.callTimeoutMs);
@@ -324,7 +362,7 @@ export async function computeChat(params: {
     let verified: boolean | null = null;
     if (chatID) {
       try {
-        verified = await broker.inference.processResponse(h.provider, chatID, text);
+        verified = await withTimeout("processResponse", broker.inference.processResponse(h.provider, chatID, text));
       } catch {
         verified = null;
       }
