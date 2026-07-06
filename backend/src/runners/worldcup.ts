@@ -177,7 +177,13 @@ export async function syncWorldCupMarkets(): Promise<number> {
 export async function refreshMissionResolutions(conditionIds: string[]): Promise<void> {
   if (conditionIds.length === 0) return;
   const params = conditionIds.map((c) => `condition_ids=${encodeURIComponent(c)}`).join("&");
-  const url = `https://gamma-api.polymarket.com/markets?${params}&limit=${conditionIds.length}`;
+  // closed=true is REQUIRED: the gamma /markets endpoint defaults to open markets
+  // only, so a plain condition_ids query returns an empty array for a market that has
+  // already resolved — which is exactly the state a mission is waiting on. Without
+  // this, resolution never reflected and every mission hung until the 48h grace
+  // timeout force-settled it. A market still open (not yet closed) simply is not
+  // returned here, which is correct: it stays pending until it closes.
+  const url = `https://gamma-api.polymarket.com/markets?${params}&closed=true&limit=${conditionIds.length}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20_000);
   let raw: RawMarket[] = [];
