@@ -9,7 +9,7 @@ import { useDeployment } from "@/lib/useDeployment";
 import { api } from "@/lib/api";
 import { formatUsdc } from "@/lib/format";
 import { friendlyError } from "@/lib/errors";
-import { zeroGGalileo } from "@/lib/chain";
+import { zeroGGalileo, LEGACY_TX } from "@/lib/chain";
 import type { ClaimInfo } from "@/lib/types";
 import { Spinner } from "./ui";
 import { Chip, PopButton, StickerCard } from "./zerun";
@@ -66,6 +66,7 @@ export function ClaimPrize({ contestId }: { contestId: number }) {
             functionName: "claimPrize",
             args: [BigInt(contestId), BigInt(info.amount), info.proof as Hex[]],
             chainId: zeroGGalileo.id,
+            ...LEGACY_TX,
           }),
         "Approve in your wallet to claim your prize.",
       );

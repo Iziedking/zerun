@@ -9,7 +9,7 @@ import { useDeployment } from "@/lib/useDeployment";
 import { useAgents } from "@/lib/useAgents";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
-import { zeroGGalileo } from "@/lib/chain";
+import { zeroGGalileo, LEGACY_TX } from "@/lib/chain";
 import type { ContestSummary, Standing } from "@/lib/types";
 import { joinOpen } from "@/lib/phase";
 import { Spinner } from "./ui";
@@ -141,6 +141,7 @@ export function EnterContest({
             functionName: "approve",
             args: [escrowAddr, entryFee],
             chainId: zeroGGalileo.id,
+            ...LEGACY_TX,
           }),
         "Approve the entry fee. You will confirm the entry itself next.",
       );
@@ -203,6 +204,7 @@ export function EnterContest({
             args: [BigInt(contestId), BigInt(agentId), 0n],
             chainId: zeroGGalileo.id,
             gas,
+            ...LEGACY_TX,
           }),
         entryFee > 0n
           ? "Confirm to pay the fee and send your agent in."

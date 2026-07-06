@@ -20,7 +20,7 @@ import { useAgentAuth } from "@/lib/agentAuth";
 import { formatUsdc } from "@/lib/format";
 import { friendlyError } from "@/lib/errors";
 import { useWalletAction } from "@/lib/walletAction";
-import { zeroGGalileo } from "@/lib/chain";
+import { zeroGGalileo, LEGACY_TX } from "@/lib/chain";
 import { ConnectGate } from "@/components/ConnectGate";
 import { Spinner } from "@/components/ui";
 import {
@@ -115,6 +115,7 @@ function OnboardingInner() {
             functionName: "createAgent",
             args: [metadataURI],
             chainId: zeroGGalileo.id,
+            ...LEGACY_TX,
           }),
         "Approve in your wallet to claim your agent.",
       );
@@ -221,6 +222,7 @@ function OnboardingInner() {
             functionName: "registerEntry",
             args: [BigInt(easiest.contest_id), BigInt(agentId), 0n],
             chainId: zeroGGalileo.id,
+            ...LEGACY_TX,
           }),
         "Approve in your wallet to send your agent in.",
       );

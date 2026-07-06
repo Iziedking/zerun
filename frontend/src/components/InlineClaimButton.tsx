@@ -8,7 +8,7 @@ import { contestEngineAbi } from "@/lib/contracts";
 import { useDeployment } from "@/lib/useDeployment";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
-import { zeroGGalileo } from "@/lib/chain";
+import { zeroGGalileo, LEGACY_TX } from "@/lib/chain";
 import { Spinner } from "./ui";
 import { Chip, PopButton } from "./zerun";
 
@@ -78,6 +78,7 @@ export function InlineClaimButton({
             functionName: "claimPrize",
             args: [BigInt(contestId), BigInt(info.amount), info.proof as Hex[]],
             chainId: zeroGGalileo.id,
+            ...LEGACY_TX,
           }),
         "Approve in your wallet to claim your prize.",
       );

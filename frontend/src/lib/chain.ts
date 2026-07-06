@@ -15,6 +15,15 @@ export const zeroGGalileo = defineChain({
 
 export const FAUCET_URL = "https://faucet.0g.ai";
 
+// 0G Galileo expects legacy (pre-EIP-1559) transactions. A wallet's default EIP-1559
+// transaction carries a priority-fee (tip) that can fall below the node's minimum and
+// get rejected ("gas tip cap below minimum") — the same reason deploys need --legacy.
+// That rejection is intermittent (it depends on the wallet's fee estimate at the
+// moment), which is exactly why some user transactions fail at random while others go
+// through. Forcing the legacy type makes the wallet price the tx with eth_gasPrice,
+// which the node accepts. Spread this into every user wallet write/send.
+export const LEGACY_TX = { type: "legacy" } as const;
+
 // Raw params used for wallet_addEthereumChain when the wallet does not know 16602.
 export const addChainParams = {
   chainId: "0x40da", // 16602

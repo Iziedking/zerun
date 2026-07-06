@@ -11,7 +11,7 @@ import { useDeployment } from "@/lib/useDeployment";
 import { useUsdcBalance } from "@/lib/useChainData";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
-import { zeroGGalileo } from "@/lib/chain";
+import { zeroGGalileo, LEGACY_TX } from "@/lib/chain";
 import { Agent, Chip, KindIcon, PopButton, StickerCard, cx } from "./zerun";
 import { WorldCupBanner } from "./WorldCupBanner";
 import { Spinner } from "./ui";
@@ -186,6 +186,7 @@ export function HostContestForm({
               functionName: "approve",
               args: [escrowAddr, prizePool + listingFee],
               chainId: zeroGGalileo.id,
+              ...LEGACY_TX,
             }),
           "Step 1 of 2: approve the prize pool in your wallet.",
         );
@@ -207,6 +208,7 @@ export function HostContestForm({
             functionName: "listContest",
             args: [cType, ZERO_ADDRESS, METRIC[kind], prizePool, BigInt(durationSecs), split.cut, split.topN, 0, 4, entryFeeDp],
             chainId: zeroGGalileo.id,
+            ...LEGACY_TX,
           }),
         "Step 2 of 2: confirm listing the contest in your wallet.",
       );
