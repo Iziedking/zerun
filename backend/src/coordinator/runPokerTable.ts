@@ -124,7 +124,7 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
         action = view.legal.canCheck ? { type: "check" } : { type: "call" };
         reason = "safe default";
       }
-      const clampedTier = Math.max(0, Math.min(4, Math.floor(tier)));
+      const clampedTier = Math.max(0, Math.min(5, Math.floor(tier)));
       const res = {
         text: reason,
         source: "strategy",

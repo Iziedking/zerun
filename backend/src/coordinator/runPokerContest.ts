@@ -229,7 +229,7 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
       const seat = t.toAct;
       const entry = players[seat];
       const view = viewFor(t);
-      const tier = levelOf.get(entry.agentId) ?? 0; // policyForTier clamps to 0..4
+      const tier = levelOf.get(entry.agentId) ?? 0; // policyForTier clamps to 0..5
       const dseq = decisionSeq[seat];
 
       // The deterministic, tier-scaled decision. No network call, so a hand resolves
@@ -260,7 +260,7 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
         action = view.legal.canCheck ? { type: "check" } : { type: "call" };
         reason = "safe default";
       }
-      const clampedTier = Math.max(0, Math.min(4, Math.floor(tier)));
+      const clampedTier = Math.max(0, Math.min(5, Math.floor(tier)));
       const res: Res = {
         text: reason,
         source: "strategy",

@@ -244,9 +244,11 @@ export interface Policy {
   betFraction: number; // standard bet/raise size as a fraction of the pot
 }
 
-// Ordered rookie (0) -> master (4). The gradient is monotone along each lever so
-// higher tiers strictly out-skill lower ones: sharper equity, range awareness,
-// position, disciplined calls, and a measured bluff frequency.
+// Ordered rookie (0) -> apex (5), matching the six compute levels. The gradient
+// climbs in skill: sharper equity, range awareness, position, disciplined calls,
+// and a measured bluff frequency. The top of the ladder (apex, 5) is the
+// value-disciplined reference bot, which is TIGHTER than the master (4) below it,
+// because thin value and light 3-bets bleed chips over a match.
 const POLICIES: Policy[] = [
   {
     // 0 rookie: a calling station. Noisy equity, no range or position sense,
@@ -372,10 +374,41 @@ const POLICIES: Policy[] = [
     callMarginScale: 0.06,
     betFraction: 0.66,
   },
+  {
+    // 5 apex: mirrors the value-disciplined reference bot (dev_fun rab-bot). Its
+    // tuning encodes that thin value bets, light 3-bets and narrow call margins all
+    // quietly bleed chips, so the top tier is TIGHTER than the master below it, not
+    // looser: higher value bars, no light 3-bets, and a call margin that scales hard
+    // with bet size. That discipline is the edge that makes apex beat the
+    // aggressive-but-leaky tier 4 over a match. Values map 1:1 to the reference
+    // POLICY (value_bet, value_raise, value_3bet, call_margin/size_penalty,
+    // range_frac_bet, cbet_bluff, semibluff_*, bet_frac).
+    mcIters: 240,
+    rangeIters: 200,
+    rangeFrac: 0.6, // range_frac_bet: tightest read of the opponent's betting range
+    positionAware: true,
+    pfCheapRatio: 0.34,
+    pfOpenRaise: 0.47, // open_ip 0.42 / open_oop 0.52, centred (position shifts ±0.04)
+    pfOpenCall: 0.34, // call_ip 0.30 / call_oop 0.38, centred
+    pfOptionRaise: 0.6, // free_raise: only strong hands raise a free option
+    pfBigRaise: 0.8, // value_3bet: no light 3-bets, only premiums reraise into pressure
+    pfBigCall: 0.38, // call_oop
+    pfJamRatio: 0.4,
+    valueBet: 0.62, // value_bet: disciplined, no thin value that gets raised off
+    valueRaise: 0.72, // value_raise
+    shoveEq: 0.82,
+    cbetBluff: 0.08, // cbet_bluff: a thin air c-bet, rarely
+    semibluffBet: 0.55, // semibluff_bet
+    semibluffRaise: 0.2, // semibluff_raise
+    drawBar: 0.75,
+    callMarginBase: 0.04, // call_margin: base equity edge over pot odds to call
+    callMarginScale: 0.1, // size_penalty: respect bet size, fold more to big bets
+    betFraction: 0.6, // bet_frac
+  },
 ];
 
 export function policyForTier(tier: number, override?: Partial<Policy>): Policy {
-  const t = Math.max(0, Math.min(4, Math.floor(tier)));
+  const t = Math.max(0, Math.min(POLICIES.length - 1, Math.floor(tier)));
   return { ...POLICIES[t]!, ...(override ?? {}) };
 }
 
