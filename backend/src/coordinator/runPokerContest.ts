@@ -34,7 +34,12 @@ import { runPokerTable } from "./runPokerTable.js";
 // paid: if a real player loses to a house agent, the contest refunds its sponsor.
 
 const MATCH_MS = Number(process.env.POKER_MATCH_SECONDS ?? "300") * 1000;
-const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "200");
+// The hand cap is the NORMAL way a match ends, not a safety net. At blinds 10/20 on
+// 1000 stacks, two deterministic bots reach an all-in clash long before 200 hands, so
+// a big cap meant nearly every duel finished in a bust and the standings always read
+// 2000/0. A short fixed cap ends the match with the chip leader ahead on a real split
+// (e.g. 1240/760); a bust can still end it early, but is the exception.
+const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "40");
 // A small pause between decisions keeps the live duel watchable. Decisions are now
 // instant, so this is purely cosmetic pacing, not a rate-limit workaround.
 const DECISION_SPACING_MS = Number(process.env.POKER_DECISION_SPACING_MS ?? "400");

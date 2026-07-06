@@ -21,7 +21,9 @@ import { decideStrategy } from "../runners/poker/strategy.js";
 // the chip leader at the cutoff takes the pool. Only a real player can be paid.
 
 const MATCH_MS = Number(process.env.POKER_MATCH_SECONDS ?? "300") * 1000;
-const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "200");
+// Same cap as the duel: the match ends at the cap with the chip leader ahead on a
+// real split, instead of grinding until someone busts and the table reads all-or-zero.
+const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "40");
 const DECISION_SPACING_MS = Number(process.env.POKER_DECISION_SPACING_MS ?? "400");
 const MAX_SEATS = 6;
 const START_STACK = 1000;
