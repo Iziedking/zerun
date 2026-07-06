@@ -23,7 +23,16 @@ const POLL_MS = Number(process.env.WORLDCUP_RESOLVE_POLL_SECONDS ?? "300") * 100
 // postponed or voided Polymarket market would otherwise never resolve and park the
 // mission forever, so once this passes we settle on the events that did resolve (or
 // refund if none did).
-const SETTLE_GRACE_MS = Number(process.env.WORLDCUP_SETTLE_GRACE_HOURS ?? "48") * 3600 * 1000;
+const SETTLE_GRACE_MS = Number(process.env.WORLDCUP_SETTLE_GRACE_HOURS ?? "8") * 3600 * 1000;
+// Absolute backstop: the longest a mission may sit awaiting after its join window
+// closed, no matter what its markets' end dates say. This is what guarantees a mission
+// never stays live indefinitely. It fires when the per-market grace above cannot —
+// a mission whose markets have no readable end date (maxEndMs == 0), or one that drew
+// far-future tournament futures instead of same-day games, or a market that UMA never
+// resolves. Missions are day-scoped, so their games always end well within this, and
+// this only bites the pathological cases. Past it we settle on whatever resolved, or
+// refund if nothing did.
+const MAX_AWAIT_MS = Number(process.env.WORLDCUP_MAX_AWAIT_HOURS ?? "20") * 3600 * 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Missions being graded right now, so overlapping polls do not double-settle.
@@ -48,6 +57,18 @@ async function awaitingMissionIds(): Promise<number[]> {
     "select contest_id from contests_meta where status = 'awaiting_resolution'",
   );
   return rows.map((r) => Number(r.contest_id));
+}
+
+// When the mission started waiting: its join-window close, or its creation time as a
+// fallback. The absolute age backstop is measured from here, so a mission cannot sit
+// awaiting forever even if its markets have no usable end date.
+async function missionAnchorMs(contestId: number): Promise<number> {
+  const { rows } = await query<{ anchor: string | null }>(
+    "select extract(epoch from coalesce(ends_at, created_at))::bigint as anchor from contests_meta where contest_id = $1",
+    [contestId],
+  );
+  const secs = rows[0]?.anchor ? Number(rows[0].anchor) : 0;
+  return secs * 1000;
 }
 
 async function readForecasts(contestId: number): Promise<Forecast[]> {
@@ -150,10 +171,18 @@ export async function resolveAwaitingMissions(): Promise<void> {
     const done = outcomes.length > 0 && resolvedCount === outcomes.length;
 
     if (!done) {
-      // Stop waiting on stragglers once the grace window past the last event date has
-      // passed (a postponed or voided market that will never resolve).
+      // Force a terminal state when EITHER (a) all the mission's games have ended and
+      // the per-market grace has passed (a postponed or voided market that will never
+      // resolve), OR (b) the absolute age backstop from the window close has passed.
+      // The backstop is what guarantees no mission stays live forever: it catches the
+      // cases the per-market grace cannot — markets with no readable end date, drawn
+      // futures, or a straggler UMA never resolves.
+      const now = Date.now();
       const maxEndMs = await missionMaxEndMs(contestId);
-      const timedOut = maxEndMs > 0 && Date.now() > maxEndMs + SETTLE_GRACE_MS;
+      const anchorMs = await missionAnchorMs(contestId);
+      const graceOut = maxEndMs > 0 && now > maxEndMs + SETTLE_GRACE_MS;
+      const ageOut = anchorMs > 0 && now > anchorMs + MAX_AWAIT_MS;
+      const timedOut = graceOut || ageOut;
       if (!timedOut) {
         broadcast({
           type: "status",
