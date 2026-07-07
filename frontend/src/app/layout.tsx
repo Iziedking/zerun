@@ -6,6 +6,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { PostConnectModal } from "@/components/PostConnectModal";
 import { WinCelebration } from "@/components/WinCelebration";
 import { ComputeBadge } from "@/components/ComputeBadge";
+import { WelcomeTour } from "@/components/WelcomeTour";
 import { MusicProvider } from "@/lib/music";
 import { NotificationProvider } from "@/lib/notifications";
 import { WalletActionProvider } from "@/lib/walletAction";
@@ -112,6 +113,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {/* Ambient compute status, pinned bottom-right on tablet/desktop. Hidden on
               phones, where a fixed badge collides with page content and the browser bar. */}
           <ComputeBadge className="hidden sm:block fixed bottom-4 right-4 z-30 shadow-pop" />
+          {/* First-run cartoon tour: claim an agent, then how to play. */}
+          <WelcomeTour />
             </NotificationProvider>
             </WalletActionProvider>
           </MusicProvider>
