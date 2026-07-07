@@ -35,6 +35,42 @@ body {
   color: rgb(var(--ink));
 }
 
+/* Cartoon hand cursor across the whole site: a chunky white cartoon glove pointing,
+   outlined in ink, hotspot at the fingertip. Only on real pointer devices (a desktop
+   mouse), so touch/hybrid devices are unaffected. Text fields keep the I-beam so typing
+   stays usable, and disabled controls read as not-allowed. */
+:root {
+  --hand-cursor: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><path d='M10 2c-1 0-1.8 .8-1.8 1.8v9.4l-1.2-1.2c-.7-.7-1.9-.7-2.6 0-.7 .7-.7 1.9 0 2.6l4.8 4.8c.8 .8 1.9 1.3 3.1 1.3h4c2 0 3.7-1.7 3.7-3.7v-5.4c0-.9-.7-1.6-1.6-1.6-.3 0-.6 .1-.9 .2v-.4c0-.9-.7-1.6-1.6-1.6-.4 0-.7 .1-1 .3-.2-.7-.9-1.2-1.6-1.2-.4 0-.7 .1-1 .3V3.8C11.8 2.8 11 2 10 2z' fill='white' stroke='%23171449' stroke-width='2' stroke-linejoin='round'/></svg>") 10 2;
+}
+@media (hover: hover) and (pointer: fine) {
+  html {
+    cursor: var(--hand-cursor), auto;
+  }
+  a,
+  button,
+  [role="button"],
+  label,
+  summary,
+  select,
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  .cursor-pointer {
+    cursor: var(--hand-cursor), pointer;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+  textarea,
+  [contenteditable="true"] {
+    cursor: text;
+  }
+  :disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
 /* Chunky, friendly scrollbar. */
 * {
   scrollbar-width: thin;

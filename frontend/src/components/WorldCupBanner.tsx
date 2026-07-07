@@ -200,14 +200,16 @@ export function WorldCupBanner({
         className,
       )}
     >
-      <div key={variant} className="flex items-center gap-4 p-5 motion-safe:animate-pop-in">
+      <div key={variant} className="flex items-center gap-4 p-3.5 motion-safe:animate-pop-in sm:p-4">
         <div className="min-w-0 flex-1">
           <Chip tone="hot">World Cup</Chip>
-          <h3 className="mt-2 font-display text-2xl leading-tight text-ink">{title ?? v.title}</h3>
-          <p className="mt-1 font-body text-[13px] font-bold text-ink-2">{subtitle ?? v.subtitle}</p>
+          <h3 className="mt-1.5 font-display text-xl leading-tight text-ink">{title ?? v.title}</h3>
+          <p className="mt-1 font-body text-[12px] font-bold leading-snug text-ink-2 sm:text-[13px]">
+            {subtitle ?? v.subtitle}
+          </p>
         </div>
         <div className="hidden shrink-0 sm:block">
-          <svg width="128" height="96" viewBox="0 0 128 96" fill="none" aria-hidden>
+          <svg width="100" height="75" viewBox="0 0 128 96" fill="none" aria-hidden>
             <Art />
           </svg>
         </div>
