@@ -41,7 +41,10 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b-line border-ink bg-sky/85 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-8">
         <div className="flex min-w-0 items-center gap-3 sm:gap-5">
-          <Wordmark />
+          {/* In the app the top bar is crowded (nav pills, balance, controls, the
+              wallet pill), so on phones show just the Z tile and bring the word back
+              at sm+. The marketing landing has room, so it keeps the full wordmark. */}
+          <Wordmark wordClassName={isLanding ? "" : "hidden sm:inline-block"} />
           {/* Desktop / tablet nav */}
           {!isLanding && isConnected && (
             <nav className="hidden items-center gap-2 sm:flex">

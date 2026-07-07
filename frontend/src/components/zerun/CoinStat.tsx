@@ -23,12 +23,13 @@ export function CoinStat({
       <div className="flex items-center gap-2 sm:gap-3">
         {token !== "none" && <TokenMark token={token} />}
         <div className="min-w-0">
-          {/* Numbers never break mid-token (so "24,590" cannot render as "24,59 0");
-              they scale down on small screens and are tabular so they stay tidy. */}
-          <div className="whitespace-nowrap font-display text-[20px] leading-none text-ink tabular-nums sm:text-[32px] lg:text-4xl">
-            {value}
+          {/* The numeral itself never breaks mid-token (so "24,690" cannot render as
+              "24,69 0"), but the suffix may wrap under it on a narrow card rather than
+              clip past the edge. Numbers are tabular so they stay tidy. */}
+          <div className="font-display text-[18px] leading-none text-ink tabular-nums sm:text-[32px] lg:text-4xl">
+            <span className="whitespace-nowrap">{value}</span>
             {suffix && (
-              <span className="ml-1 text-[11px] font-body font-extrabold text-ink-2 sm:ml-1.5 sm:text-sm">
+              <span className="ml-1 whitespace-nowrap text-[11px] font-body font-extrabold text-ink-2 sm:ml-1.5 sm:text-sm">
                 {suffix}
               </span>
             )}
