@@ -80,11 +80,12 @@ export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: Cont
         : null;
 
   return (
-    <StickerCard className={`p-5 ${row.fresh ? "motion-safe:animate-drop-in" : ""}`}>
-      <div className="flex items-start gap-4">
-        {/* The character */}
+    <StickerCard className={`p-4 sm:p-5 ${row.fresh ? "motion-safe:animate-drop-in" : ""}`}>
+      <div className="flex items-start gap-3 sm:gap-4">
+        {/* The character. A touch smaller than before so the thought bubble keeps room
+            on phones, still comfortable on desktop. */}
         <div className="shrink-0">
-          <SkinnedAgent agentId={row.agentId} variant={variant} mood={v.mood} size={84} name={row.agentName} />
+          <SkinnedAgent agentId={row.agentId} variant={variant} mood={v.mood} size={72} name={row.agentName} />
         </div>
 
         <div className="min-w-0 flex-1">

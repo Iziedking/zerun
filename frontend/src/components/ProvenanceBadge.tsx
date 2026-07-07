@@ -40,7 +40,7 @@ export function ProvenanceBadge({
 
   return (
     <div className="rounded-chunk border-line border-ink bg-cloud-2 p-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-body text-[11px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
           thought on 0G Compute
         </span>

@@ -38,7 +38,7 @@ export function Chip({
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-1.5 rounded-pill border-line border-ink px-3 py-1",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-pill border-line border-ink px-3 py-1",
         "font-body text-[12px] font-extrabold uppercase tracking-[0.02em]",
         "shadow-pop-press",
         t.fill,
