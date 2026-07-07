@@ -20,6 +20,19 @@ import {
 } from "../runners/poker/table.js";
 import { decideStrategy, policyForTier, type Policy } from "../runners/poker/strategy.js";
 import { recordDuel, buildDossier, type PokerStats } from "../runners/poker/dossier.js";
+import { recordDuelResult } from "../runners/poker/ratings.js";
+import { author0gPolicy, policy0gEnabled } from "../runners/poker/policy0g.js";
+
+// The authored/scouted policy override this contest already stored for an agent, so a
+// recovered (replayed) match reuses the exact same tuning and its decisions match.
+async function loadStoredOverride(contestId: number, agentId: number): Promise<Partial<Policy> | null> {
+  const { rows } = await query<{ override: unknown }>(
+    "select override from poker_policies where contest_id = $1 and agent_id = $2",
+    [contestId, agentId],
+  );
+  const raw = rows[0]?.override;
+  return raw && typeof raw === "object" ? (raw as Partial<Policy>) : null;
+}
 import { acquireDossier } from "../runners/poker/x402.js";
 import { runPokerTable } from "./runPokerTable.js";
 
@@ -168,8 +181,13 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     const me = players[seat];
     const opponent = players[seat === 0 ? 1 : 0];
     if (recovered) {
-      // Rebuild the same opponent model without a second payment: the override
-      // derives from the opponent's stats, so the replayed decisions match.
+      // Reuse the exact tuning this contest already used (0G-authored or scouted) so
+      // the replay is deterministic; fall back to rederiving the scout override.
+      const stored = await loadStoredOverride(contestId, me.agentId);
+      if (stored) {
+        overrideOf.set(me.agentId, stored);
+        continue;
+      }
       const d = await buildDossier(opponent.agentId).catch(() => null);
       if (d?.stats) {
         const ov = scoutOverride(levelOf.get(me.agentId) ?? 0, d.stats);
@@ -183,7 +201,32 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
       () => null,
     );
     if (access?.text) {
-      if (access.stats) {
+      // P3: when enabled, the strategy tuning is authored on 0G Compute (routed to the
+      // agent's tier model) and anchored on 0G Storage — a stronger model authors a
+      // stronger tuning. Otherwise the deterministic scout override is used. Either way
+      // the tuning is bounded, so it can only nudge play, never break it.
+      let authoredOn0g: Awaited<ReturnType<typeof author0gPolicy>> = null;
+      if (policy0gEnabled()) {
+        authoredOn0g = await author0gPolicy(
+          contestId,
+          me.agentId,
+          levelOf.get(me.agentId) ?? 0,
+          access.stats ?? null,
+        ).catch(() => null);
+      }
+      if (authoredOn0g) {
+        overrideOf.set(me.agentId, authoredOn0g.override);
+        broadcast({
+          type: "status",
+          contestId,
+          payload: {
+            status: "running",
+            detail: `${me.agentName} authored its strategy on 0G (${authoredOn0g.model}${
+              authoredOn0g.root ? `, stored ${authoredOn0g.root.slice(0, 10)}…` : ""
+            })`,
+          },
+        });
+      } else if (access.stats) {
         const ov = scoutOverride(levelOf.get(me.agentId) ?? 0, access.stats);
         if (ov) overrideOf.set(me.agentId, ov);
       }
@@ -349,6 +392,16 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     [players[0].agentId, players[1].agentId],
     stacks[0] === stacks[1] ? null : winnerSeat,
   ).catch((err) => console.error(`poker ${contestId}: dossier update failed:`, (err as Error).message));
+
+  // Update the TrueSkill ladder from the chip result. A dead-even match (no chips
+  // moved, or no hand finished) is not a decisive result, so it does not rate. Best
+  // effort: a ladder write must never block settlement.
+  if (stacks[0] !== stacks[1]) {
+    const chipWinner = stacks[0] > stacks[1] ? 0 : 1;
+    await recordDuelResult(players[chipWinner].agentId, players[chipWinner === 0 ? 1 : 0].agentId).catch(
+      (err) => console.error(`poker ${contestId}: ladder update failed:`, (err as Error).message),
+    );
+  }
 
   // Only a real player can take the pool. If a real player lost to a house agent,
   // refund the sponsor rather than pay the house.

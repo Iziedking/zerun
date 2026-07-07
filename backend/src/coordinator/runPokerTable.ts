@@ -4,6 +4,7 @@ import { getAgentCompute } from "../runners/traitStore.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { recordScore, broadcastStandings } from "./standings.js";
+import { recordTableResult } from "../runners/poker/ratings.js";
 import { finalizeContest, cancelContest, type RunResult } from "./finalize.js";
 import { contestEngineAbi, coordinatorAddress, loadDeployment, publicClient } from "../chain/contracts.js";
 import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
@@ -185,6 +186,17 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
     }
   }
   const winner = players[winnerSeat]!;
+
+  // Update the TrueSkill ladder from the final chip ranking (best first), so a table
+  // feeds the same season leaderboard as a duel. Best effort. Ties break by the same
+  // compute-then-id order the winner pick uses, which is deterministic and fine here.
+  const ranking = players
+    .map((p, seat) => ({ agentId: p.agentId, chips: stacks[seat] ?? 0, level: levelOf.get(p.agentId) ?? 0 }))
+    .sort((a, b) => b.chips - a.chips || b.level - a.level || a.agentId - b.agentId)
+    .map((x) => x.agentId);
+  await recordTableResult(ranking).catch((err) =>
+    console.error(`poker table ${contestId}: ladder update failed:`, (err as Error).message),
+  );
 
   const eligible = !winner.isHouse || !excludeHouse;
   if (!eligible) {

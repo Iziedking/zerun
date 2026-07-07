@@ -57,6 +57,15 @@ export function useModelStats() {
   });
 }
 
+export function usePokerLadder(season?: string) {
+  return useQuery({
+    queryKey: ["poker-ladder", season ?? "current"],
+    queryFn: () => api.pokerLadder(season),
+    staleTime: 15_000,
+    refetchInterval: 20_000,
+  });
+}
+
 export function useOperator(address: string | undefined) {
   return useQuery({
     queryKey: ["operator", address?.toLowerCase()],

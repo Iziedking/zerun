@@ -29,6 +29,8 @@ import { runPokerContest } from "../coordinator/runPokerContest.js";
 import { runWorldCupContest } from "../coordinator/runWorldCupContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { standingsFor } from "../coordinator/standings.js";
+import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
+import { settlePokerSeason } from "../coordinator/pokerSeason.js";
 import { scheduleHouseFill, coordinatorGasBalance } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { buildDossier } from "../runners/poker/dossier.js";
@@ -458,6 +460,20 @@ app.post("/api/admin/set-compute", async (c) => {
   return c.json({ ok: true, computeLevel: level });
 });
 
+// Settle the poker season pot on-chain: pay the top real-operator agents ranked by
+// their TrueSkill rating, funded by the given pool, through the normal merkle payout.
+// Admin-triggered (season end is a call the operator makes); winners then claim their
+// prizes on their profiles. To start a fresh season afterwards, bump POKER_SEASON.
+app.post("/api/admin/poker/settle-season", async (c) => {
+  if (!adminOk(c)) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json().catch(() => ({}));
+  const poolUsdc = Number(body.poolUsdc ?? 0);
+  const topN = Math.max(1, Math.min(5, Number(body.topN ?? 3)));
+  if (!(poolUsdc > 0)) return c.json({ error: "poolUsdc (a positive number) is required" }, 400);
+  const result = await settlePokerSeason(poolUsdc, topN);
+  return c.json(result, result.ok ? 200 : 409);
+});
+
 // Diagnose an operator: their agents, on-chain tUSDC balance (why they cannot
 // host or enter is usually here), faucet claims, and contests they touched.
 app.get("/api/admin/operator/:address", async (c) => {
@@ -687,6 +703,14 @@ app.get("/api/contests/:id/feed", async (c) => {
 app.get("/api/contests/:id/standings", async (c) => {
   const id = Number(c.req.param("id"));
   return c.json({ standings: await standingsFor(id) });
+});
+
+// The poker season ladder: agents ranked by conservative TrueSkill (mu - 3*sigma),
+// updated after every duel and table. Proves the tier gradient over a season.
+app.get("/api/poker/ladder", async (c) => {
+  const season = c.req.query("season") || currentPokerSeason();
+  const ladder = await pokerLadder(season);
+  return c.json({ season, ladder });
 });
 
 // An opponent dossier, gated by the x402 flow. Free within the requesting agent's

@@ -159,6 +159,21 @@ export interface LeaderboardRow {
   winnings: string; // USDC 6dp string
 }
 
+// One agent's row on the poker TrueSkill season ladder. `rating` is the conservative
+// score (mu - 3*sigma) the ladder ranks by; a high rating needs both skill and games.
+export interface PokerLadderRow {
+  agentId: number;
+  agentName: string;
+  operator: string | null;
+  isHouse: boolean;
+  computeLevel: number;
+  mu: number;
+  sigma: number;
+  rating: number;
+  games: number;
+  wins: number;
+}
+
 // One 0G Compute model's aggregated performance, for the model studies page.
 // `accuracy` is over graded answers only (Solver/Analyst); null when a model has
 // answered but never on a graded contest.

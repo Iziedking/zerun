@@ -12,6 +12,7 @@ import type {
   LeaderboardRow,
   ModelStat,
   OperatorProfile,
+  PokerLadderRow,
   RecentFeedItem,
   Standing,
 } from "./types";
@@ -76,6 +77,10 @@ export const api = {
     req<{ feed: RecentFeedItem[] }>(`/api/feed/recent?limit=${limit}`),
   leaderboard: () => req<{ leaderboard: LeaderboardRow[] }>("/api/leaderboard"),
   modelStats: () => req<{ models: ModelStat[] }>("/api/models/stats"),
+  pokerLadder: (season?: string) =>
+    req<{ season: string; ladder: PokerLadderRow[] }>(
+      `/api/poker/ladder${season ? `?season=${encodeURIComponent(season)}` : ""}`,
+    ),
   operator: (address: string) =>
     req<OperatorProfile>(`/api/operators/${address}`),
 

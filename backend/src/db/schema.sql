@@ -101,6 +101,36 @@ create table if not exists poker_stats (
 );
 -- The agent's dossier snapshot on 0G Storage: owned, provable scouting data.
 alter table agents_meta add column if not exists dossier_root text;
+
+-- TrueSkill ratings per agent per poker season, updated after every duel/table. The
+-- ladder ranks by the conservative rating (mu - 3*sigma), so a top spot needs both
+-- skill and enough games to be confident. A season groups a run of matches (POKER_SEASON).
+create table if not exists poker_ratings (
+  season      text not null,
+  agent_id    bigint not null,
+  mu          double precision not null default 25.0,
+  sigma       double precision not null default 8.3333333,
+  games       int not null default 0,
+  wins        int not null default 0,
+  updated_at  timestamptz not null default now(),
+  primary key (season, agent_id)
+);
+create index if not exists poker_ratings_season_idx on poker_ratings (season, ((mu - 3 * sigma)) desc);
+
+-- The 0G-authored strategy policy an agent used for a contest, anchored on 0G Storage.
+-- The policy override (a bounded tuning of the deterministic engine) is produced by a
+-- 0G Compute call and uploaded to 0G Storage, so "the agent's strategy was authored on
+-- 0G" is provable from the stored root. Reused across an agent's contests until refreshed.
+create table if not exists poker_policies (
+  agent_id     bigint not null,
+  contest_id   bigint not null,
+  override     jsonb not null,
+  storage_root text,
+  model        text,
+  chat_id      text,
+  created_at   timestamptz not null default now(),
+  primary key (contest_id, agent_id)
+);
 -- Free opponent-dossier reads an agent has used. Beyond its tier's free allotment,
 -- an agent pays for a dossier via x402.
 alter table agents_meta add column if not exists dossier_free_used int not null default 0;
