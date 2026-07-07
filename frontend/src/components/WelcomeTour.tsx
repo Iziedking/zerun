@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Agent, Confetti, PopButton, StickerCard, cx, type AgentMood } from "./zerun";
 
 // A friendly cartoon coach that walks a first-time visitor through the app: connect,
@@ -55,14 +55,21 @@ const STEPS: Step[] = [
 
 export function WelcomeTour() {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [i, setI] = useState(0);
 
-  // Auto-open once, on the first ever visit.
+  // The landing page ("/") is a marketing page, not the app; the tour belongs inside
+  // the app. Show nothing on the landing page, and auto-open the first time the visitor
+  // steps into the app (e.g. lands on /arena after "Enter the arena").
+  const inApp = pathname !== "/";
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!window.localStorage.getItem(TOUR_KEY)) setOpen(true);
-  }, []);
+    if (!inApp) return; // never auto-open on the marketing page
+    if (window.localStorage.getItem(TOUR_KEY)) return; // already seen
+    setOpen(true);
+  }, [inApp]);
 
   const finish = () => {
     if (typeof window !== "undefined") window.localStorage.setItem(TOUR_KEY, "1");
@@ -77,6 +84,9 @@ export function WelcomeTour() {
   const step = STEPS[i]!;
   const last = i === STEPS.length - 1;
   const first = i === 0;
+
+  // Nothing on the marketing landing page: the tour and its help button live in the app.
+  if (!inApp) return null;
 
   return (
     <>
