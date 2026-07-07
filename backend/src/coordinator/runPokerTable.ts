@@ -127,6 +127,10 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
           street: t.street,
           inPosition: seat === t.button, // the button acts last postflop
           tier,
+          // Equity is judged against everyone still in the hand, so a full table demands
+          // stronger hands than a heads-up pot. This is what keeps the tiers ordered
+          // multiway instead of aggressive tiers stacking off into the field.
+          opponents: Math.max(1, t.folded.filter((f) => !f).length - 1),
           seed: (contestId * 1_000_003 + handIndex * 131 + seat * 17 + dseq) >>> 0,
         });
         action = decision.action;

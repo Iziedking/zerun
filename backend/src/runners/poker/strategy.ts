@@ -88,26 +88,48 @@ export function preflopStrength(hole: Card[]): number {
   return Math.max(0, Math.min(1, (score + 1) / 21));
 }
 
-// Win probability of hole against one random hand on the given board, ties count
-// as half. Iterations trade accuracy for speed and are set per tier.
-export function equity(hole: Card[], board: Card[], iterations: number, rng: () => number): number {
+// Win probability of hole against `opponents` random hands on the given board (ties
+// count as half). This MUST scale with the number of players in the pot: a hand that is
+// 60% to beat one opponent can be well under 30% against five, so a heads-up read of
+// equity badly overvalues hands at a full table and makes an aggressive strategy stack
+// off into the field. Iterations trade accuracy for speed and are set per tier.
+export function equity(
+  hole: Card[],
+  board: Card[],
+  iterations: number,
+  rng: () => number,
+  opponents = 1,
+): number {
   if (hole.length < 2) return 0;
+  const nOpp = Math.max(1, Math.floor(opponents));
   const known = new Set([...hole, ...board]);
   const deck = FULL_DECK.filter((c) => !known.has(c));
   const needBoard = Math.max(0, 5 - board.length);
+  const need = needBoard + 2 * nOpp;
 
   let wins = 0;
   let trials = 0;
   for (let i = 0; i < iterations; i++) {
-    if (deck.length < needBoard + 2) break;
-    const draw = sample(deck, needBoard + 2, rng);
-    const opp = draw.slice(0, 2);
-    const extra = draw.slice(2);
+    if (deck.length < need) break;
+    const draw = sample(deck, need, rng);
+    const extra = draw.slice(0, needBoard);
     const full = [...board, ...extra];
     const mine = evaluate7([...hole, ...full]);
-    const theirs = evaluate7([...opp, ...full]);
-    if (mine > theirs) wins += 1;
-    else if (mine === theirs) wins += 0.5;
+    // I win the trial only if I beat (or tie) every opponent; any opponent ahead loses it.
+    let best = mine;
+    let tied = false;
+    for (let o = 0; o < nOpp; o++) {
+      const opp = draw.slice(needBoard + 2 * o, needBoard + 2 * o + 2);
+      const theirs = evaluate7([...opp, ...full]);
+      if (theirs > best) {
+        best = theirs;
+        tied = false;
+        break;
+      }
+      if (theirs === mine) tied = true;
+    }
+    if (best === mine && !tied) wins += 1;
+    else if (best === mine && tied) wins += 0.5; // approx split among the tied hands
     trials += 1;
   }
   return trials === 0 ? 0 : wins / trials;
@@ -428,6 +450,10 @@ export interface StrategyInput {
   street: number; // 0 preflop, 1 flop, 2 turn, 3 river
   inPosition: boolean | null; // heads-up the button has position postflop
   tier: number;
+  // Live opponents still in the hand (not folded). Equity is measured against this many
+  // players, so a full table correctly demands stronger hands than a heads-up pot. The
+  // runner passes it; defaults to 1 (heads-up) when absent.
+  opponents?: number;
   seed?: number; // deterministic salt, e.g. contestId and hand index mixed in
   policyOverride?: Partial<Policy>; // the 0G-authored tuning, when present
 }
@@ -511,11 +537,13 @@ function decidePreflop(
     return { action: { type: "raise", to: raiseTo(input, p) }, reason: `pf premium s=${s.toFixed(2)}` };
   if (potOdds >= p.pfJamRatio) {
     // Jam territory: playability no longer matters, only showdown equity, so judge
-    // the call on equity against a raising range instead of Chen.
+    // the call on equity. Heads-up, a raising-range read applies; multiway, the honest
+    // question is beating the whole field, so use plain equity against every opponent.
+    const opp = Math.max(1, Math.floor(input.opponents ?? 1));
     const eq =
-      p.rangeFrac !== null
+      opp === 1 && p.rangeFrac !== null
         ? equityVsRange(hole, [], p.rangeFrac, p.rangeIters, rng)
-        : equity(hole, [], p.mcIters, rng);
+        : equity(hole, [], p.mcIters, rng, opp);
     if (eq >= potOdds + p.callMarginBase && legal.canCall)
       return { action: { type: "call" }, reason: `pf jam call eq=${eq.toFixed(2)} po=${potOdds.toFixed(2)}` };
     return giveUp(legal, `pf jam fold eq=${eq.toFixed(2)}`);
@@ -534,11 +562,15 @@ function decidePostflop(
 ): StrategyDecision {
   const { hole, board, legal } = input;
   const draw = drawStrength(hole, board);
+  // Beating the whole field, not just one player: at a full table a hand needs far more
+  // equity to bet or call, so this is what stops the higher tiers value-betting into five
+  // players and bleeding chips.
+  const opp = Math.max(1, Math.floor(input.opponents ?? 1));
 
   if (toCall <= 0) {
     // Checked to us. Value bet the strong, semibluff strong draws, fire a measured
     // bluff at some air, otherwise take the free card.
-    const eq = equity(hole, board, p.mcIters, rng);
+    const eq = equity(hole, board, p.mcIters, rng, opp);
     if (eq >= p.valueBet && legal.canRaise)
       return { action: { type: "raise", to: raiseTo(input, p) }, reason: `value eq=${eq.toFixed(2)}` };
     if (legal.canRaise) {
@@ -551,12 +583,13 @@ function decidePostflop(
     return giveUp(legal, `no check eq=${eq.toFixed(2)}`);
   }
 
-  // Facing a bet. Judge it against a betting range, which is stronger than random,
-  // so we do not overcall. Lower tiers skip the range model and pay it off.
+  // Facing a bet. Heads-up, judge it against a betting range (stronger than random, so we
+  // do not overcall). Multiway, the range read does not hold with several players still
+  // in, so judge on plain equity against the whole field, which correctly demands more.
   const eqr =
-    p.rangeFrac !== null
+    opp === 1 && p.rangeFrac !== null
       ? equityVsRange(hole, board, p.rangeFrac, p.rangeIters, rng)
-      : equity(hole, board, p.mcIters, rng);
+      : equity(hole, board, p.mcIters, rng, opp);
   if (eqr >= p.valueRaise && legal.canRaise)
     return { action: { type: "raise", to: raiseTo(input, p) }, reason: `value raise eq=${eqr.toFixed(2)}` };
   if (eqr >= p.shoveEq && !legal.canRaise && legal.canCall)
@@ -572,7 +605,7 @@ function decidePostflop(
   // A strong draw realizes more than the range estimate credits, so it can still
   // call on raw equity when the price is right.
   if (draw >= p.drawBar && legal.canCall) {
-    const eq = equity(hole, board, p.mcIters, rng);
+    const eq = equity(hole, board, p.mcIters, rng, opp);
     if (eq >= potOdds + p.callMarginBase)
       return { action: { type: "call" }, reason: `draw call eq=${eq.toFixed(2)} po=${potOdds.toFixed(2)}` };
   }
