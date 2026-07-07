@@ -260,16 +260,20 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     payload: { status: "running", detail: `${players[0].agentName} vs ${players[1].agentName}` },
   });
 
-  let stacks: [number, number] = [START_STACK, START_STACK];
+  // Cash-game format: each hand both players buy in for START_STACK, so nobody busts
+  // out of the match. The result is the cumulative chip profit and loss across a full
+  // set of hands, not an all-or-nothing knockout, so the standings show a real
+  // distribution and the stronger tier wins more reliably over the session.
   let button: Seat = 0;
   let handIndex = 0;
+  const net: [number, number] = [0, 0];
   const decisionSeq: [number, number] = [0, 0];
   const matchLog: unknown[] = []; // full replay, stored to 0G Storage in a later phase
   const deadline = Date.now() + MATCH_MS;
 
-  while (Date.now() < deadline && stacks[0] > 0 && stacks[1] > 0 && handIndex < MAX_HANDS) {
+  while (Date.now() < deadline && handIndex < MAX_HANDS) {
     const seed = handSeed(contestId, handIndex);
-    const t = startHand(stacks, button, shuffle(seed));
+    const t = startHand([START_STACK, START_STACK], button, shuffle(seed));
     const handActions: unknown[] = [];
 
     let guard = 0;
@@ -349,22 +353,24 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
       result: t.result,
       stacksAfter: [t.stacks[0], t.stacks[1]],
     });
+    // This hand's profit and loss folds into each seat's running total (both bought in
+    // for START_STACK). The standings show that cumulative chip result, live, so a duel
+    // reads as a real distribution rather than an all-or-nothing knockout.
+    net[0] += t.stacks[0] - START_STACK;
+    net[1] += t.stacks[1] - START_STACK;
+    const fmtNet = (n: number) => (n >= 0 ? `+${n}` : `${n}`);
     broadcast({
       type: "status",
       contestId,
       payload: {
         status: "running",
-        detail: `hand ${handIndex + 1}: ${t.result?.reason ?? "done"} | ${players[0].agentName} ${t.stacks[0]} vs ${players[1].agentName} ${t.stacks[1]}`,
+        detail: `hand ${handIndex + 1}: ${t.result?.reason ?? "done"} | ${players[0].agentName} ${fmtNet(net[0])} vs ${players[1].agentName} ${fmtNet(net[1])}`,
       },
     });
-
-    stacks = [t.stacks[0], t.stacks[1]];
-    // Reveal the live chip stacks in the standings: chips are what decides the duel,
-    // so the table ranks on them and updates hand by hand instead of showing zeroes.
     // Best effort: a standings write must never kill a live match.
     try {
-      await recordScore(contestId, players[0].agentId, t.stacks[0], "chips");
-      await recordScore(contestId, players[1].agentId, t.stacks[1], "chips");
+      await recordScore(contestId, players[0].agentId, net[0], "chips");
+      await recordScore(contestId, players[1].agentId, net[1], "chips");
       await broadcastStandings(contestId);
     } catch {
       /* standings are cosmetic mid-match; the settle path recomputes them */
@@ -373,11 +379,11 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     handIndex += 1;
   }
 
-  // Winner by chips; a dead-even stack (e.g. no hand finished) breaks to the higher
-  // compute level, then the lower agent id, for full determinism.
+  // Winner by cumulative chip profit; a dead-even session (e.g. no hand finished) breaks
+  // to the higher compute level, then the lower agent id, for full determinism.
   let winnerSeat: Seat;
-  if (stacks[0] !== stacks[1]) {
-    winnerSeat = stacks[0] > stacks[1] ? 0 : 1;
+  if (net[0] !== net[1]) {
+    winnerSeat = net[0] > net[1] ? 0 : 1;
   } else {
     const l0 = levelOf.get(players[0].agentId) ?? 0;
     const l1 = levelOf.get(players[1].agentId) ?? 0;
@@ -386,18 +392,17 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   const winner = players[winnerSeat];
 
   // Fold this duel into both agents' dossiers so their record grows for future
-  // scouting. A dead-even match credits no duel winner. Best effort.
+  // scouting. A dead-even session credits no duel winner. Best effort.
   await recordDuel(
     matchLog as unknown as Parameters<typeof recordDuel>[0],
     [players[0].agentId, players[1].agentId],
-    stacks[0] === stacks[1] ? null : winnerSeat,
+    net[0] === net[1] ? null : winnerSeat,
   ).catch((err) => console.error(`poker ${contestId}: dossier update failed:`, (err as Error).message));
 
-  // Update the TrueSkill ladder from the chip result. A dead-even match (no chips
-  // moved, or no hand finished) is not a decisive result, so it does not rate. Best
-  // effort: a ladder write must never block settlement.
-  if (stacks[0] !== stacks[1]) {
-    const chipWinner = stacks[0] > stacks[1] ? 0 : 1;
+  // Update the TrueSkill ladder from the session result. A dead-even session is not a
+  // decisive result, so it does not rate. Best effort: never block settlement.
+  if (net[0] !== net[1]) {
+    const chipWinner = net[0] > net[1] ? 0 : 1;
     const w = players[chipWinner];
     const l = players[chipWinner === 0 ? 1 : 0];
     await recordDuelResult(
@@ -412,7 +417,7 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   if (!eligible) {
     broadcast({ type: "status", contestId, payload: { status: "no-winner" } });
     await cancelContest(contestId);
-    await storePokerReplay(contestId, stacks, matchLog);
+    await storePokerReplay(contestId, net, matchLog);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
 
@@ -430,13 +435,16 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   broadcast({
     type: "status",
     contestId,
-    payload: { status: "running", detail: `${winner.agentName} wins the duel (${stacks[winnerSeat]} chips)` },
+    payload: {
+      status: "running",
+      detail: `${winner.agentName} wins the duel (${net[winnerSeat] >= 0 ? "+" : ""}${net[winnerSeat]} chips over ${handIndex} hands)`,
+    },
   });
   // Settle first, so paying the winner never waits on 0G Storage. The verifiable
   // replay upload comes after and is best effort, so a slow or stalled upload can no
   // longer leave a finished match stuck unsettled.
   const result = await finalizeContest(contestId, rankAgents(scores));
-  await storePokerReplay(contestId, stacks, matchLog);
+  await storePokerReplay(contestId, net, matchLog);
   return result;
 }
 
@@ -444,10 +452,10 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
 // provenance, and the result) to 0G Storage, so anyone can reconstruct and check the
 // duel from its root hash. Best effort and time-bounded: a failure or timeout only
 // logs, and never unsettles a contest that already paid out.
-async function storePokerReplay(contestId: number, stacks: number[], matchLog: unknown[]): Promise<void> {
+async function storePokerReplay(contestId: number, net: number[], matchLog: unknown[]): Promise<void> {
   if (!storageConfigured() || matchLog.length === 0) return;
   try {
-    const up = await uploadJson({ contestId, kind: "poker", finalStacks: stacks, hands: matchLog });
+    const up = await uploadJson({ contestId, kind: "poker", finalNet: net, hands: matchLog });
     await query("update contests_meta set poker_root = $2, poker_tx = $3 where contest_id = $1", [
       contestId,
       up.rootHash,

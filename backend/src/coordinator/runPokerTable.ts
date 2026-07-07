@@ -82,17 +82,20 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
     payload: { status: "running", detail: `${n}-max poker table: ${players.map((p) => p.agentName).join(", ")}` },
   });
 
-  let stacks = new Array(n).fill(START_STACK) as number[];
+  // Cash-game format: every hand each seat buys in for a fresh START_STACK, so nobody
+  // busts out of the table and the result is a cumulative chip profit/loss (net) over
+  // the whole session, not an all-or-nothing knockout. This gives a real chip
+  // distribution across the field and lets the stronger tiers pull ahead over many
+  // hands instead of a single hand deciding everything.
+  const net = new Array(n).fill(0) as number[];
   let button = 0;
   let handIndex = 0;
   const decisionSeq = new Array(n).fill(0) as number[];
   const matchLog: unknown[] = [];
   const deadline = Date.now() + MATCH_MS;
 
-  const withChips = () => stacks.filter((s) => s > 0).length;
-
-  while (Date.now() < deadline && withChips() >= 2 && handIndex < MAX_HANDS) {
-    const t = startHand(stacks, button, shuffle(handSeed(contestId, handIndex)));
+  while (Date.now() < deadline && handIndex < MAX_HANDS) {
+    const t = startHand(new Array(n).fill(START_STACK), button, shuffle(handSeed(contestId, handIndex)));
     const handActions: unknown[] = [];
 
     let guard = 0;
@@ -155,32 +158,27 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
       pots: t.pots,
       stacksAfter: [...t.stacks],
     });
-    stacks = [...t.stacks];
-    // Reveal live chip stacks in the standings after each hand. Best effort.
+    // Fold each seat's win/loss for this hand into its running net.
+    for (let s = 0; s < n; s++) net[s] = net[s]! + (t.stacks[s]! - START_STACK);
+    // Reveal live net chips in the standings after each hand. Best effort.
     try {
-      for (let s = 0; s < n; s++) await recordScore(contestId, players[s]!.agentId, stacks[s]!, "chips");
+      for (let s = 0; s < n; s++) await recordScore(contestId, players[s]!.agentId, net[s]!, "chips");
       await broadcastStandings(contestId);
     } catch {
       /* standings are cosmetic mid-match; the settle path recomputes them */
     }
-    // Move the button to the next seat that still has chips.
-    for (let i = 1; i <= n; i++) {
-      const nb = (button + i) % n;
-      if (stacks[nb]! > 0) {
-        button = nb;
-        break;
-      }
-    }
+    // Rotate the button one seat; every seat is always in (cash game), so no skip.
+    button = (button + 1) % n;
     handIndex += 1;
   }
 
-  // Chip leader takes the pool; a house leader with a real player in the field means
-  // the real players lost, so refund the sponsor.
+  // Biggest net winner takes the pool; a house leader with a real player in the field
+  // means the real players lost, so refund the sponsor.
   let winnerSeat = 0;
   for (let s = 1; s < n; s++) {
     if (
-      stacks[s]! > stacks[winnerSeat]! ||
-      (stacks[s]! === stacks[winnerSeat]! && (levelOf.get(players[s]!.agentId) ?? 0) > (levelOf.get(players[winnerSeat]!.agentId) ?? 0))
+      net[s]! > net[winnerSeat]! ||
+      (net[s]! === net[winnerSeat]! && (levelOf.get(players[s]!.agentId) ?? 0) > (levelOf.get(players[winnerSeat]!.agentId) ?? 0))
     ) {
       winnerSeat = s;
     }
@@ -194,7 +192,7 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
     .map((p, seat) => ({
       id: p.agentId,
       isHouse: p.isHouse,
-      chips: stacks[seat] ?? 0,
+      chips: net[seat] ?? 0,
       level: levelOf.get(p.agentId) ?? 0,
     }))
     .sort((a, b) => b.chips - a.chips || b.level - a.level || a.id - b.id)
@@ -207,7 +205,7 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
   if (!eligible) {
     broadcast({ type: "status", contestId, payload: { status: "no-winner" } });
     await cancelContest(contestId);
-    await storeTableReplay(contestId, n, stacks, matchLog);
+    await storeTableReplay(contestId, n, net, matchLog);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
 
@@ -223,21 +221,24 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
   broadcast({
     type: "status",
     contestId,
-    payload: { status: "running", detail: `${winner.agentName} wins the table (${stacks[winnerSeat]} chips)` },
+    payload: {
+      status: "running",
+      detail: `${winner.agentName} wins the table (${net[winnerSeat]! >= 0 ? "+" : ""}${net[winnerSeat]} chips over ${handIndex} hands)`,
+    },
   });
   // Settle first, so paying the winner never waits on 0G Storage. The verifiable
   // replay upload comes after and is best effort and time-bounded.
   const result = await finalizeContest(contestId, rankAgents(scores));
-  await storeTableReplay(contestId, n, stacks, matchLog);
+  await storeTableReplay(contestId, n, net, matchLog);
   return result;
 }
 
 // Store the full table match to 0G Storage for verifiable replay. Best effort and
 // time-bounded: a failure or timeout only logs, never unsettling a paid contest.
-async function storeTableReplay(contestId: number, seats: number, stacks: number[], matchLog: unknown[]): Promise<void> {
+async function storeTableReplay(contestId: number, seats: number, net: number[], matchLog: unknown[]): Promise<void> {
   if (!storageConfigured() || matchLog.length === 0) return;
   try {
-    const up = await uploadJson({ contestId, kind: "poker", seats, finalStacks: stacks, hands: matchLog });
+    const up = await uploadJson({ contestId, kind: "poker", seats, finalNet: net, hands: matchLog });
     await query("update contests_meta set poker_root = $2, poker_tx = $3 where contest_id = $1", [contestId, up.rootHash, up.txHash]);
   } catch (err) {
     console.error(`poker table ${contestId}: replay storage failed:`, (err as Error).message);

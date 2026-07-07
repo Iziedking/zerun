@@ -11,7 +11,8 @@ const tierName = (l?: number) => TIER[Math.max(0, Math.min(5, l ?? 0))] ?? "Base
 function formatScore(s: Standing): string {
   const metric = s.metric ?? "correct";
   const v = s.score ?? s.correct;
-  if (metric === "chips") return Math.round(v).toLocaleString();
+  // Poker chips are a cumulative net over the session (up or down), so show the sign.
+  if (metric === "chips") return `${v > 0 ? "+" : ""}${Math.round(v).toLocaleString()}`;
   if (metric === "P&L") return `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
   return String(s.correct);
 }
