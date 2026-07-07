@@ -42,6 +42,10 @@ export interface InferencePlan {
   samples: number; // self-consistency passes; the majority answer wins
   retries: number; // extra attempts on an errored pass
   hint: string; // appended to the system prompt
+  // The agent's own retrieved-context memory, appended after the hint when AGENT_MEMORY
+  // is on and the agent has a stored self-summary. Empty otherwise, so behaviour is
+  // unchanged by default. Set per agent by the runner.
+  memoryHint?: string;
   // Analyst only: how many sources the agent researches before forecasting. A
   // top-tier perk, so reaching level 4-5 unlocks real research power. Solver
   // contests ignore it.

@@ -31,6 +31,7 @@ import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { standingsFor } from "../coordinator/standings.js";
 import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
+import { getAgentMemory, memoryEnabled, memoryLift } from "../runners/agentMemory.js";
 import { xConfigured, verifyWalletSig, beginXAuth, completeXAuth, xIdentityFor } from "../auth/xConnect.js";
 import { scheduleHouseFill, coordinatorGasBalance } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
@@ -763,6 +764,23 @@ app.get("/api/poker/ladder", async (c) => {
   const season = c.req.query("season") || currentPokerSeason();
   const ladder = await pokerLadder(season);
   return c.json({ season, ladder });
+});
+
+// An agent's own memory: the 0G-authored self-summary it carries across contests, its
+// tendencies, and the 0G Storage anchor. `enabled` reflects the AGENT_MEMORY flag so the
+// UI can show whether memory is influencing play. Returns memory: null when the agent has
+// none yet (or the flag is off and nothing was ever written).
+app.get("/api/agents/:id/memory", async (c) => {
+  const agentId = Number(c.req.param("id"));
+  if (!agentId) return c.json({ error: "a numeric agent id is required" }, 400);
+  const memory = await getAgentMemory(agentId);
+  return c.json({ enabled: memoryEnabled(), memory });
+});
+
+// The measured lift from agent memory: accuracy of graded answers produced with memory
+// injected vs without, so "agents improve with memory" is provable, not just claimed.
+app.get("/api/memory/lift", async (c) => {
+  return c.json({ enabled: memoryEnabled(), ...(await memoryLift()) });
 });
 
 // An opponent dossier, gated by the x402 flow. Free within the requesting agent's

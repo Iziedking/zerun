@@ -4,6 +4,7 @@ import { fetchLiveInsight } from "../runners/onchain.js";
 import { solvePuzzle } from "../runners/solver.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { computePlan } from "../runners/computeLevels.js";
+import { memoryHintFor, updateMemoriesForContest } from "../runners/agentMemory.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
@@ -108,6 +109,7 @@ async function recordOutcome(
   outcome: Outcome,
   scores: Map<number, AgentScore>,
   nameOf: Map<number, string>,
+  memoryUsed: boolean,
 ): Promise<void> {
   // House agents have no score entry: they still answer (persisted and broadcast
   // below for feed activity) but contribute nothing to standings or payouts.
@@ -120,17 +122,17 @@ async function recordOutcome(
 
   await query(
     `insert into solve_runs
-       (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, agreement)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, agreement, memory_used)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      on conflict (contest_id, agent_id, puzzle_idx) do update set
        answer = excluded.answer, verdict = excluded.verdict, source = excluded.source,
        provider = excluded.provider, model = excluded.model, chat_id = excluded.chat_id,
        verified = excluded.verified, latency_ms = excluded.latency_ms,
-       samples = excluded.samples, agreement = excluded.agreement`,
+       samples = excluded.samples, agreement = excluded.agreement, memory_used = excluded.memory_used`,
     [
       contestId, entry.agentId, entry.operator, puzzle.idx, puzzle.prompt, puzzle.expected,
       outcome.answer, outcome.verdict, outcome.source, outcome.provider, outcome.model,
-      outcome.chatID, outcome.verified, outcome.latencyMs, outcome.samples, outcome.agreement,
+      outcome.chatID, outcome.verified, outcome.latencyMs, outcome.samples, outcome.agreement, memoryUsed,
     ],
   );
 
@@ -226,7 +228,11 @@ export async function runContest(contestId: number): Promise<RunResult> {
   for (const e of entries) {
     const plan = computePlan(levelOf.get(e.agentId)!);
     // Cap house passes so an all-platform field settles fast; real players keep theirs.
-    planOf.set(e.agentId, e.isHouse ? { ...plan, samples: Math.min(plan.samples, HOUSE_SAMPLE_CAP) } : plan);
+    const capped = e.isHouse ? { ...plan, samples: Math.min(plan.samples, HOUSE_SAMPLE_CAP) } : plan;
+    // Inject the agent's own retrieved-context memory (no-op unless AGENT_MEMORY is on and
+    // the real agent has a stored self-summary), so a seasoned agent reasons with its read.
+    const memoryHint = e.isHouse ? "" : await memoryHintFor(e.agentId);
+    planOf.set(e.agentId, { ...capped, memoryHint });
   }
 
   // House agents answer for the feed (activity) but are never scored, ranked, or
@@ -270,7 +276,7 @@ export async function runContest(contestId: number): Promise<RunResult> {
     const plan = planOf.get(entry.agentId)!;
     for (const puzzle of puzzles) {
       const outcome = await solvePuzzle(puzzle, plan);
-      await recordOutcome(contestId, entry, puzzle, outcome, scores, nameOf);
+      await recordOutcome(contestId, entry, puzzle, outcome, scores, nameOf, Boolean(plan.memoryHint));
       if (outcome.verdict === "error") errored.push({ entry, puzzle });
       // Gentle spacing keeps us comfortably under the provider rate limit.
       await sleep(150);
@@ -289,13 +295,20 @@ export async function runContest(contestId: number): Promise<RunResult> {
     });
     const stillFailed: typeof pending = [];
     for (const { entry, puzzle } of pending) {
-      const outcome = await solvePuzzle(puzzle, planOf.get(entry.agentId)!);
-      await recordOutcome(contestId, entry, puzzle, outcome, scores, nameOf);
+      const plan = planOf.get(entry.agentId)!;
+      const outcome = await solvePuzzle(puzzle, plan);
+      await recordOutcome(contestId, entry, puzzle, outcome, scores, nameOf, Boolean(plan.memoryHint));
       if (outcome.verdict === "error") stillFailed.push({ entry, puzzle });
       await sleep(150);
     }
     pending = stillFailed;
   }
 
-  return finalizeContest(contestId, rankAgents([...scores.values()]));
+  const result = await finalizeContest(contestId, rankAgents([...scores.values()]));
+  // Fold this contest's play into each real agent's memory (0G-authored, anchored on 0G
+  // Storage). No-op unless AGENT_MEMORY is on; best effort, never unsettles a paid contest.
+  await updateMemoriesForContest(entries).catch((err) =>
+    console.error(`contest ${contestId}: memory update failed:`, (err as Error).message),
+  );
+  return result;
 }

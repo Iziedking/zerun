@@ -75,7 +75,7 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
     try {
       const res = await callWithRetry(
         {
-          systemPrompt: SYSTEM_PROMPT + plan.hint,
+          systemPrompt: SYSTEM_PROMPT + plan.hint + (plan.memoryHint ?? ""),
           userPrompt,
           maxTokens: plan.maxTokens,
           temperature: plan.temperature,

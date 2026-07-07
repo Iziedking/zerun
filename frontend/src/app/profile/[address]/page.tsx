@@ -11,6 +11,7 @@ import { formatUsdc, shortAddr } from "@/lib/format";
 import type { OperatorProfile } from "@/lib/types";
 import { InlineClaimButton } from "@/components/InlineClaimButton";
 import { RefundNudge } from "@/components/RefundNudge";
+import { MemoryPanel } from "@/components/MemoryPanel";
 import { ConnectX } from "@/components/ConnectX";
 import { SkinUpload } from "@/components/SkinUpload";
 import { DashboardAgentCard } from "@/components/DashboardAgentCard";
@@ -197,6 +198,16 @@ function ProfileBody({
           </StickerCard>
         )}
       </section>
+
+      {/* What each agent has learned on 0G. Each panel self-hides until the agent has a
+          memory, so this stays empty for fresh rosters and appears as agents evolve. */}
+      {agents.length > 0 && (
+        <section className="space-y-4">
+          {agents.map((a) => (
+            <MemoryPanel key={a.agent_id} agentId={a.agent_id} />
+          ))}
+        </section>
+      )}
 
       {/* Match history */}
       <section>

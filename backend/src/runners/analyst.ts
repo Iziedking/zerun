@@ -90,7 +90,7 @@ export async function predictMarket(market: Market, plan: InferencePlan): Promis
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await callModel({
-          systemPrompt: SYSTEM_PROMPT + plan.hint,
+          systemPrompt: SYSTEM_PROMPT + plan.hint + (plan.memoryHint ?? ""),
           userPrompt: buildPrompt(market, research),
           maxTokens: plan.maxTokens,
           temperature: plan.temperature,

@@ -3,6 +3,7 @@ import { fetchMarkets } from "../runners/markets.js";
 import { predictMarket } from "../runners/analyst.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { computePlan } from "../runners/computeLevels.js";
+import { memoryHintFor, updateMemoriesForContest } from "../runners/agentMemory.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
@@ -101,6 +102,7 @@ async function recordPrediction(
   outcome: Prediction,
   scores: Map<number, AgentScore>,
   nameOf: Map<number, string>,
+  memoryUsed: boolean,
 ): Promise<void> {
   // House agents have no score entry: they still forecast (persisted and broadcast
   // below for feed activity) but contribute nothing to standings or payouts.
@@ -113,17 +115,17 @@ async function recordPrediction(
 
   await query(
     `insert into solve_runs
-       (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, sources)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, sources, memory_used)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      on conflict (contest_id, agent_id, puzzle_idx) do update set
        answer = excluded.answer, verdict = excluded.verdict, source = excluded.source,
        provider = excluded.provider, model = excluded.model, chat_id = excluded.chat_id,
        verified = excluded.verified, latency_ms = excluded.latency_ms,
-       samples = excluded.samples, sources = excluded.sources`,
+       samples = excluded.samples, sources = excluded.sources, memory_used = excluded.memory_used`,
     [
       contestId, entry.agentId, entry.operator, market.idx, market.question, market.winnerLabel,
       outcome.prediction, outcome.verdict, outcome.source, outcome.provider, outcome.model,
-      outcome.chatID, outcome.verified, outcome.latencyMs, outcome.samples, outcome.sources,
+      outcome.chatID, outcome.verified, outcome.latencyMs, outcome.samples, outcome.sources, memoryUsed,
     ],
   );
 
@@ -209,7 +211,12 @@ export async function runAnalystContest(contestId: number): Promise<RunResult> {
   const levelOf = new Map<number, number>();
   for (const e of entries) levelOf.set(e.agentId, await getAgentCompute(e.agentId));
   const planOf = new Map<number, ReturnType<typeof computePlan>>();
-  for (const e of entries) planOf.set(e.agentId, computePlan(levelOf.get(e.agentId)!));
+  for (const e of entries) {
+    // Inject the agent's own retrieved-context memory (no-op unless AGENT_MEMORY is on and
+    // the real agent has a stored self-summary), so a seasoned forecaster uses its read.
+    const memoryHint = e.isHouse ? "" : await memoryHintFor(e.agentId);
+    planOf.set(e.agentId, { ...computePlan(levelOf.get(e.agentId)!), memoryHint });
+  }
 
   // House agents forecast for the feed (activity) but are never scored, ranked, or
   // paid: they only fill space, so the prize goes to real operators. They are kept
@@ -250,7 +257,7 @@ export async function runAnalystContest(contestId: number): Promise<RunResult> {
     const plan = planOf.get(entry.agentId)!;
     for (const market of markets) {
       const outcome = await predictMarket(market, plan);
-      await recordPrediction(contestId, entry, market, outcome, scores, nameOf);
+      await recordPrediction(contestId, entry, market, outcome, scores, nameOf, Boolean(plan.memoryHint));
       if (outcome.verdict === "error") errored.push({ entry, market });
       await sleep(150);
     }
@@ -267,13 +274,20 @@ export async function runAnalystContest(contestId: number): Promise<RunResult> {
     });
     const stillFailed: typeof pending = [];
     for (const { entry, market } of pending) {
-      const outcome = await predictMarket(market, planOf.get(entry.agentId)!);
-      await recordPrediction(contestId, entry, market, outcome, scores, nameOf);
+      const plan = planOf.get(entry.agentId)!;
+      const outcome = await predictMarket(market, plan);
+      await recordPrediction(contestId, entry, market, outcome, scores, nameOf, Boolean(plan.memoryHint));
       if (outcome.verdict === "error") stillFailed.push({ entry, market });
       await sleep(150);
     }
     pending = stillFailed;
   }
 
-  return finalizeContest(contestId, rankAgents([...scores.values()]));
+  const result = await finalizeContest(contestId, rankAgents([...scores.values()]));
+  // Fold this contest's forecasts into each real agent's memory (0G-authored, anchored on
+  // 0G Storage). No-op unless AGENT_MEMORY is on; best effort, never unsettles a contest.
+  await updateMemoriesForContest(entries).catch((err) =>
+    console.error(`analyst contest ${contestId}: memory update failed:`, (err as Error).message),
+  );
+  return result;
 }

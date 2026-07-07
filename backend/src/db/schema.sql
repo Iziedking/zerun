@@ -328,3 +328,7 @@ create table if not exists agent_memory (
   storage_root  text,                                -- 0G Storage anchor of this memory version
   updated_at    timestamptz not null default now()
 );
+-- Whether an answer was produced with the agent's memory injected into its prompt. Lets
+-- the lift be measured: accuracy of graded answers with memory vs without (the A/B for
+-- "agents improve with memory"). Default false, so pre-memory answers read as the control.
+alter table solve_runs add column if not exists memory_used boolean not null default false;

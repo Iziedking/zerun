@@ -159,6 +159,33 @@ export interface LeaderboardRow {
   winnings: string; // USDC 6dp string
 }
 
+// An agent's retrieved-context memory: a 0G-authored self-summary it carries across
+// contests, its graded tendencies, and the 0G Storage anchor that proves it was produced
+// on 0G. `enabled` reflects the backend AGENT_MEMORY flag.
+export interface AgentMemoryTendencies {
+  graded: number;
+  correct: number;
+  wrong: number;
+  accuracy: number | null;
+  byKind: Record<string, { correct: number; wrong: number }>;
+  recentForm: string;
+}
+
+export interface AgentMemory {
+  summary: string;
+  tendencies: AgentMemoryTendencies;
+  contests: number;
+  model: string | null;
+  chatId: string | null;
+  storageRoot: string | null;
+  updatedAt: string | null;
+}
+
+export interface AgentMemoryResponse {
+  enabled: boolean;
+  memory: AgentMemory | null;
+}
+
 // A verified X (Twitter) identity linked to an operator wallet, for the profile badge.
 export interface XIdentity {
   handle: string;
