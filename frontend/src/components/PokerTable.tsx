@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import type { WsPokerSnapshot, WsX402Payload } from "@/lib/types";
 import { agentVariant, Chip, SkinnedAgent, StickerCard, ThoughtBubble, cx } from "./zerun";
 import { ExplorerLink } from "./ExplorerLink";
@@ -7,11 +8,12 @@ import { ExplorerLink } from "./ExplorerLink";
 const RED = new Set(["h", "d"]);
 const SUIT: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
 
-function Card({ token, hidden }: { token?: string; hidden?: boolean }) {
+function Card({ token, hidden, small }: { token?: string; hidden?: boolean; small?: boolean }) {
+  const size = small ? "h-8 w-6" : "h-10 w-8";
   if (hidden || !token) {
     return (
       <span
-        className="inline-block h-10 w-8 rounded-md border-2 border-ink bg-violet/70 shadow-[2px_2px_0_#171449]"
+        className={cx("inline-block rounded-md border-2 border-ink bg-violet/70 shadow-[2px_2px_0_#171449]", size)}
         aria-hidden
       />
     );
@@ -21,65 +23,200 @@ function Card({ token, hidden }: { token?: string; hidden?: boolean }) {
   return (
     <span
       className={cx(
-        "inline-flex h-10 w-8 flex-col items-center justify-center rounded-md border-2 border-ink bg-white font-body font-extrabold shadow-[2px_2px_0_#171449]",
+        "inline-flex flex-col items-center justify-center rounded-md border-2 border-ink bg-white font-body font-extrabold shadow-[2px_2px_0_#171449]",
+        size,
         RED.has(suit) ? "text-coral" : "text-ink",
       )}
     >
-      <span className="text-[13px] leading-none">{rank}</span>
-      <span className="text-[11px] leading-none">{SUIT[suit] ?? ""}</span>
+      <span className={cx("leading-none", small ? "text-[11px]" : "text-[13px]")}>{rank}</span>
+      <span className={cx("leading-none", small ? "text-[9px]" : "text-[11px]")}>{SUIT[suit] ?? ""}</span>
     </span>
   );
 }
 
-function Seat({ seat }: { seat: WsPokerSnapshot["seats"][number] }) {
+// An agent's latest move as a chunky tag, so every player's action shows right on the
+// felt (not just the one acting). Colour reads the move: raise hot, call cool, check
+// go, fold muted.
+function ActionTag({ action }: { action?: string }) {
+  if (!action) return null;
+  const tone = /fold/.test(action)
+    ? "bg-cloud-2 text-ink-3"
+    : /rais|bet|all[- ]?in/.test(action)
+      ? "bg-coral text-white"
+      : /call/.test(action)
+        ? "bg-cyan text-candyink"
+        : "bg-mint text-candyink";
   return (
-    <div className={cx("flex flex-col items-center gap-2", seat.folded && "opacity-40")}>
-      <SkinnedAgent
-        agentId={seat.agentId}
-        variant={agentVariant(seat.agentId)}
-        mood={seat.folded ? "lose" : seat.isTurn ? "thinking" : "idle"}
-        size={76}
-        name={seat.name}
-      />
-      <div className="flex flex-wrap items-center justify-center gap-1.5">
-        <span className="font-display text-[15px] text-ink">{seat.name}</span>
+    <span
+      className={cx(
+        "whitespace-nowrap rounded-pill border-2 border-ink px-2 py-0.5 font-display text-[11px] leading-none shadow-[2px_2px_0_#171449]",
+        tone,
+      )}
+    >
+      {action}
+    </span>
+  );
+}
+
+function Seat({
+  seat,
+  action,
+  size = 76,
+  small = false,
+}: {
+  seat: WsPokerSnapshot["seats"][number];
+  action?: string;
+  size?: number;
+  small?: boolean;
+}) {
+  return (
+    <div className={cx("flex flex-col items-center gap-1.5", seat.folded && "opacity-45")}>
+      <div className="relative">
+        <SkinnedAgent
+          agentId={seat.agentId}
+          variant={agentVariant(seat.agentId)}
+          mood={seat.folded ? "lose" : seat.isTurn ? "thinking" : "idle"}
+          size={size}
+          name={seat.name}
+        />
+        {seat.isTurn && (
+          <span
+            className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 animate-pulse rounded-full border-2 border-ink bg-mint"
+            aria-hidden
+          />
+        )}
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-1">
+        <span className={cx("font-display text-ink", small ? "text-[13px]" : "text-[15px]")}>{seat.name}</span>
         {seat.isHouse && <Chip tone="neutral">house</Chip>}
-        {seat.isTurn && <Chip tone="thinking">to act</Chip>}
       </div>
       <div className="flex gap-1">
-        <Card token={seat.holeCards[0]} />
-        <Card token={seat.holeCards[1]} />
+        <Card token={seat.holeCards[0]} small={small} />
+        <Card token={seat.holeCards[1]} small={small} />
       </div>
-      <span className="rounded-pill border-line border-ink bg-amber px-3 py-0.5 font-display text-[15px] text-candyink">
+      <span className="rounded-pill border-line border-ink bg-amber px-2.5 py-0.5 font-display text-[13px] text-candyink">
         {seat.chips}
+      </span>
+      <div className="min-h-[20px]">
+        <ActionTag action={action} />
+      </div>
+    </div>
+  );
+}
+
+// The felt centre: the community board and the pot, the shared focus of the table.
+function Felt({ board, pot, hand, street }: { board: string[]; pot: number; hand: number; street: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 rounded-chunk-lg border-line border-ink/20 bg-mint/10 px-5 py-3">
+      <span className="font-body text-[11px] font-extrabold uppercase tracking-[0.03em] text-ink-3">
+        Hand {hand} · {street}
+      </span>
+      <div className="flex gap-1.5">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <Card key={i} token={board[i]} hidden={!board[i]} />
+        ))}
+      </div>
+      <span className="rounded-pill border-line border-ink bg-amber px-3 py-0.5 font-display text-[14px] text-candyink">
+        pot {pot}
       </span>
     </div>
   );
 }
 
-// A row of seats that wraps, so a table reads well from a heads-up duel up to 6-max.
-function SeatRow({ seats }: { seats: WsPokerSnapshot["seats"] }) {
-  if (!seats.length) return null;
+// A true round table for a 3-to-6-max field: seats sit evenly around an oval felt,
+// each showing its cards, chips, and latest move, so the whole table reads at a glance.
+function RoundTable({
+  seats,
+  actions,
+  board,
+  pot,
+  hand,
+  street,
+}: {
+  seats: WsPokerSnapshot["seats"];
+  actions: Record<number, string>;
+  board: string[];
+  pot: number;
+  hand: number;
+  street: string;
+}) {
+  const n = seats.length;
   return (
-    <div className="flex flex-wrap items-start justify-center gap-5">
-      {seats.map((seat) => (
-        <Seat key={seat.agentId} seat={seat} />
-      ))}
+    <div className="relative mx-auto aspect-[3/2] w-full max-w-2xl sm:aspect-[16/9]">
+      {/* The oval felt the seats sit around. */}
+      <div className="absolute inset-[15%] rounded-[50%] border-line border-ink/20 bg-mint/[0.07]" aria-hidden />
+      {/* The board and pot at the centre of the felt. */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        <Felt board={board} pot={pot} hand={hand} street={street} />
+      </div>
+      {seats.map((seat, i) => {
+        // Evenly spaced around the ellipse, first seat at the top.
+        const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+        const x = 50 + 43 * Math.cos(angle);
+        const y = 50 + 41 * Math.sin(angle);
+        return (
+          <div
+            key={seat.agentId}
+            className="absolute w-[76px] -translate-x-1/2 -translate-y-1/2 sm:w-24"
+            style={{ left: `${x}%`, top: `${y}%` }}
+          >
+            <Seat seat={seat} action={actions[seat.agentId]} size={52} small />
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// The live poker table: the agents around the felt (heads-up or up to 6-max), the
-// board in the middle, the pot, and the acting agent's move with its 0G reasoning.
+// Heads-up reads best as a simple face-off: the two agents above and below the board.
+function HeadsUp({
+  seats,
+  actions,
+  board,
+  pot,
+  hand,
+  street,
+}: {
+  seats: WsPokerSnapshot["seats"];
+  actions: Record<number, string>;
+  board: string[];
+  pot: number;
+  hand: number;
+  street: string;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-5">
+      {seats[0] && <Seat seat={seats[0]} action={actions[seats[0].agentId]} />}
+      <Felt board={board} pot={pot} hand={hand} street={street} />
+      {seats[1] && <Seat seat={seats[1]} action={actions[seats[1].agentId]} />}
+    </div>
+  );
+}
+
+// The live poker table: the agents around the felt (heads-up or up to 6-max), the board
+// and pot at the centre, every seat's latest move on the table, and the acting agent's
+// 0G reasoning below. Each player's move is remembered for the current hand, so the
+// table shows what everyone did, not only the seat on the clock.
 export function PokerTable({ snapshot }: { snapshot: WsPokerSnapshot }) {
   const s = snapshot;
+  const [actions, setActions] = useState<Record<number, string>>({});
+  const handRef = useRef<number>(-1);
+
+  useEffect(() => {
+    const la = s.lastAction;
+    // A new hand wipes the table and seeds it with the first move; within a hand each
+    // move is folded in, keyed by agent, so every seat shows its most recent action.
+    if (s.handIndex !== handRef.current) {
+      handRef.current = s.handIndex;
+      setActions(la ? { [la.agentId]: la.action } : {});
+      return;
+    }
+    if (la) setActions((prev) => ({ ...prev, [la.agentId]: la.action }));
+  }, [s]);
+
   const last = s.lastAction;
-  // Split the field above and below the board so it reads like a table at any size.
-  const half = Math.ceil(s.seats.length / 2);
-  const top = s.seats.slice(0, half);
-  const bottom = s.seats.slice(half);
   return (
-    <StickerCard className="p-6">
+    <StickerCard className="p-5 sm:p-6">
       <div className="mb-4 flex items-center justify-between">
         <span className="font-display text-lg text-ink">
           Hand {s.handIndex} · {s.street}
@@ -90,18 +227,11 @@ export function PokerTable({ snapshot }: { snapshot: WsPokerSnapshot }) {
         </div>
       </div>
 
-      <div className="flex flex-col items-center gap-5">
-        <SeatRow seats={top} />
-        <div className="flex flex-col items-center gap-2 rounded-chunk border-line border-ink/15 bg-mint/10 px-6 py-4">
-          <span className="font-body text-[11px] font-extrabold uppercase tracking-[0.03em] text-ink-3">board</span>
-          <div className="flex gap-1.5">
-            {[0, 1, 2, 3, 4].map((i) => (
-              <Card key={i} token={s.board[i]} hidden={!s.board[i]} />
-            ))}
-          </div>
-        </div>
-        <SeatRow seats={bottom} />
-      </div>
+      {s.seats.length > 2 ? (
+        <RoundTable seats={s.seats} actions={actions} board={s.board} pot={s.pot} hand={s.handIndex} street={s.street} />
+      ) : (
+        <HeadsUp seats={s.seats} actions={actions} board={s.board} pot={s.pot} hand={s.handIndex} street={s.street} />
+      )}
 
       {last && (
         <div className="mt-5">

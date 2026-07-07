@@ -36,6 +36,10 @@ export async function standingsFor(contestId: number): Promise<StandingResult[]>
   const kind = metaRows[0]?.kind ?? "";
   const metric = metricFor(kind);
 
+  // Platform (house) agents fill empty seats to keep a contest competitive, but they
+  // never place: real operators always fill the ranks first, and every house agent
+  // sorts below every real one no matter how many chips it won. So the primary sort is
+  // is_house (real before house); within each group the settlement order applies.
   // Tiebreak must match settlement (runners/scoring.rankAgents): once settled, order
   // by the on-chain payout rank so the shown winner always matches who got paid (poker
   // ranks by chips, which correct/compute order cannot express). Before settlement,
@@ -67,7 +71,8 @@ export async function standingsFor(contestId: number): Promise<StandingResult[]>
        left join contest_scores cs on cs.contest_id = e.contest_id and cs.agent_id = e.agent_id
       where e.contest_id = $1
       group by e.agent_id, e.operator, m.name, m.compute_level, m.is_house
-      order by (min(p.rank) is null), min(p.rank) asc,
+      order by coalesce(m.is_house, false) asc,
+               (min(p.rank) is null), min(p.rank) asc,
                coalesce(max(cs.score), sum(case when s.verdict = 'correct' then 1 else 0 end)) desc,
                coalesce(m.compute_level, 0) desc, total_latency asc, e.agent_id asc`,
     [contestId],

@@ -47,12 +47,13 @@ import { runPokerTable } from "./runPokerTable.js";
 // paid: if a real player loses to a house agent, the contest refunds its sponsor.
 
 const MATCH_MS = Number(process.env.POKER_MATCH_SECONDS ?? "300") * 1000;
-// The hand cap is the NORMAL way a match ends, not a safety net. At blinds 10/20 on
-// 1000 stacks, two deterministic bots reach an all-in clash long before 200 hands, so
-// a big cap meant nearly every duel finished in a bust and the standings always read
-// 2000/0. A short fixed cap ends the match with the chip leader ahead on a real split
-// (e.g. 1240/760); a bust can still end it early, but is the exception.
-const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "40");
+// The hand cap is the NORMAL way a match ends, not a safety net. Cash-game format means
+// stacks reset each hand, so the result is a cumulative chip net over the session. A
+// longer session lets the true skill edge show through the hand-to-hand variance, so the
+// standings read as a measured spread (the stronger tier ahead by a believable margin)
+// rather than one hot hand deciding it. 50 hands balances a firm signal against the time
+// a live match takes to watch.
+const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "50");
 // A small pause between decisions keeps the live duel watchable. Decisions are now
 // instant, so this is purely cosmetic pacing, not a rate-limit workaround.
 const DECISION_SPACING_MS = Number(process.env.POKER_DECISION_SPACING_MS ?? "400");
@@ -379,41 +380,51 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     handIndex += 1;
   }
 
-  // Winner by cumulative chip profit; a dead-even session (e.g. no hand finished) breaks
-  // to the higher compute level, then the lower agent id, for full determinism.
-  let winnerSeat: Seat;
-  if (net[0] !== net[1]) {
-    winnerSeat = net[0] > net[1] ? 0 : 1;
-  } else {
-    const l0 = levelOf.get(players[0].agentId) ?? 0;
-    const l1 = levelOf.get(players[1].agentId) ?? 0;
-    winnerSeat = l0 > l1 ? 0 : l1 > l0 ? 1 : players[0].agentId < players[1].agentId ? 0 : 1;
+  // The actual chip result of the session, by cumulative profit. This drives the dossier
+  // and the TrueSkill ladder (which records who genuinely won the chips), independent of
+  // who is eligible for the prize.
+  const chipWinnerSeat: Seat | null = net[0] === net[1] ? null : net[0] > net[1] ? 0 : 1;
+
+  // The payout and standings winner. Real operators always place above house agents, so
+  // when house is excluded from the prize the pool goes to the best REAL player, never a
+  // house agent that ran hotter. House stays competitive but can never take a real
+  // operator's pool, and the duel pays out instead of cancelling on a house win. A
+  // dead-even session between two eligible seats breaks to higher compute then lower id.
+  const eligibleSeats: Seat[] = (excludeHouse ? ([0, 1] as const).filter((s) => !players[s].isHouse) : [0, 1]) as Seat[];
+  let winnerSeat: Seat = eligibleSeats[0] ?? 0;
+  if (eligibleSeats.length === 2) {
+    if (net[0] !== net[1]) {
+      winnerSeat = net[0] > net[1] ? 0 : 1;
+    } else {
+      const l0 = levelOf.get(players[0].agentId) ?? 0;
+      const l1 = levelOf.get(players[1].agentId) ?? 0;
+      winnerSeat = l0 > l1 ? 0 : l1 > l0 ? 1 : players[0].agentId < players[1].agentId ? 0 : 1;
+    }
   }
   const winner = players[winnerSeat];
 
   // Fold this duel into both agents' dossiers so their record grows for future
-  // scouting. A dead-even session credits no duel winner. Best effort.
+  // scouting. Credited to the actual chip winner (a dead-even session credits none).
   await recordDuel(
     matchLog as unknown as Parameters<typeof recordDuel>[0],
     [players[0].agentId, players[1].agentId],
-    net[0] === net[1] ? null : winnerSeat,
+    chipWinnerSeat,
   ).catch((err) => console.error(`poker ${contestId}: dossier update failed:`, (err as Error).message));
 
-  // Update the TrueSkill ladder from the session result. A dead-even session is not a
+  // Update the TrueSkill ladder from the actual chip result. A dead-even session is not a
   // decisive result, so it does not rate. Best effort: never block settlement.
-  if (net[0] !== net[1]) {
-    const chipWinner = net[0] > net[1] ? 0 : 1;
-    const w = players[chipWinner];
-    const l = players[chipWinner === 0 ? 1 : 0];
+  if (chipWinnerSeat !== null) {
+    const w = players[chipWinnerSeat];
+    const l = players[chipWinnerSeat === 0 ? 1 : 0];
     await recordDuelResult(
       { id: w.agentId, isHouse: w.isHouse },
       { id: l.agentId, isHouse: l.isHouse },
     ).catch((err) => console.error(`poker ${contestId}: ladder update failed:`, (err as Error).message));
   }
 
-  // Only a real player can take the pool. If a real player lost to a house agent,
-  // refund the sponsor rather than pay the house.
-  const eligible = !winner.isHouse || !excludeHouse;
+  // Eligible only when a real player is present to place (or house may win a
+  // coordinator-funded demo pool). An all-house field with a real sponsor cancels.
+  const eligible = eligibleSeats.length > 0 && (!winner.isHouse || !excludeHouse);
   if (!eligible) {
     broadcast({ type: "status", contestId, payload: { status: "no-winner" } });
     await cancelContest(contestId);

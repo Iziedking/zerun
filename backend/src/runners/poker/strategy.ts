@@ -271,7 +271,7 @@ const POLICIES: Policy[] = [
     semibluffBet: 0,
     semibluffRaise: 0,
     drawBar: 0.75,
-    callMarginBase: -0.12,
+    callMarginBase: -0.08,
     callMarginScale: 0,
     betFraction: 0.5,
   },
@@ -296,16 +296,19 @@ const POLICIES: Policy[] = [
     semibluffBet: 0,
     semibluffRaise: 0,
     drawBar: 0.75,
-    callMarginBase: -0.05,
+    callMarginBase: -0.03,
     callMarginScale: 0.03,
     betFraction: 0.6,
   },
   {
-    // 2 sharp: position-aware and a small bluff, but reads equity versus a random
-    // hand (which flatters us), so it overcalls against real strength.
+    // 2 sharp: position-aware with a small bluff and a loose read of the opponent's
+    // betting range, so it folds more of its overcalls than a pure random-hand read
+    // would. That range awareness (looser and cheaper than the expert's) keeps it from
+    // donating full stacks to the top tiers, which is what compresses the ladder into a
+    // measured, realistic spread rather than the top tier lapping the field.
     mcIters: 80,
-    rangeIters: 0,
-    rangeFrac: null,
+    rangeIters: 60,
+    rangeFrac: 0.85,
     positionAware: true,
     pfCheapRatio: 0.34,
     pfOpenRaise: 0.44,
@@ -321,8 +324,8 @@ const POLICIES: Policy[] = [
     semibluffBet: 0.3,
     semibluffRaise: 0.1,
     drawBar: 0.75,
-    callMarginBase: 0,
-    callMarginScale: 0.05,
+    callMarginBase: 0.005,
+    callMarginScale: 0.06,
     betFraction: 0.66,
   },
   {

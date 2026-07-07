@@ -8,8 +8,8 @@ import { recordTableResult } from "../runners/poker/ratings.js";
 import { finalizeContest, cancelContest, type RunResult } from "./finalize.js";
 import { contestEngineAbi, coordinatorAddress, loadDeployment, publicClient } from "../chain/contracts.js";
 import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
-import { shuffle, handLabels } from "../runners/poker/cards.js";
-import { startHand, applyAction, viewFor } from "../runners/poker/multi.js";
+import { shuffle, handLabels, cardLabel } from "../runners/poker/cards.js";
+import { startHand, applyAction, viewFor, type MultiTable } from "../runners/poker/multi.js";
 import type { Action } from "../runners/poker/table.js";
 import { decideStrategy } from "../runners/poker/strategy.js";
 
@@ -24,7 +24,7 @@ import { decideStrategy } from "../runners/poker/strategy.js";
 const MATCH_MS = Number(process.env.POKER_MATCH_SECONDS ?? "300") * 1000;
 // Same cap as the duel: the match ends at the cap with the chip leader ahead on a
 // real split, instead of grinding until someone busts and the table reads all-or-zero.
-const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "40");
+const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "50");
 const DECISION_SPACING_MS = Number(process.env.POKER_DECISION_SPACING_MS ?? "400");
 const MAX_SEATS = 6;
 const START_STACK = 1000;
@@ -146,6 +146,19 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
       const di = decisionSeq[seat] ?? 0;
       decisionSeq[seat] = di + 1;
       await recordDecision(contestId, entry, di, view.street, view.holeCards, view.board, label, res);
+      // Drive the live round table: broadcast a full-field snapshot after every action
+      // so spectators watch each seat's move on the felt, the same view as a duel.
+      broadcast({
+        type: "poker",
+        contestId,
+        payload: tableSnapshot(t, players, handIndex, {
+          agentId: entry.agentId,
+          name: entry.agentName,
+          action: label,
+          reasoning: res.text,
+          chatID: res.chatID,
+        }),
+      });
       handActions.push({ seat, agentId: entry.agentId, action: label, allin: t.stacks[seat] === 0, source: res.source, chatID: res.chatID });
       if (spacingMs > 0) await sleep(spacingMs);
     }
@@ -172,10 +185,15 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
     handIndex += 1;
   }
 
-  // Biggest net winner takes the pool; a house leader with a real player in the field
-  // means the real players lost, so refund the sponsor.
-  let winnerSeat = 0;
-  for (let s = 1; s < n; s++) {
+  // Real operators always place above house agents. When house is excluded from the
+  // prize (the normal case, any real player in the field), the winner is the best real
+  // player by net chips, not the overall chip leader: a house agent stays competitive
+  // but can never take the pool from a real operator, and the contest still pays out
+  // rather than cancelling when a house agent happens to run hottest. Only when there is
+  // no real player to place (an all-house table) does it fall through to a cancel below.
+  const eligibleSeats = (excludeHouse ? players.map((_, s) => s).filter((s) => !players[s]!.isHouse) : players.map((_, s) => s));
+  let winnerSeat = eligibleSeats[0] ?? 0;
+  for (const s of eligibleSeats) {
     if (
       net[s]! > net[winnerSeat]! ||
       (net[s]! === net[winnerSeat]! && (levelOf.get(players[s]!.agentId) ?? 0) > (levelOf.get(players[winnerSeat]!.agentId) ?? 0))
@@ -201,7 +219,9 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
     console.error(`poker table ${contestId}: ladder update failed:`, (err as Error).message),
   );
 
-  const eligible = !winner.isHouse || !excludeHouse;
+  // Eligible only when there is a real player to place (or house is allowed to win a
+  // coordinator-funded demo pool). An all-house field with a real sponsor cancels.
+  const eligible = eligibleSeats.length > 0 && (!winner.isHouse || !excludeHouse);
   if (!eligible) {
     broadcast({ type: "status", contestId, payload: { status: "no-winner" } });
     await cancelContest(contestId);
@@ -231,6 +251,36 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
   const result = await finalizeContest(contestId, rankAgents(scores));
   await storeTableReplay(contestId, n, net, matchLog);
   return result;
+}
+
+// A snapshot of the multi-way table after an action, for the live round-table view.
+// Every seat's hole cards are shown to spectators (it is AI, and it makes the table
+// watchable); a folded seat is dimmed, the acting seat is highlighted. Same payload
+// shape as the heads-up duel so one PokerTable component renders both.
+function tableSnapshot(
+  t: MultiTable,
+  players: TableEntry[],
+  handIndex: number,
+  lastAction: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null },
+) {
+  const streets = ["preflop", "flop", "turn", "river"];
+  const seats = players.map((p, s) => ({
+    agentId: p.agentId,
+    name: p.agentName,
+    chips: t.stacks[s] ?? 0,
+    holeCards: (t.holes[s] ?? []).map(cardLabel),
+    folded: Boolean(t.folded[s]),
+    isTurn: !t.handOver && t.toAct === s,
+    isHouse: p.isHouse,
+  }));
+  return {
+    handIndex: handIndex + 1,
+    street: streets[t.street] ?? "preflop",
+    board: t.board.map(cardLabel),
+    pot: t.committed.reduce((a, b) => a + b, 0),
+    seats,
+    lastAction,
+  };
 }
 
 // Store the full table match to 0G Storage for verifiable replay. Best effort and
