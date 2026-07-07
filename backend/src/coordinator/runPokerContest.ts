@@ -272,6 +272,11 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   const matchLog: unknown[] = []; // full replay, stored to 0G Storage in a later phase
   const deadline = Date.now() + MATCH_MS;
 
+  console.log(`poker duel ${contestId}: match start, cap ${MAX_HANDS} hands / ${MATCH_MS / 1000}s`);
+  // Wrap the whole match so any unexpected error still falls through to settlement with
+  // the net so far, rather than throwing out of the runner and leaving the duel to be
+  // stale-cancelled. A settled short duel beats a cancelled one.
+  try {
   while (Date.now() < deadline && handIndex < MAX_HANDS) {
     const seed = handSeed(contestId, handIndex);
     const t = startHand([START_STACK, START_STACK], button, shuffle(seed));
@@ -328,18 +333,25 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
       const label = (t.log[t.log.length - 1] ?? "").replace(/^seat \d+ /, "");
       // The agent's 0G reasoning, minus the trailing ACTION directive, for the feed.
       const reasoning = (res.text ?? "").replace(/\bACTION:.*$/is, "").trim().slice(0, 240);
-      await recordDecision(contestId, entry, decisionSeq[seat]++, view.street, view.holeCards, view.board, label, res, reasoning);
-      broadcast({
-        type: "poker",
-        contestId,
-        payload: snapshot(t, players, handIndex, {
-          agentId: entry.agentId,
-          name: entry.agentName,
-          action: label,
-          reasoning,
-          chatID: res.chatID,
-        }),
-      });
+      // Game state (t) is already advanced by applyAction; recording and broadcasting are
+      // cosmetic side effects. Guard them so a DB or broadcast error cannot throw out of
+      // the match loop and leave the duel unsettled. Best effort.
+      try {
+        await recordDecision(contestId, entry, decisionSeq[seat]++, view.street, view.holeCards, view.board, label, res, reasoning);
+        broadcast({
+          type: "poker",
+          contestId,
+          payload: snapshot(t, players, handIndex, {
+            agentId: entry.agentId,
+            name: entry.agentName,
+            action: label,
+            reasoning,
+            chatID: res.chatID,
+          }),
+        });
+      } catch (err) {
+        console.error(`poker duel ${contestId}: decision record/broadcast failed (continuing):`, (err as Error).message);
+      }
       handActions.push({ seat, agentId: entry.agentId, action: label, allin: t.stacks[seat] === 0, source: res.source, chatID: res.chatID });
       if (spacingMs > 0) await sleep(spacingMs);
     }
@@ -379,6 +391,10 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     button = button === 0 ? 1 : 0;
     handIndex += 1;
   }
+  } catch (err) {
+    console.error(`poker duel ${contestId}: match loop aborted at hand ${handIndex}, settling with net so far:`, (err as Error).message);
+  }
+  console.log(`poker duel ${contestId}: match done after ${handIndex} hands, settling`);
 
   // The actual chip result of the session, by cumulative profit. This drives the dossier
   // and the TrueSkill ladder (which records who genuinely won the chips), independent of

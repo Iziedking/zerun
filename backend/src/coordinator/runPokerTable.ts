@@ -94,6 +94,12 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
   const matchLog: unknown[] = [];
   const deadline = Date.now() + MATCH_MS;
 
+  console.log(`poker table ${contestId}: match start, ${n} seats, cap ${MAX_HANDS} hands / ${MATCH_MS / 1000}s`);
+  // The whole match is wrapped so that ANY unexpected error still falls through to
+  // settlement with the net accumulated so far, rather than throwing out of the runner
+  // and leaving the contest to be stale-cancelled. A settled short match beats a
+  // cancelled one; the deterministic hands already played are a valid result.
+  try {
   while (Date.now() < deadline && handIndex < MAX_HANDS) {
     const t = startHand(new Array(n).fill(START_STACK), button, shuffle(handSeed(contestId, handIndex)));
     const handActions: unknown[] = [];
@@ -145,20 +151,26 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
       const label = (t.log[t.log.length - 1] ?? "").replace(/^seat \d+ /, "");
       const di = decisionSeq[seat] ?? 0;
       decisionSeq[seat] = di + 1;
-      await recordDecision(contestId, entry, di, view.street, view.holeCards, view.board, label, res);
-      // Drive the live round table: broadcast a full-field snapshot after every action
-      // so spectators watch each seat's move on the felt, the same view as a duel.
-      broadcast({
-        type: "poker",
-        contestId,
-        payload: tableSnapshot(t, players, handIndex, {
-          agentId: entry.agentId,
-          name: entry.agentName,
-          action: label,
-          reasoning: res.text,
-          chatID: res.chatID,
-        }),
-      });
+      // The game state (t) is already advanced by applyAction above, so recording the
+      // decision and broadcasting the live view are purely cosmetic side effects. Guard
+      // them: a DB hiccup or a broadcast error must never throw out of the match loop and
+      // leave the contest unsettled (it would then only be stale-cancelled). Best effort.
+      try {
+        await recordDecision(contestId, entry, di, view.street, view.holeCards, view.board, label, res);
+        broadcast({
+          type: "poker",
+          contestId,
+          payload: tableSnapshot(t, players, handIndex, {
+            agentId: entry.agentId,
+            name: entry.agentName,
+            action: label,
+            reasoning: res.text,
+            chatID: res.chatID,
+          }),
+        });
+      } catch (err) {
+        console.error(`poker table ${contestId}: decision record/broadcast failed (continuing):`, (err as Error).message);
+      }
       handActions.push({ seat, agentId: entry.agentId, action: label, allin: t.stacks[seat] === 0, source: res.source, chatID: res.chatID });
       if (spacingMs > 0) await sleep(spacingMs);
     }
@@ -184,6 +196,10 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
     button = (button + 1) % n;
     handIndex += 1;
   }
+  } catch (err) {
+    console.error(`poker table ${contestId}: match loop aborted at hand ${handIndex}, settling with net so far:`, (err as Error).message);
+  }
+  console.log(`poker table ${contestId}: match done after ${handIndex} hands, settling`);
 
   // Real operators always place above house agents. When house is excluded from the
   // prize (the normal case, any real player in the field), the winner is the best real
@@ -223,11 +239,13 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
   // coordinator-funded demo pool). An all-house field with a real sponsor cancels.
   const eligible = eligibleSeats.length > 0 && (!winner.isHouse || !excludeHouse);
   if (!eligible) {
+    console.log(`poker table ${contestId}: no eligible real winner (real seats: ${eligibleSeats.length}, excludeHouse: ${excludeHouse}), cancelling`);
     broadcast({ type: "status", contestId, payload: { status: "no-winner" } });
     await cancelContest(contestId);
     await storeTableReplay(contestId, n, net, matchLog);
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
+  console.log(`poker table ${contestId}: winner ${winner.agentName} (seat ${winnerSeat}, ${net[winnerSeat]} net), finalizing`);
 
   const scores: AgentScore[] = [
     {
@@ -249,6 +267,7 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
   // Settle first, so paying the winner never waits on 0G Storage. The verifiable
   // replay upload comes after and is best effort and time-bounded.
   const result = await finalizeContest(contestId, rankAgents(scores));
+  console.log(`poker table ${contestId}: finalize ${result.settled ? "settled" : result.posted ? "posted (settle pending)" : "did not settle"}`);
   await storeTableReplay(contestId, n, net, matchLog);
   return result;
 }
