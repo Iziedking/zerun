@@ -108,6 +108,16 @@ const DAY_COMPLETE_HOLD_MS = Number(process.env.AUTOPILOT_DAY_HOLD_SECONDS ?? "1
 // A contest still open this long after its window closed was abandoned (the
 // autopilot was down through its run). Refund the sponsor rather than run it late.
 const STALE_AFTER_SEC = Number(process.env.AUTOPILOT_STALE_AFTER_SECONDS ?? "3600");
+// Poker is the exception: the match is deterministic (no 0G calls in the betting loop)
+// and hard-capped at POKER_MATCH_SECONDS (5 min), so a healthy poker contest settles a
+// few minutes past its window close. One still unsettled well beyond that is genuinely
+// stuck (a settlement that keeps failing), not a slow-but-legitimate run like a full
+// Solver/Analyst field pacing 0G calls. Give poker a much tighter give-up ceiling so it
+// reaches a terminal state (settled or refunded) in minutes, not an hour.
+const POKER_STALE_AFTER_SEC = Number(process.env.AUTOPILOT_POKER_STALE_AFTER_SECONDS ?? "900");
+function staleAfterFor(kind: ContestKind): number {
+  return kind === "poker" ? POKER_STALE_AFTER_SEC : STALE_AFTER_SEC;
+}
 const WINDOW_S = Number(process.env.AUTOPILOT_WINDOW_SECONDS ?? "300");
 const POOL_USDC = Number(process.env.AUTOPILOT_POOL_USDC ?? "30");
 // Pools the autopilot picks from at random, so prizes vary contest to contest.
@@ -165,6 +175,14 @@ async function startGasGuard(): Promise<void> {
   }
 }
 const RUN_TIMEOUT_MS = 1_200_000; // paced 0G calls make a full field take longer
+// Poker runs no 0G calls in the match loop (a deterministic engine) and the match is
+// capped at POKER_MATCH_SECONDS, so a healthy poker run (match + on-chain settle) is
+// done in a few minutes. A tighter watchdog frees a hung poker run fast, so the next
+// sweep retries or the stale ceiling refunds it, instead of holding the slot 20 minutes.
+const POKER_RUN_TIMEOUT_MS = Number(process.env.POKER_RUN_TIMEOUT_MS ?? "600000"); // 10 min
+function runTimeoutFor(kind: ContestKind): number {
+  return kind === "poker" ? POKER_RUN_TIMEOUT_MS : RUN_TIMEOUT_MS;
+}
 
 // The wait before the next open: the fixed override, or a jittered draw around
 // the per-day average so gaps differ and drift across the clock day to day.
@@ -629,7 +647,7 @@ async function runOnce(id: number, kind: ContestKind): Promise<void> {
     // slot.
     await Promise.race([
       work,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("watchdog")), RUN_TIMEOUT_MS)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("watchdog")), runTimeoutFor(kind))),
     ]).catch((err) => {
       console.error(`autopilot: contest ${id} watchdog: ${(err as Error).message}`);
     });
@@ -644,12 +662,14 @@ async function startDueSweeper(): Promise<void> {
     try {
       for (const d of await findDueContests()) {
         if (inFlight.has(d.id)) continue;
-        if (d.overdueSec > STALE_AFTER_SEC) {
-          // Window closed long ago and it never ran (the autopilot was down through
-          // it). Running it now would score a stale field, so refund the sponsor and
-          // let it leave the open state.
+        if (d.overdueSec > staleAfterFor(d.kind)) {
+          // Overdue past this kind's ceiling and not currently running: either it never
+          // ran (the autopilot was down through it) or its settlement keeps failing.
+          // Running it now would score a stale field, and for poker a stuck settlement
+          // should not linger, so refund the sponsor/entrants and let it leave the open
+          // state instead of showing "running" indefinitely.
           console.log(
-            `autopilot: contest ${d.id} abandoned ${Math.round(d.overdueSec / 60)}m past close, refunding`,
+            `autopilot: contest ${d.id} (${d.kind}) abandoned ${Math.round(d.overdueSec / 60)}m past close, refunding`,
           );
           await cancelContest(d.id).catch((err) =>
             console.error(`autopilot: cancel ${d.id} failed:`, (err as Error).message),
