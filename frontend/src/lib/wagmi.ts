@@ -1,22 +1,35 @@
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { injectedWallet } from "@rainbow-me/rainbowkit/wallets";
 import { http } from "wagmi";
 import { zeroGGalileo } from "./chain";
 
-// RainbowKit drives the connect modal (injected wallets plus WalletConnect for
-// mobile). 0G Galileo is the only chain, so RainbowKit defaults to it and
-// prompts the wallet to add and switch on connect. WalletConnect needs a free
-// project id from cloud.reown.com, set as NEXT_PUBLIC_WALLETCONNECT_ID; injected
-// wallets (MetaMask, Rabby) work without it.
-const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_ID || "zerun_dev_walletconnect_id";
+// RainbowKit drives the connect modal. WalletConnect (and the mobile wallets that ride
+// on it, like Rainbow/Base) need a real project id from cloud.reown.com — a 32-char hex
+// string — set as NEXT_PUBLIC_WALLETCONNECT_ID. WITHOUT a valid one, selecting any of
+// those options throws a client-side exception the moment it is picked and white-screens
+// the whole app. So we only offer WalletConnect when a real id is present; otherwise the
+// modal shows injected / browser-extension wallets only (MetaMask, Rabby, Phantom, etc.,
+// discovered via EIP-6963), which never touch WalletConnect, and the app stays up. Set
+// NEXT_PUBLIC_WALLETCONNECT_ID to a real project id to enable WalletConnect and mobile.
+const rawId = (process.env.NEXT_PUBLIC_WALLETCONNECT_ID ?? "").trim();
+const hasWalletConnect = /^[0-9a-fA-F]{32}$/.test(rawId);
 
 export const wagmiConfig = getDefaultConfig({
   appName: "Zerun",
-  projectId,
+  // getDefaultConfig requires a projectId; when WalletConnect is disabled below it is
+  // never used, so a dummy keeps the types happy without initializing WalletConnect.
+  projectId: hasWalletConnect ? rawId : "00000000000000000000000000000000",
   chains: [zeroGGalileo],
   transports: {
     [zeroGGalileo.id]: http(zeroGGalileo.rpcUrls.default.http[0]),
   },
   ssr: true,
+  // With a real id, keep RainbowKit's full default wallet list (includes WalletConnect).
+  // Without one, restrict to the injected wallet so no WalletConnect-based option is even
+  // offered; EIP-6963 still surfaces every installed browser extension.
+  ...(hasWalletConnect
+    ? {}
+    : { wallets: [{ groupName: "Installed", wallets: [injectedWallet] }] }),
 });
 
 declare module "wagmi" {
