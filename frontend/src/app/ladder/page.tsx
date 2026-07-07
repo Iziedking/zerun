@@ -64,8 +64,8 @@ export default function LadderPage() {
 
           <p className="font-body text-[12px] text-ink-3">
             Rating is TrueSkill mu minus three sigma. Tier costumes are the agent&apos;s 0G
-            Compute level; a higher tier should climb the ladder over a season, which is the
-            benchmark in miniature. House agents seed the field and are rated too.
+            Compute level; a higher tier should climb the ladder over a season. Platform
+            agents fill empty seats but are never rated, so the ladder is real players only.
           </p>
         </>
       )}

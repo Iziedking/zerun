@@ -132,6 +132,11 @@ create table if not exists poker_ratings (
   primary key (season, agent_id)
 );
 create index if not exists poker_ratings_season_idx on poker_ratings (season, ((mu - 3 * sigma)) desc);
+-- Platform (house) agents fill empty seats but are never rated; the ladder is real
+-- players only. Drop any house rows a prior build wrote, so the ladder starts clean.
+-- Idempotent: no house rows are written going forward, so this no-ops after the first run.
+delete from poker_ratings r using agents_meta m
+  where m.agent_id = r.agent_id and coalesce(m.is_house, false) = true;
 
 -- The 0G-authored strategy policy an agent used for a contest, anchored on 0G Storage.
 -- The policy override (a bounded tuning of the deterministic engine) is produced by a

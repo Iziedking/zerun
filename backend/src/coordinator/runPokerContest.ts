@@ -398,9 +398,12 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   // effort: a ladder write must never block settlement.
   if (stacks[0] !== stacks[1]) {
     const chipWinner = stacks[0] > stacks[1] ? 0 : 1;
-    await recordDuelResult(players[chipWinner].agentId, players[chipWinner === 0 ? 1 : 0].agentId).catch(
-      (err) => console.error(`poker ${contestId}: ladder update failed:`, (err as Error).message),
-    );
+    const w = players[chipWinner];
+    const l = players[chipWinner === 0 ? 1 : 0];
+    await recordDuelResult(
+      { id: w.agentId, isHouse: w.isHouse },
+      { id: l.agentId, isHouse: l.isHouse },
+    ).catch((err) => console.error(`poker ${contestId}: ladder update failed:`, (err as Error).message));
   }
 
   // Only a real player can take the pool. If a real player lost to a house agent,

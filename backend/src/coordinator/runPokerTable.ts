@@ -191,9 +191,14 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
   // feeds the same season leaderboard as a duel. Best effort. Ties break by the same
   // compute-then-id order the winner pick uses, which is deterministic and fine here.
   const ranking = players
-    .map((p, seat) => ({ agentId: p.agentId, chips: stacks[seat] ?? 0, level: levelOf.get(p.agentId) ?? 0 }))
-    .sort((a, b) => b.chips - a.chips || b.level - a.level || a.agentId - b.agentId)
-    .map((x) => x.agentId);
+    .map((p, seat) => ({
+      id: p.agentId,
+      isHouse: p.isHouse,
+      chips: stacks[seat] ?? 0,
+      level: levelOf.get(p.agentId) ?? 0,
+    }))
+    .sort((a, b) => b.chips - a.chips || b.level - a.level || a.id - b.id)
+    .map((x) => ({ id: x.id, isHouse: x.isHouse }));
   await recordTableResult(ranking).catch((err) =>
     console.error(`poker table ${contestId}: ladder update failed:`, (err as Error).message),
   );

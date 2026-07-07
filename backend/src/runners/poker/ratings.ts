@@ -36,40 +36,51 @@ async function saveRating(
   );
 }
 
-// A decisive heads-up result: winnerId beat loserId. A tie (no chips changed hands, or
-// no hand finished) should not be recorded — the caller passes null then.
-export async function recordDuelResult(winnerId: number, loserId: number): Promise<void> {
-  if (winnerId === loserId) return;
+// One player in a rated match. Platform (house) agents fill seats but are never rated —
+// the ladder belongs to real players — so a house agent's rating is never loaded or
+// persisted. It still enters the update as the default baseline, so a real player's
+// rating moves against it, but only real agents are written to the ladder.
+export interface RatablePlayer {
+  id: number;
+  isHouse: boolean;
+}
+
+// A decisive heads-up result: winner beat loser. A tie (no chips changed hands, or no
+// hand finished) should not be recorded — the caller skips it then.
+export async function recordDuelResult(winner: RatablePlayer, loser: RatablePlayer): Promise<void> {
+  if (winner.id === loser.id) return;
   const season = currentPokerSeason();
-  const wr = await loadRating(season, winnerId);
-  const lr = await loadRating(season, loserId);
-  const { winner, loser } = updateOneVsOne(wr, lr);
-  await saveRating(season, winnerId, winner, 1);
-  await saveRating(season, loserId, loser, 0);
+  const wr = winner.isHouse ? defaultRating() : await loadRating(season, winner.id);
+  const lr = loser.isHouse ? defaultRating() : await loadRating(season, loser.id);
+  const { winner: nw, loser: nl } = updateOneVsOne(wr, lr);
+  if (!winner.isHouse) await saveRating(season, winner.id, nw, 1);
+  if (!loser.isHouse) await saveRating(season, loser.id, nl, 0);
 }
 
 // A table result, given the final ranking best-first (by chips). Each higher rank is
 // treated as beating each lower rank (all-pairs), the standard TrueSkill approximation
 // for a full ranking; ratings are threaded in memory so each agent updates against the
-// whole field, then persisted once. Only the chip leader (rank 0) is credited a win.
-export async function recordTableResult(rankingBestFirst: number[]): Promise<void> {
-  const ids = rankingBestFirst.filter((id, i) => rankingBestFirst.indexOf(id) === i); // dedupe
-  if (ids.length < 2) return;
+// whole field, then persisted once. House agents are never persisted; the chip leader,
+// when a real player, is credited a win.
+export async function recordTableResult(rankingBestFirst: RatablePlayer[]): Promise<void> {
+  const seen = new Set<number>();
+  const players = rankingBestFirst.filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+  if (players.length < 2) return;
   const season = currentPokerSeason();
   const ratings = new Map<number, Rating>();
-  for (const id of ids) ratings.set(id, await loadRating(season, id));
-  for (let i = 0; i < ids.length; i++) {
-    for (let j = i + 1; j < ids.length; j++) {
-      const wId = ids[i]!;
-      const lId = ids[j]!;
+  for (const p of players) ratings.set(p.id, p.isHouse ? defaultRating() : await loadRating(season, p.id));
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      const wId = players[i]!.id;
+      const lId = players[j]!.id;
       const { winner, loser } = updateOneVsOne(ratings.get(wId)!, ratings.get(lId)!);
       ratings.set(wId, winner);
       ratings.set(lId, loser);
     }
   }
-  for (let i = 0; i < ids.length; i++) {
-    const id = ids[i]!;
-    await saveRating(season, id, ratings.get(id)!, i === 0 ? 1 : 0);
+  for (let i = 0; i < players.length; i++) {
+    if (players[i]!.isHouse) continue; // house agents are never persisted on the ladder
+    await saveRating(season, players[i]!.id, ratings.get(players[i]!.id)!, i === 0 ? 1 : 0);
   }
 }
 
@@ -104,7 +115,7 @@ export async function pokerLadder(season = currentPokerSeason(), limit = 100): P
             coalesce(m.compute_level, 0) as compute_level, r.mu, r.sigma, r.games, r.wins
        from poker_ratings r
        left join agents_meta m on m.agent_id = r.agent_id
-      where r.season = $1 and r.games > 0
+      where r.season = $1 and r.games > 0 and coalesce(m.is_house, false) = false
       order by (r.mu - 3 * r.sigma) desc, r.mu desc
       limit $2`,
     [season, limit],
