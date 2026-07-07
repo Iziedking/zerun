@@ -30,6 +30,11 @@ import {
 const DEFAULT_PUZZLE_COUNT = 6;
 // Stay under the 0G Compute rate limits (~30 req/min, ~5 concurrent).
 const AGENT_CONCURRENCY = 3;
+// House agents keep their tier's model and perks (so they answer well and can use the
+// live-insight data) but run at most this many self-consistency passes, so a contest
+// full of platform agents still settles quickly instead of ballooning to many minutes
+// of paced 0G calls. Real players keep their full tier passes. Tunable.
+const HOUSE_SAMPLE_CAP = Number(process.env.HOUSE_SAMPLE_CAP ?? "2");
 
 interface Entry {
   agentId: number;
@@ -218,7 +223,11 @@ export async function runContest(contestId: number): Promise<RunResult> {
   const levelOf = new Map<number, number>();
   for (const e of entries) levelOf.set(e.agentId, await getAgentCompute(e.agentId));
   const planOf = new Map<number, ReturnType<typeof computePlan>>();
-  for (const e of entries) planOf.set(e.agentId, computePlan(levelOf.get(e.agentId)!));
+  for (const e of entries) {
+    const plan = computePlan(levelOf.get(e.agentId)!);
+    // Cap house passes so an all-platform field settles fast; real players keep theirs.
+    planOf.set(e.agentId, e.isHouse ? { ...plan, samples: Math.min(plan.samples, HOUSE_SAMPLE_CAP) } : plan);
+  }
 
   // House agents answer for the feed (activity) but are never scored, ranked, or
   // paid: they only fill space, so the prize goes to real operators. They are kept

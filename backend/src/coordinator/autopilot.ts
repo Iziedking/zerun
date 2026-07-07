@@ -96,6 +96,9 @@ const DAILY_KINDS: ContestKind[] = (process.env.AUTOPILOT_DAILY_KINDS ?? "solver
   .filter((s): s is ContestKind => (VALID_KINDS as string[]).includes(s));
 // Seats for the autopilot poker table: a many-entrant table, not a heads-up duel.
 const POKER_TABLE_SEATS = Number(process.env.AUTOPILOT_POKER_SEATS ?? "6");
+// Tasks (puzzles / prediction markets / World Cup events) per autopilot contest. Fewer
+// tasks means fewer paced 0G calls, so a contest settles faster. Tunable.
+const AUTOPILOT_TASK_COUNT = Number(process.env.AUTOPILOT_TASK_COUNT ?? "4");
 // Gap between opening successive kinds within a day, so the daily set staggers in
 // rather than all landing at once.
 const OPEN_GAP_MS = Number(process.env.AUTOPILOT_OPEN_GAP_SECONDS ?? "120") * 1000;
@@ -182,6 +185,20 @@ async function openContestCount(): Promise<number> {
 
 const HOUSE_NAMES = ["Pixel", "Nova", "Byte", "Echo", "Quark", "Volt"];
 
+// House agents span a mix of Compute tiers instead of a flat level-0 baseline, so the
+// arena looks alive: the ladder shows a real gradient, poker is skill-based (a stronger
+// tier out-plays a weaker one rather than a chaotic level-0 wipeout, and the winner is
+// the strongest agent), and the higher-tier house agents actually have the model and the
+// live-insight data to answer the hard puzzles instead of failing them. Comma-separated
+// per agent, cycled across the roster. Tunable with AUTOPILOT_HOUSE_TIERS.
+const HOUSE_TIERS = (process.env.AUTOPILOT_HOUSE_TIERS ?? "2,3,4,5")
+  .split(",")
+  .map((s) => Math.max(0, Math.min(5, Math.floor(Number(s.trim()) || 0))))
+  .filter((n) => Number.isFinite(n));
+function houseTierFor(i: number): number {
+  return HOUSE_TIERS.length ? HOUSE_TIERS[i % HOUSE_TIERS.length]! : Math.min(5, i);
+}
+
 interface HouseAgent {
   account: ReturnType<typeof privateKeyToAccount>;
   wallet: ReturnType<typeof createWalletClient>;
@@ -250,16 +267,17 @@ async function ensureHouseRoster(): Promise<HouseAgent[]> {
       agentId = Number(nextId);
     }
 
-    // The house is the weak baseline: every house agent stays at Compute level 0,
-    // so any operator who trains (level 1+) reliably beats them and the leaderboard
-    // belongs to real players. Forced down even if an old row sat higher.
+    // Assign this house agent its tier from the spread. Set on every startup so the
+    // roster's gradient is stable. A real player who trains to Apex (5) still tops the
+    // best house agent, so the leaderboard remains real players' to win.
+    const level = houseTierFor(i);
     await query(
-      `insert into agents_meta (agent_id, owner, name, compute_level, is_house) values ($1,$2,$3,0,true)
+      `insert into agents_meta (agent_id, owner, name, compute_level, is_house) values ($1,$2,$3,$4,true)
          on conflict (agent_id) do update set
            name = excluded.name,
-           compute_level = 0,
+           compute_level = $4,
            is_house = true`,
-      [agentId, account.address.toLowerCase(), name],
+      [agentId, account.address.toLowerCase(), name, level],
     );
 
     out.push({ account, wallet, agentId, name });
@@ -702,7 +720,7 @@ async function startOpenLoop(): Promise<void> {
           prizePoolUsdc: pool,
           durationSecs: WINDOW_S,
           topN: winnerTakeAll ? 1 : 3,
-          puzzleCount: 6,
+          puzzleCount: AUTOPILOT_TASK_COUNT,
           kind,
           maxOperators: seatCap,
         });
