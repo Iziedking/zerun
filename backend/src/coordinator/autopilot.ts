@@ -84,6 +84,24 @@ function pickAutopilotKind(): "poker" | "analyst" | "solver" {
   if (r < W_POKER + W_PREDICTION) return "analyst";
   return "solver";
 }
+
+// The daily opener: autopilot opens exactly ONE contest of each of these kinds per
+// UTC day, every one a many-entrant field (never a 1v1 duel), each seeded with house
+// agents near the close. "puzzle" and "solver" are the same kind (the puzzle-solving
+// contest); add "analyst" for a standalone (non-World-Cup) prediction. Tunable.
+const VALID_KINDS: ContestKind[] = ["solver", "poker", "worldcup", "analyst"];
+const DAILY_KINDS: ContestKind[] = (process.env.AUTOPILOT_DAILY_KINDS ?? "solver,poker,worldcup")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter((s): s is ContestKind => (VALID_KINDS as string[]).includes(s));
+// Seats for the autopilot poker table: a many-entrant table, not a heads-up duel.
+const POKER_TABLE_SEATS = Number(process.env.AUTOPILOT_POKER_SEATS ?? "6");
+// Gap between opening successive kinds within a day, so the daily set staggers in
+// rather than all landing at once.
+const OPEN_GAP_MS = Number(process.env.AUTOPILOT_OPEN_GAP_SECONDS ?? "120") * 1000;
+// Once the day's full set is open, how long to hold before re-checking. The set
+// refreshes at the next UTC-day rollover, when the kinds become eligible again.
+const DAY_COMPLETE_HOLD_MS = Number(process.env.AUTOPILOT_DAY_HOLD_SECONDS ?? "1800") * 1000;
 // A contest still open this long after its window closed was abandoned (the
 // autopilot was down through its run). Refund the sponsor rather than run it late.
 const STALE_AFTER_SEC = Number(process.env.AUTOPILOT_STALE_AFTER_SECONDS ?? "3600");
@@ -521,16 +539,14 @@ async function fillClosingContests(): Promise<void> {
     if (fillingHouse.has(id)) continue; // a fill for this contest is already running
     const endsAtMs = Number(r.ends_at_ms ?? 0);
     if (endsAtMs <= nowMs) continue; // window already closed
-    // Poker fills the whole table. A funded contest with an explicit seat cap (extra
-    // space the host opened) also fills that space: any seat still empty near close is
-    // taken by a house agent so the contest runs full rather than under-seated. An
-    // uncapped contest only tops up to a small baseline. In every case real players get
-    // almost the whole window first (the house joins in the final seconds, scaled lead
-    // below) and the fill is bounded by the house roster. Duels and challenges are
-    // refused inside seedHouseInto, so this never seats the house into those.
+    // Seed every contest to a full field: any seat still empty near close is taken by
+    // a house agent, so a contest never runs under-seated. A capped contest fills to
+    // its cap; an uncapped field fills to the full house roster (HOUSE_SIZE). Real
+    // players still get almost the whole window first (the house joins in the final
+    // seconds, scaled lead below), and the fill is bounded by the roster. Duels and
+    // challenges are refused inside seedHouseInto, so the house never enters those.
     const cap = r.max_operators ?? HOUSE_SIZE;
-    const capped = r.max_operators != null;
-    const target = r.kind === "poker" || capped ? cap : Math.min(cap, HOUSE_BASELINE);
+    const target = cap;
     const need = target - (r.agent_count ?? 0);
     if (need <= 0) continue; // already at the target field
 
@@ -635,17 +651,29 @@ async function startDueSweeper(): Promise<void> {
   }
 }
 
+// The set of contest kinds already opened today (UTC day). The daily opener opens
+// exactly one of each kind per day; this is what enforces that. It counts any contest
+// of a kind created today, so it is restart-safe (survives a coordinator restart
+// mid-day) and also stands down on a kind a user hosted today.
+async function kindsOpenedToday(): Promise<Set<string>> {
+  const { rows } = await query<{ kind: string | null }>(
+    "select distinct kind from contests_meta where created_at >= date_trunc('day', now())",
+  );
+  return new Set(rows.map((r) => (r.kind ?? "").toLowerCase()).filter(Boolean));
+}
+
 async function startOpenLoop(): Promise<void> {
-  // Build (and tier-upgrade) the house roster once up front. The first-time
-  // upgrade takes longer than a contest window, so warming it here keeps the
-  // first contest from closing before the house can join.
+  // Build (and tier-upgrade) the house roster once up front. The first-time upgrade
+  // takes longer than a contest window, so warming it here keeps the first contest's
+  // house fill ready before its window closes.
   await ensureHouseRoster().catch((err) =>
     console.error("autopilot: house warmup failed:", (err as Error).message),
   );
-  // Lead with Solver contests: that is the reasoning arena where Compute reliably
-  // wins. Analyst contests forecast real markets, which is knowledge-bound (the
-  // model cannot out-forecast an event it has no data on), so they run only every
-  // Nth cycle. Set AUTOPILOT_ANALYST_EVERY=0 for solver-only, 2 for an even split.
+  // Open exactly one contest of each configured kind per UTC day, every one a
+  // many-entrant field (poker as a multi-seat table, the rest as open fields). The
+  // house-fill poll seeds each field with platform agents ~7s before its close, so
+  // there is always a field to watch. When the day's full set is out, hold until the
+  // next day, when the kinds become eligible again.
   for (;;) {
     // Do not open contests the coordinator cannot afford to settle.
     if (coordinatorGasLow()) {
@@ -653,34 +681,23 @@ async function startOpenLoop(): Promise<void> {
       await sleep(GAS_CHECK_MS);
       continue;
     }
-    let held = false;
+    let waitMs = OPEN_GAP_MS;
     try {
-      const open = await openContestCount().catch(() => 0);
-      if (open >= MAX_OPEN) {
-        // One is still up. Skip this slot rather than stack the feed, and re-check
-        // soon (not a full gap later) so a contest opens shortly after the sweeper
-        // resolves the current one.
-        held = true;
-        console.log(`autopilot: ${open} contest(s) still open, holding this slot`);
+      const opened = await kindsOpenedToday();
+      const remaining = DAILY_KINDS.filter((k) => !opened.has(k));
+      if (remaining.length === 0) {
+        console.log("autopilot: one of each kind already open today; holding for the next day");
+        waitMs = DAY_COMPLETE_HOLD_MS;
       } else {
-        const base = pickAutopilotKind();
-        // A prediction can open as a World Cup mission part of the time (deferred
-        // settlement); the rest stay normal predictions. Default off until Phase 4.
-        const kind: ContestKind = base === "analyst" && Math.random() < WORLDCUP_PCT ? "worldcup" : base;
-        // Poker opens as a heads-up duel, or a multi-player table part of the time; a
-        // prediction opens as a 1v1 duel part of the time so both fill the duels tab.
-        // Puzzles and World Cup missions stay a full field.
-        const pokerTable = kind === "poker" && Math.random() < POKER_TABLE_PCT;
-        const isDuel =
-          kind === "poker" ? !pokerTable : kind === "analyst" ? Math.random() < PREDICTION_DUEL_PCT : false;
-        const seatCap = pokerTable ? 6 : isDuel ? 2 : undefined;
-        const houseSeats = pokerTable ? 6 : isDuel ? 2 : HOUSE_SIZE;
-        // Poker is winner-take-all whether duel or table; other contests rank a field.
-        const winnerTakeAll = kind === "poker" || isDuel;
-        const format = pokerTable ? "table" : isDuel ? "duel" : "contest";
-        // Vary the pool so the arena does not look canned.
+        const kind = remaining[0]!;
+        const isPoker = kind === "poker";
+        // Poker is a multi-seat table; every other kind is an open, uncapped field.
+        // Neither is a duel. The house fills the seats near close (see the house-fill
+        // poll), bounded by the house roster.
+        const seatCap = isPoker ? POKER_TABLE_SEATS : undefined;
+        const winnerTakeAll = isPoker; // poker: chip leader takes it; fields pay the top 3
         const pool = POOL_CHOICES[Math.floor(Math.random() * POOL_CHOICES.length)]!;
-        console.log(`autopilot: opening a ${kind} ${format} (${pool} tUSDC)`);
+        console.log(`autopilot: opening today's ${kind} field (${pool} tUSDC)`);
         const id = await openContest({
           prizePoolUsdc: pool,
           durationSecs: WINDOW_S,
@@ -689,15 +706,12 @@ async function startOpenLoop(): Promise<void> {
           kind,
           maxOperators: seatCap,
         });
-        // The house fills any empty seats near the end of the window, not now, so
-        // real players have the whole window to join first.
-        scheduleHouseFill(id, houseSeats, WINDOW_S);
-        console.log(`autopilot: ${kind} ${format} ${id} open, house fills near close`);
+        console.log(`autopilot: ${kind} ${id} open; house seeds the field ~7s before close`);
       }
     } catch (err) {
       console.error("autopilot open failed:", (err as Error).message);
     }
-    await sleep(held ? HOLD_RETRY_MS : nextGapMs());
+    await sleep(waitMs);
   }
 }
 
@@ -723,11 +737,9 @@ export function startAutopilot(): void {
   void startHouseFillPoll();
 
   if (autopilotEnabled()) {
-    const cadence = FIXED_INTERVAL_MS
-      ? `every ${FIXED_INTERVAL_MS / 1000}s`
-      : `~${PER_DAY}/day (±${Math.round(GAP_JITTER * 100)}%)`;
     console.log(
-      `autopilot: on. opening ${cadence}, ${WINDOW_S}s window, ${POOL_USDC} tUSDC pool, max ${MAX_OPEN} open.`,
+      `autopilot: on. Opening one of each kind [${DAILY_KINDS.join(", ")}] per day as many-entrant ` +
+        `fields, ${WINDOW_S}s window, house-seeded ~7s before close.`,
     );
     void startOpenLoop();
   } else {
