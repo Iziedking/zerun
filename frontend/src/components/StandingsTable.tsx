@@ -21,7 +21,9 @@ function formatScore(s: Standing): string {
 // Correct-answer kinds keep the richer 0G signal (passes solved, else total latency).
 function scoreLabel(s: Standing): string {
   const metric = s.metric ?? "correct";
-  if (metric === "chips") return "chips";
+  // Poker's number is a cumulative session net (up or down), not a live stack, so label
+  // it "net chips" to make a negative read as "down over the session", not an error.
+  if (metric === "chips") return "net chips";
   if (metric === "P&L") return "P&L";
   if (s.passes != null && s.passes > 0) return `${s.passes} passes`;
   return formatLatency(s.totalLatencyMs);

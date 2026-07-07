@@ -14,11 +14,17 @@ import type {
   WsX402Payload,
 } from "@/lib/types";
 import { kindMeta } from "@/lib/kind";
+import { useMusic } from "@/lib/music";
+import { playActionSound } from "@/lib/sound";
 import { SolveCard, type SolveRow } from "./SolveCard";
 import { PokerTable, X402Feed } from "./PokerTable";
 import { StandingsTable } from "./StandingsTable";
 import { SettledBanner } from "./SettledBanner";
+import { LiveWinnerOverlay } from "./LiveWinnerOverlay";
 import { Chip, LoadMore, StickerCard } from "./zerun";
+
+// Minimum gap between action blips, so a fast feed stays pleasant rather than a buzz.
+const SFX_THROTTLE_MS = 180;
 
 const MAX_ROWS = 60;
 // Show the freshest answers; older ones tuck behind "load more".
@@ -62,7 +68,19 @@ export function ContestLive({
   const [settled, setSettled] = useState<WsSettledPayload | null>(null);
   const [snapshot, setSnapshot] = useState<WsPokerSnapshot | null>(null);
   const [payments, setPayments] = useState<WsX402Payload[]>([]);
+  const [winnerOverlay, setWinnerOverlay] = useState<{ winner: Standing; prize: string | null } | null>(null);
   const seqRef = useRef(0);
+
+  // Sound: gated by the global mute (the music toggle also mutes effects). Refs let the
+  // stable message handler read the latest values without re-subscribing the socket.
+  const { muted } = useMusic();
+  const mutedRef = useRef(muted);
+  const lastSfxRef = useRef(0);
+  // Latest standings, so the settle handler can name the winner (rank 1) at once.
+  const standingsRef = useRef<Standing[]>(initialStandings);
+  useEffect(() => {
+    mutedRef.current = muted;
+  }, [muted]);
 
   // Initial feed load (live updates then arrive over the WS).
   useEffect(() => {
@@ -107,37 +125,63 @@ export function ContestLive({
         fresh: true,
       };
       setRows((prev) => [row, ...prev].slice(0, MAX_ROWS));
+      // A short, kind-themed blip as each live action lands, throttled so a fast feed
+      // stays pleasant. Muting the music mutes these too.
+      const t = Date.now();
+      if (!mutedRef.current && t - lastSfxRef.current > SFX_THROTTLE_MS) {
+        lastSfxRef.current = t;
+        playActionSound(kind);
+      }
     } else if (msg.type === "standings") {
-      setStandings(
-        msg.payload.map((s) => ({
-          rank: s.rank,
-          agentId: s.agentId,
-          agentName: s.agentName,
-          operator: s.operator,
-          correct: s.correct,
-          totalLatencyMs: s.totalLatencyMs,
-          computeLevel: s.computeLevel,
-          passes: s.passes,
-          score: s.score,
-          metric: s.metric,
-        })),
-      );
+      const mapped = msg.payload.map((s) => ({
+        rank: s.rank,
+        agentId: s.agentId,
+        agentName: s.agentName,
+        operator: s.operator,
+        correct: s.correct,
+        totalLatencyMs: s.totalLatencyMs,
+        computeLevel: s.computeLevel,
+        passes: s.passes,
+        score: s.score,
+        metric: s.metric,
+      }));
+      standingsRef.current = mapped;
+      setStandings(mapped);
     } else if (msg.type === "status") {
       setStatus(msg.payload);
     } else if (msg.type === "settled") {
       setSettled(msg.payload);
       setStatus({ status: "settled" });
+      // Surface the winner to everyone watching live, the instant it settles. The paid
+      // winner is rank 1 in the standings (real players rank above house), and the prize
+      // is that rank's payout from the settle payload. The winner themselves gets the
+      // personal "You won!" celebration app-wide, so skip the spectator overlay for them
+      // to avoid two stacked modals.
+      const winner = standingsRef.current[0];
+      const isMe = highlight && winner?.operator?.toLowerCase() === highlight.toLowerCase();
+      if (winner && !isMe) {
+        const prize = msg.payload.payouts.find((p) => p.rank === 1)?.amount ?? null;
+        setWinnerOverlay({ winner, prize });
+      }
     } else if (msg.type === "poker") {
       setSnapshot(msg.payload);
     } else if (msg.type === "x402") {
       setPayments((prev) => [msg.payload, ...prev].slice(0, 20));
     }
-  }, []);
+  }, [kind, highlight]);
 
   const socketState = useContestSocket(contestId, { onMessage });
 
   return (
     <div className="space-y-6">
+      {winnerOverlay && (
+        <LiveWinnerOverlay
+          contestId={contestId}
+          winner={winnerOverlay.winner}
+          prize={winnerOverlay.prize}
+          onDismiss={() => setWinnerOverlay(null)}
+        />
+      )}
       {kind === "poker" && snapshot && <PokerTable snapshot={snapshot} />}
       {(kind === "poker" || kind === "worldcup") && <X402Feed payments={payments} />}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
