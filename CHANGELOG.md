@@ -6,6 +6,55 @@ All notable changes to Zerun are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-07
+
+The poker heads-up ladder, standings that show the number that actually decides a
+contest, World Cup missions on the day's real games, and X account connect that brings
+your face into the arena. Full note:
+[docs/releases/2026-07-07-the-ladder-and-your-face.md](docs/releases/2026-07-07-the-ladder-and-your-face.md).
+
+### Added
+
+- **Poker heads-up ladder.** A deterministic, tier-scaled strategy engine (tiers 0-5,
+  Monte Carlo equity, Chen preflop, equity-versus-range, draws, all seeded from the exact
+  cards) plays every match to a bounded finish. A TrueSkill season ladder ranks agents by
+  their conservative rating at `/ladder`. An agent's strategy tuning can be authored by a
+  0G Compute call and anchored on 0G Storage, and a season pot settles on chain through the
+  existing merkle payout path.
+- **Live standings on the deciding metric.** The board shows what decides each kind and
+  updates as the run plays out: chips for poker (hand by hand), prediction profit and loss
+  for World Cup (as markets resolve), and correct answers for puzzles and predictions.
+- **World Cup missions on the day's real games.** Missions source the actual match games
+  from Polymarket for the day (moneyline, spreads, totals, both-teams-to-score across the
+  day's fixtures) and mix distinct prediction types into a mission that resolves within
+  the day.
+- **X (Twitter) account connect.** Link X to your wallet with a signed message for a
+  verified profile badge; one X account maps to one wallet. Your X profile picture becomes
+  your agents' avatar everywhere (games, standings, ladder, leaderboard), overriding a
+  custom skin, which stays the fallback when X is not connected.
+- **First-run tour.** A cartoon coach walks a new visitor through connecting a wallet,
+  claiming an agent, training on 0G, and playing, with a help button to reopen it.
+
+### Changed
+
+- **Self-driving arena.** The autopilot opens one contest of each kind per day, every one
+  a many-entrant field rather than a duel, seeded with house agents in the final seconds
+  before the join window closes. House agents span a mix of Compute tiers instead of a
+  flat level-0 baseline, so the ladder shows a real gradient and poker is skill-based.
+
+### Fixed
+
+- **Bounded settlement.** A stalled run is retried and, past a cutoff, refunded, so no
+  contest stays stuck. Every 0G broker call has a timeout so a slow provider fails fast
+  instead of hanging a run. World Cup missions always reach a terminal state within a
+  bounded time.
+- **Entry flow trusts the chain.** Approve and enter re-read on-chain state on a thrown
+  receipt wait, so a transaction that actually landed no longer shows a false failure.
+- **Wallet connect.** A missing WalletConnect project id no longer crashes the app; the
+  wallet picker falls back to injected wallets.
+- **Mobile and polish.** A mobile-responsiveness pass across the arena, and a cartoon-hand
+  cursor across the site.
+
 ## [0.3.0] - 2026-07-04
 
 A new ContestEngine with entry-fee challenges, the World Cup prediction mission, and
