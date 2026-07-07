@@ -309,3 +309,22 @@ create table if not exists worldcup_forecasts (
   latency_ms  int not null default 0,
   primary key (contest_id, agent_id, market_idx)
 );
+
+-- Agent memory (retrieved-context evolution): a compact, evolving self-profile an agent
+-- carries across contests. After a contest settles, the agent's own recent play is
+-- summarized by a 0G Compute call and folded in here; at decision time that summary is
+-- injected into the agent's prompt, so a seasoned agent reasons with its accumulated
+-- read instead of a blank prior. This is the agent's memory of ITSELF, distinct from the
+-- poker dossier (memory of OPPONENTS). The summary is authored on 0G and anchored on 0G
+-- Storage for provenance, so "the agent learned on 0G" is provable. House agents are
+-- never summarized. Gated by AGENT_MEMORY so the lift can be A/B measured (memory on vs off).
+create table if not exists agent_memory (
+  agent_id      bigint primary key,
+  summary       text not null default '',            -- the self-summary injected at decision time
+  tendencies    jsonb not null default '{}'::jsonb,  -- structured read (accuracy by kind, recent form)
+  contests      int not null default 0,              -- contests folded into this memory so far
+  model         text,                                -- the 0G model that authored the summary
+  chat_id       text,                                -- the 0G Compute request id (provenance)
+  storage_root  text,                                -- 0G Storage anchor of this memory version
+  updated_at    timestamptz not null default now()
+);
