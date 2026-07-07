@@ -1222,11 +1222,27 @@ app.get("/api/operators/:address", async (c) => {
     [operator],
   );
 
+  // Cancelled challenges this operator entered: candidates for an entry-fee refund. The
+  // profile surfaces them so nobody has to hunt for a cancelled contest to reclaim; the
+  // UI confirms on chain whether each is still owed (the refund is pull-based).
+  const refundsQ = await query<{ contest_id: string }>(
+    `select c.contest_id
+       from contest_entries e
+       join contests_meta c on c.contest_id = e.contest_id
+      where lower(e.operator) = $1
+        and c.status = 'cancelled'
+        and coalesce(c.entry_fee, '0') <> '0'
+      order by c.contest_id desc
+      limit 50`,
+    [operator],
+  );
+
   return c.json({
     operator,
     stats: statsQ.rows[0] ?? { matches: 0, wins: 0, winnings: "0", og_calls: 0 },
     agents: agentsQ.rows,
     matches: matchesQ.rows,
+    refunds: refundsQ.rows.map((r) => Number(r.contest_id)),
   });
 });
 

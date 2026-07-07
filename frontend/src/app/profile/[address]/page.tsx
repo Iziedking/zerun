@@ -10,6 +10,7 @@ import { kindMeta } from "@/lib/kind";
 import { formatUsdc, shortAddr } from "@/lib/format";
 import type { OperatorProfile } from "@/lib/types";
 import { InlineClaimButton } from "@/components/InlineClaimButton";
+import { RefundNudge } from "@/components/RefundNudge";
 import { ConnectX } from "@/components/ConnectX";
 import { SkinUpload } from "@/components/SkinUpload";
 import { DashboardAgentCard } from "@/components/DashboardAgentCard";
@@ -129,6 +130,9 @@ function ProfileBody({
           </ul>
         </StickerCard>
       )}
+
+      {/* Entry-fee refunds owed from cancelled challenges, surfaced so nobody has to hunt. */}
+      {isMe && <RefundNudge contestIds={profile.refunds ?? []} />}
 
       {/* Hero band */}
       <StickerCard className="relative overflow-hidden p-7">

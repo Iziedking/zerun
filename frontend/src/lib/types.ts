@@ -221,6 +221,8 @@ export interface OperatorProfile {
     rank: number | null;
     claimed: boolean | null;
   }[];
+  // Cancelled challenges this operator entered: candidates for an entry-fee refund.
+  refunds?: number[];
 }
 
 export interface ClaimInfo {
