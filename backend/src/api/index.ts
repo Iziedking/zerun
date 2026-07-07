@@ -131,6 +131,22 @@ app.get("/api/social/x/:address", async (c) => {
   return c.json({ identity });
 });
 
+// Map of agent id -> the owner's X profile image, for every agent whose operator has
+// linked X. The UI uses this as the agent's avatar everywhere (games, standings,
+// ladder, leaderboard), overriding an uploaded skin; the skin stays the fallback when
+// X is not connected. Small (only linked operators) and cacheable.
+app.get("/api/social/avatars", async (c) => {
+  const { rows } = await query<{ agent_id: string; x_avatar: string | null }>(
+    `select a.agent_id, s.x_avatar
+       from agents_meta a
+       join social_identity s on lower(s.wallet) = lower(a.owner)
+      where s.x_avatar is not null`,
+  );
+  const avatars: Record<string, string> = {};
+  for (const r of rows) if (r.x_avatar) avatars[String(r.agent_id)] = r.x_avatar;
+  return c.json({ avatars });
+});
+
 // Arena-wide stats for the home page.
 app.get("/api/stats", async (c) => {
   const { rows } = await query(

@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { API_URL } from "@/lib/config";
+import { useAgentAvatars } from "@/lib/useAgents";
 import { Agent, type AgentMood, type AgentVariant } from "./Agent";
 import { cx } from "./cx";
 
-// Shows an agent. If the operator uploaded a custom skin, it renders that image
-// (as an outlined sticker) everywhere the agent appears. With no skin, it falls
-// back to the default character. Pass the same props you would give <Agent/>.
+// Shows an agent's avatar with a clear priority, everywhere the agent appears
+// (games, standings, ladder, leaderboard, profile):
+//   1. the owner's X profile picture, if they connected X — it overrides the skin;
+//   2. the operator's uploaded custom skin;
+//   3. the default cartoon character.
+// Pass the same props you would give <Agent/>.
 export function SkinnedAgent({
   agentId,
   variant = "violet",
@@ -23,33 +27,59 @@ export function SkinnedAgent({
   name?: string;
   className?: string;
 }) {
-  const [failed, setFailed] = useState(false);
+  const [skinFailed, setSkinFailed] = useState(false);
+  const [xFailed, setXFailed] = useState(false);
 
-  // Reset the fallback when the agent changes so a new skin gets a fresh try.
+  // Reset both fallbacks when the agent changes so a new avatar gets a fresh try.
   useEffect(() => {
-    setFailed(false);
+    setSkinFailed(false);
+    setXFailed(false);
   }, [agentId]);
 
-  const src = agentId != null && agentId > 0 ? `${API_URL}/api/skins/${agentId}` : null;
+  const { data: avatars } = useAgentAvatars();
+  const xUrl = agentId != null && agentId > 0 ? avatars?.avatars?.[String(agentId)] : undefined;
+  const skinSrc = agentId != null && agentId > 0 ? `${API_URL}/api/skins/${agentId}` : null;
 
-  if (!src || failed) {
-    return <Agent variant={variant} mood={mood} size={size} name={name} className={className} />;
+  const imgClass = cx(
+    "inline-block shrink-0 rounded-chunk border-line border-ink object-cover shadow-pop",
+    "motion-safe:animate-bob",
+    className,
+  );
+  const alt = name ? `Zerun agent ${name}` : "Zerun agent";
+
+  // 1. X profile picture wins when connected.
+  if (xUrl && !xFailed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={xUrl}
+        alt={alt}
+        width={size}
+        height={size}
+        referrerPolicy="no-referrer"
+        onError={() => setXFailed(true)}
+        className={imgClass}
+        style={{ width: size, height: size }}
+      />
+    );
   }
 
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={name ? `Zerun agent ${name}` : "Zerun agent"}
-      width={size}
-      height={size}
-      onError={() => setFailed(true)}
-      className={cx(
-        "inline-block shrink-0 rounded-chunk border-line border-ink object-cover shadow-pop",
-        "motion-safe:animate-bob",
-        className,
-      )}
-      style={{ width: size, height: size }}
-    />
-  );
+  // 2. Uploaded skin.
+  if (skinSrc && !skinFailed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={skinSrc}
+        alt={alt}
+        width={size}
+        height={size}
+        onError={() => setSkinFailed(true)}
+        className={imgClass}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
+  // 3. Default character.
+  return <Agent variant={variant} mood={mood} size={size} name={name} className={className} />;
 }

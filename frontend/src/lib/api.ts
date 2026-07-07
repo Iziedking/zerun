@@ -94,6 +94,8 @@ export const api = {
       body: JSON.stringify(body),
     }),
   xIdentity: (address: string) => req<{ identity: XIdentity | null }>(`/api/social/x/${address}`),
+  // agentId -> owner's X profile image, for avatars everywhere the agent appears.
+  agentAvatars: () => req<{ avatars: Record<string, string> }>("/api/social/avatars"),
   operator: (address: string) =>
     req<OperatorProfile>(`/api/operators/${address}`),
 

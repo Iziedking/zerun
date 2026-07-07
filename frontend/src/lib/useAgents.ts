@@ -66,6 +66,17 @@ export function usePokerLadder(season?: string) {
   });
 }
 
+// agentId -> owner's X profile image. One shared, cached query for the whole app, so
+// every SkinnedAgent can look up its avatar without its own request.
+export function useAgentAvatars() {
+  return useQuery({
+    queryKey: ["agent-avatars"],
+    queryFn: () => api.agentAvatars(),
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+}
+
 export function useOperator(address: string | undefined) {
   return useQuery({
     queryKey: ["operator", address?.toLowerCase()],

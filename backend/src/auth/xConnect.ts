@@ -11,7 +11,7 @@ import { query } from "../db/pool.js";
 
 const AUTHORIZE_URL = "https://x.com/i/oauth2/authorize";
 const TOKEN_URL = "https://api.twitter.com/2/oauth2/token";
-const ME_URL = "https://api.twitter.com/2/users/me?user.fields=username,name";
+const ME_URL = "https://api.twitter.com/2/users/me?user.fields=username,name,profile_image_url";
 const SCOPE = "users.read tweet.read";
 
 const MAX_AGE_MS = 5 * 60 * 1000; // the connect signature is good for five minutes
@@ -116,19 +116,27 @@ export async function completeXAuth(code: string, state: string): Promise<{ wall
 
   const meRes = await fetch(ME_URL, { headers: { authorization: `Bearer ${token.access_token}` } });
   if (!meRes.ok) throw new Error(`X profile fetch failed (${meRes.status})`);
-  const me = (await meRes.json()) as { data?: { id?: string; username?: string; name?: string } };
+  const me = (await meRes.json()) as {
+    data?: { id?: string; username?: string; name?: string; profile_image_url?: string };
+  };
   const xId = me.data?.id;
   const handle = me.data?.username;
   if (!xId || !handle) throw new Error("X profile did not include an id and handle");
   const name = me.data?.name ?? null;
+  // X returns a small "_normal" (48px) image; upgrade to the 400x400 variant so the
+  // avatar stays crisp at the sizes we render it (up to ~150px).
+  const avatar = me.data?.profile_image_url
+    ? me.data.profile_image_url.replace(/_normal(\.\w+)$/, "_400x400$1")
+    : null;
 
   try {
     await query(
-      `insert into social_identity (wallet, x_id, x_handle, x_name, verified_at)
-         values ($1, $2, $3, $4, now())
+      `insert into social_identity (wallet, x_id, x_handle, x_name, x_avatar, verified_at)
+         values ($1, $2, $3, $4, $5, now())
        on conflict (wallet) do update set
-         x_id = excluded.x_id, x_handle = excluded.x_handle, x_name = excluded.x_name, verified_at = now()`,
-      [rec.wallet, xId, handle, name],
+         x_id = excluded.x_id, x_handle = excluded.x_handle, x_name = excluded.x_name,
+         x_avatar = excluded.x_avatar, verified_at = now()`,
+      [rec.wallet, xId, handle, name, avatar],
     );
   } catch (err) {
     // unique(x_id) violation: this X account is already bound to a different wallet.

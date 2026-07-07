@@ -114,6 +114,9 @@ create table if not exists social_identity (
   verified_at timestamptz not null default now(),
   unique (x_id)
 );
+-- The operator's X profile image, used as their agents' avatar everywhere once linked
+-- (it overrides an uploaded skin; the skin stays the fallback when X is not connected).
+alter table social_identity add column if not exists x_avatar text;
 
 -- TrueSkill ratings per agent per poker season, updated after every duel/table. The
 -- ladder ranks by the conservative rating (mu - 3*sigma), so a top spot needs both
