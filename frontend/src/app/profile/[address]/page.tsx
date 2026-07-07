@@ -10,6 +10,7 @@ import { kindMeta } from "@/lib/kind";
 import { formatUsdc, shortAddr } from "@/lib/format";
 import type { OperatorProfile } from "@/lib/types";
 import { InlineClaimButton } from "@/components/InlineClaimButton";
+import { ConnectX } from "@/components/ConnectX";
 import { SkinUpload } from "@/components/SkinUpload";
 import { DashboardAgentCard } from "@/components/DashboardAgentCard";
 import { WalletReady } from "@/components/WalletReady";
@@ -133,11 +134,12 @@ function ProfileBody({
             />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-display text-3xl text-ink">
                 {primary?.name ?? "Operator"}
               </h1>
               {isMe && <Chip tone="info">this is you</Chip>}
+              <ConnectX address={address} isMe={isMe} />
             </div>
             <p className="mt-1 font-mono text-[13px] text-ink-2">{shortAddr(address, 10, 8)}</p>
 
