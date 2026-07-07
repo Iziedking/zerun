@@ -29,6 +29,9 @@ import {
 const MAX_AGENTS = 2;
 // How many match-history cards to show before "load more".
 const HISTORY_PAGE = 6;
+// The current engine's contest ids start here; anything below is a legacy v1 contest
+// that cannot be claimed on this engine, so it is kept out of the claim nudge.
+const LEGACY_CONTEST_CUTOFF = 2000;
 
 export default function ProfilePage() {
   const params = useParams<{ address: string }>();
@@ -83,7 +86,13 @@ function ProfileBody({
   // Prizes the owner has won but not yet claimed (a just-claimed one clears at once).
   const unclaimed = isMe
     ? matches.filter(
-        (m) => m.amount && Number(m.amount) > 0 && !m.claimed && !claimed.has(Number(m.contest_id)),
+        (m) =>
+          m.amount &&
+          Number(m.amount) > 0 &&
+          !m.claimed &&
+          !claimed.has(Number(m.contest_id)) &&
+          // Legacy v1 prizes are not claimable on this engine, so keep them out of the nudge.
+          Number(m.contest_id) >= LEGACY_CONTEST_CUTOFF,
       )
     : [];
 
