@@ -13,6 +13,7 @@ import type {
   ModelStat,
   OperatorProfile,
   PokerLadderRow,
+  XIdentity,
   RecentFeedItem,
   Standing,
 } from "./types";
@@ -81,6 +82,18 @@ export const api = {
     req<{ season: string; ladder: PokerLadderRow[] }>(
       `/api/poker/ladder${season ? `?season=${encodeURIComponent(season)}` : ""}`,
     ),
+
+  // X (Twitter) connect: status, start (returns the authorize URL), callback (binds the
+  // identity), and the public read of a wallet's linked handle for the verified badge.
+  xStatus: () => req<{ enabled: boolean }>("/api/social/x/status"),
+  xStart: (body: { owner: string; issuedAt: number; signature: string }) =>
+    req<{ url: string }>("/api/social/x/start", { method: "POST", body: JSON.stringify(body) }),
+  xCallback: (body: { code: string; state: string }) =>
+    req<{ ok: boolean; wallet: string; handle: string; name: string | null }>("/api/social/x/callback", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  xIdentity: (address: string) => req<{ identity: XIdentity | null }>(`/api/social/x/${address}`),
   operator: (address: string) =>
     req<OperatorProfile>(`/api/operators/${address}`),
 

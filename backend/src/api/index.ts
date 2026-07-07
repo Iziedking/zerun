@@ -31,6 +31,7 @@ import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { standingsFor } from "../coordinator/standings.js";
 import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
+import { xConfigured, verifyWalletSig, beginXAuth, completeXAuth, xIdentityFor } from "../auth/xConnect.js";
 import { scheduleHouseFill, coordinatorGasBalance } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { buildDossier } from "../runners/poker/dossier.js";
@@ -94,6 +95,41 @@ app.get("/api/compute/status", (c) =>
 );
 
 app.get("/api/storage/status", (c) => c.json({ enabled: storageConfigured() }));
+
+// X (Twitter) connect, OAuth 2.0 + PKCE. Soft-gate: a verified badge, nothing blocked.
+// start: the wallet signs a message, we return the X authorize URL. callback: exchange
+// the code and bind the X identity to the wallet. The public read returns a wallet's
+// linked handle for the badge.
+app.get("/api/social/x/status", (c) => c.json({ enabled: xConfigured() }));
+
+app.post("/api/social/x/start", async (c) => {
+  if (!xConfigured()) return c.json({ error: "X connect is not configured on this server" }, 503);
+  const body = await c.req.json().catch(() => ({}));
+  const owner = String(body.owner ?? "");
+  const ok = await verifyWalletSig(owner, Number(body.issuedAt ?? 0), String(body.signature ?? ""));
+  if (!ok) return c.json({ error: "a fresh wallet signature is required" }, 401);
+  const { url } = beginXAuth(owner);
+  return c.json({ url });
+});
+
+app.post("/api/social/x/callback", async (c) => {
+  if (!xConfigured()) return c.json({ error: "X connect is not configured on this server" }, 503);
+  const body = await c.req.json().catch(() => ({}));
+  const code = String(body.code ?? "");
+  const state = String(body.state ?? "");
+  if (!code || !state) return c.json({ error: "code and state are required" }, 400);
+  try {
+    const res = await completeXAuth(code, state);
+    return c.json({ ok: true, wallet: res.wallet, handle: res.handle, name: res.name });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
+app.get("/api/social/x/:address", async (c) => {
+  const identity = await xIdentityFor(c.req.param("address"));
+  return c.json({ identity });
+});
 
 // Arena-wide stats for the home page.
 app.get("/api/stats", async (c) => {

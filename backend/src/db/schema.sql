@@ -102,6 +102,19 @@ create table if not exists poker_stats (
 -- The agent's dossier snapshot on 0G Storage: owned, provable scouting data.
 alter table agents_meta add column if not exists dossier_root text;
 
+-- A verified X (Twitter) identity bound to an operator wallet. The unique(x_id) is the
+-- anti-Sybil spine: one X account maps to exactly one wallet, so a wallet farm cannot
+-- multiply a single X identity. Soft-gate for now (a verified badge); the same binding
+-- later gates campaigns and powers a friends leaderboard.
+create table if not exists social_identity (
+  wallet      text primary key,      -- operator wallet, lowercased
+  x_id        text not null,         -- X user id (stable across handle changes)
+  x_handle    text not null,         -- @handle (may change)
+  x_name      text,                  -- display name
+  verified_at timestamptz not null default now(),
+  unique (x_id)
+);
+
 -- TrueSkill ratings per agent per poker season, updated after every duel/table. The
 -- ladder ranks by the conservative rating (mu - 3*sigma), so a top spot needs both
 -- skill and enough games to be confident. A season groups a run of matches (POKER_SEASON).

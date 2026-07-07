@@ -159,6 +159,13 @@ export interface LeaderboardRow {
   winnings: string; // USDC 6dp string
 }
 
+// A verified X (Twitter) identity linked to an operator wallet, for the profile badge.
+export interface XIdentity {
+  handle: string;
+  name: string | null;
+  verifiedAt: string;
+}
+
 // One agent's row on the poker TrueSkill season ladder. `rating` is the conservative
 // score (mu - 3*sigma) the ladder ranks by; a high rating needs both skill and games.
 export interface PokerLadderRow {
