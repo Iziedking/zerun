@@ -19,19 +19,21 @@ export function CoinStat({
   className?: string;
 }) {
   return (
-    <StickerCard className={cx("p-5", className)}>
-      <div className="flex items-center gap-2.5 sm:gap-3">
+    <StickerCard className={cx("p-4 sm:p-5", className)}>
+      <div className="flex items-center gap-2 sm:gap-3">
         {token !== "none" && <TokenMark token={token} />}
         <div className="min-w-0">
-          <div className="break-words font-display text-[26px] leading-none text-ink sm:text-4xl">
+          {/* Numbers never break mid-token (so "24,590" cannot render as "24,59 0");
+              they scale down on small screens and are tabular so they stay tidy. */}
+          <div className="whitespace-nowrap font-display text-[20px] leading-none text-ink tabular-nums sm:text-[32px] lg:text-4xl">
             {value}
             {suffix && (
-              <span className="ml-1.5 text-sm font-body font-extrabold text-ink-2 sm:text-base">
+              <span className="ml-1 text-[11px] font-body font-extrabold text-ink-2 sm:ml-1.5 sm:text-sm">
                 {suffix}
               </span>
             )}
           </div>
-          <div className="mt-1 font-body text-[12px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
+          <div className="mt-1 font-body text-[11px] font-extrabold uppercase leading-tight tracking-[0.02em] text-ink-2 sm:text-[12px]">
             {caption}
           </div>
         </div>
@@ -44,7 +46,7 @@ function TokenMark({ token }: { token: Token }) {
   return (
     <span
       aria-hidden
-      className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-line border-ink bg-amber shadow-pop-press"
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-line border-ink bg-amber shadow-pop-press sm:h-10 sm:w-10"
     >
       {token === "coin" ? (
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">

@@ -109,8 +109,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </a>
             </div>
           </footer>
-          {/* Ambient compute status, pinned to the bottom-right corner. */}
-          <ComputeBadge className="fixed bottom-4 right-4 z-30 shadow-pop" />
+          {/* Ambient compute status, pinned bottom-right on tablet/desktop. Hidden on
+              phones, where a fixed badge collides with page content and the browser bar. */}
+          <ComputeBadge className="hidden sm:block fixed bottom-4 right-4 z-30 shadow-pop" />
             </NotificationProvider>
             </WalletActionProvider>
           </MusicProvider>
