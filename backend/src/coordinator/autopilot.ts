@@ -117,7 +117,10 @@ const WINDOW_S = Number(process.env.AUTOPILOT_WINDOW_SECONDS ?? "300");
 const POOL_USDC = Number(process.env.AUTOPILOT_POOL_USDC ?? "30");
 // Pools the autopilot picks from at random, so prizes vary contest to contest.
 const POOL_CHOICES = [25, 30, 40, 50, 60, 70, 80, 100];
-const HOUSE_SIZE = Number(process.env.AUTOPILOT_HOUSE ?? "4");
+// Eight house agents so a single real host can still fill an 8-agent knockout: the
+// other seven seats fill from the roster and the tournament runs. Contests cap the fill
+// at their own seat limit, so a heads-up duel still only draws two.
+const HOUSE_SIZE = Number(process.env.AUTOPILOT_HOUSE ?? "8");
 // Non-poker contests (prediction, puzzle, World Cup) only need a small baseline field
 // to be watchable, so the house tops up to this rather than the full seat cap. Fewer
 // house seats means a smaller fill, which the poll can start much closer to the close,
@@ -196,7 +199,7 @@ async function openContestCount(): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
-const HOUSE_NAMES = ["Pixel", "Nova", "Byte", "Echo", "Quark", "Volt"];
+const HOUSE_NAMES = ["Pixel", "Nova", "Byte", "Echo", "Quark", "Volt", "Flux", "Ion"];
 
 // House agents span a mix of Compute tiers instead of a flat level-0 baseline, so the
 // arena looks alive: the ladder shows a real gradient, poker is skill-based (a stronger
