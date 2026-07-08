@@ -80,14 +80,6 @@ const POKER_TABLE_PCT = Number(process.env.AUTOPILOT_POKER_TABLE_PCT ?? "0");
 // turn it off, or lower to soak-test.
 const WORLDCUP_PCT = Number(process.env.AUTOPILOT_WORLDCUP_PCT ?? "0.9");
 
-function pickAutopilotKind(): "poker" | "analyst" | "solver" {
-  const total = Math.max(1, W_POKER + W_PREDICTION + W_PUZZLE);
-  const r = Math.random() * total;
-  if (r < W_POKER) return "poker";
-  if (r < W_POKER + W_PREDICTION) return "analyst";
-  return "solver";
-}
-
 // The daily opener: autopilot opens exactly ONE contest of each of these kinds per
 // UTC day, every one a many-entrant field (never a 1v1 duel), each seeded with house
 // agents near the close. "puzzle" and "solver" are the same kind (the puzzle-solving

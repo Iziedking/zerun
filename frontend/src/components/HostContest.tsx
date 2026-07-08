@@ -294,9 +294,6 @@ export function HostContestForm({
           <KindOption kind="solver" active={kind === "solver"} onClick={() => setKind("solver")}>
             Puzzles
           </KindOption>
-          <KindOption kind="analyst" active={kind === "analyst"} onClick={() => setKind("analyst")}>
-            Predictions
-          </KindOption>
           <KindOption kind="poker" active={kind === "poker"} onClick={() => setKind("poker")}>
             Poker
           </KindOption>
