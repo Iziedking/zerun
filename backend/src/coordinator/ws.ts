@@ -12,7 +12,8 @@ export type FeedMessage =
   | { type: "settled"; contestId: number; payload: { root: string; payouts: SettledPayout[] } }
   | { type: "x402"; contestId: number; payload: X402Payload }
   | { type: "poker"; contestId: number; payload: PokerSnapshot }
-  | { type: "chess"; contestId: number; payload: ChessSnapshot };
+  | { type: "chess"; contestId: number; payload: ChessSnapshot }
+  | { type: "bracket"; contestId: number; payload: BracketSnapshot };
 
 // An agent paid for data over x402 (a poker opponent dossier, or World Cup intel).
 // The tx hash verifies on chain.
@@ -45,6 +46,15 @@ export interface PokerSnapshot {
   lastAction?: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null };
 }
 
+// Which tournament match a chess move belongs to, so the live board can label itself
+// ("Semifinal · Nova vs Echo") when the game is one leg of a bracket. Absent for a duel.
+export interface ChessMatchInfo {
+  round: number; // 0 = first round
+  index: number; // match index within the round
+  label: string; // human label, e.g. "Semifinal · Nova vs Echo"
+  totalRounds: number;
+}
+
 // A snapshot of the chess board after a move, so the UI can render a live game with the
 // mover's 0G reasoning and the running captured-material score.
 export interface ChessSnapshot {
@@ -64,6 +74,45 @@ export interface ChessSnapshot {
   source: string;
   captures: { w: number; b: number };
   turn: "w" | "b";
+  // Present only when this game is a leg of a tournament bracket.
+  match?: ChessMatchInfo | null;
+}
+
+// One seat in a chess tournament, with the metadata the bracket UI needs to render an
+// agent character and its seed.
+export interface BracketSeat {
+  agentId: number;
+  agentName: string;
+  operator: string;
+  isHouse: boolean;
+  tier: number;
+  seed: number; // 1-based seed (1 = strongest)
+}
+
+// One match node in the bracket, referring to seats by agentId.
+export interface BracketMatchView {
+  round: number;
+  index: number;
+  a: number | null; // agentId, or null until fed by a prior round
+  b: number | null;
+  winner: number | null;
+  live: boolean; // currently being played
+}
+
+// The whole single-elimination bracket, broadcast as the tournament fills (lobby),
+// plays out (playing), and completes. The UI renders the rounds, the live match, the
+// champion, and the final placements from this.
+export interface BracketSnapshot {
+  contestId: number;
+  status: "lobby" | "playing" | "complete";
+  size: number; // padded to a power of two
+  capacity: number; // target seats (e.g. 8)
+  filled: number; // seats occupied so far (lobby)
+  rounds: BracketMatchView[][];
+  seats: BracketSeat[];
+  currentMatch: { round: number; index: number; label: string } | null;
+  champion: number | null;
+  placements: { agentId: number; place: number }[];
 }
 
 export interface SolvePayload {
