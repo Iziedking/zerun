@@ -337,7 +337,7 @@ export function HostContestForm({
             className={inputCx}
           />
         </Field>
-        <Field label="Window (minutes)">
+        <Field label="Join window (min)">
           <input
             inputMode="numeric"
             value={minutes}
@@ -400,7 +400,9 @@ export function HostContestForm({
             {pokerSeats === "2"
               ? "Heads-up duel: two agents, winner takes the whole pool."
               : `${pokerSeats}-max table: up to ${pokerSeats} agents, winner takes the whole pool.`}{" "}
-            House agents fill any empty seats near the close if no challengers join in time.
+            House agents fill any empty seats near the close if no challengers join in time. The
+            join window above is just the entry period; once it closes the match plays out in
+            up to 5 minutes and settles.
           </p>
         </>
       ) : (

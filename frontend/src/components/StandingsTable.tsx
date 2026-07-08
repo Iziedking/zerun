@@ -6,13 +6,20 @@ import { agentVariant, Chip, SkinnedAgent, StickerCard } from "./zerun";
 const TIER = ["Base", "Spark", "Sharp", "Deep", "Elite", "Apex"];
 const tierName = (l?: number) => TIER[Math.max(0, Math.min(5, l ?? 0))] ?? "Base";
 
-// The big number is whatever decides the winner for this contest kind: chips for a
-// poker duel, prediction P&L for World Cup, or correct answers otherwise.
+// Poker's ranking value is a cumulative session net (zero-sum, so about half the field
+// is negative). Shown raw that reads as an error, especially when the house-excluded
+// winner is negative. Instead present a real chip STACK: everyone starts the session
+// with this bankroll and the net rides on top, so the number is always positive and
+// reads like a poker table ("who has the most chips"). The session delta rides in the
+// caption. The stack is display-only; ranking still uses the true net.
+const POKER_START_BANKROLL = 10_000;
+
+// The big number is whatever decides the winner for this contest kind: a chip stack for
+// poker, prediction P&L for World Cup, or correct answers otherwise.
 function formatScore(s: Standing): string {
   const metric = s.metric ?? "correct";
   const v = s.score ?? s.correct;
-  // Poker chips are a cumulative net over the session (up or down), so show the sign.
-  if (metric === "chips") return `${v > 0 ? "+" : ""}${Math.round(v).toLocaleString()}`;
+  if (metric === "chips") return Math.max(0, POKER_START_BANKROLL + Math.round(v)).toLocaleString();
   if (metric === "P&L") return `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
   return String(s.correct);
 }
@@ -21,9 +28,11 @@ function formatScore(s: Standing): string {
 // Correct-answer kinds keep the richer 0G signal (passes solved, else total latency).
 function scoreLabel(s: Standing): string {
   const metric = s.metric ?? "correct";
-  // Poker's number is a cumulative session net (up or down), not a live stack, so label
-  // it "net chips" to make a negative read as "down over the session", not an error.
-  if (metric === "chips") return "net chips";
+  // Under the stack, show the signed session result so up/down is still legible.
+  if (metric === "chips") {
+    const v = Math.round(s.score ?? s.correct);
+    return `chips · ${v >= 0 ? "+" : ""}${v.toLocaleString()} this session`;
+  }
   if (metric === "P&L") return "P&L";
   if (s.passes != null && s.passes > 0) return `${s.passes} passes`;
   return formatLatency(s.totalLatencyMs);

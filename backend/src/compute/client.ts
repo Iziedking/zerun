@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { config } from "../config/index.js";
 import { computeChat, brokerConfigured } from "./zgCompute.js";
+import { modelsMatch } from "./modelMatch.js";
 
 // The single seam every agent answer passes through. In Zerun an agent does not
 // "think" anywhere except here, and here always resolves to 0G: a paid,
@@ -62,6 +63,40 @@ function getRouterClient(): OpenAI {
   return routerClient;
 }
 
+// The router's live chat-model catalog, fetched once and cached, so a tier can route to
+// its preferred model when the router serves it and fall back cleanly otherwise. On the
+// 0G testnet this is a single model today (qwen2.5-omni); the moment the catalog grows
+// (mainnet, or more providers), higher tiers pick up the stronger models automatically.
+let catalog: string[] | null = null;
+let catalogAt = 0;
+const CATALOG_TTL_MS = 5 * 60 * 1000;
+async function routerModels(): Promise<string[]> {
+  if (catalog && Date.now() - catalogAt < CATALOG_TTL_MS) return catalog;
+  try {
+    const res = await getRouterClient().models.list();
+    catalog = res.data.map((m) => m.id).filter(Boolean);
+    catalogAt = Date.now();
+  } catch {
+    catalog = catalog ?? [];
+  }
+  return catalog;
+}
+
+// Pick the router model for a tier: the first of its preferred models the router serves
+// (tolerant match), else an explicit configured model, else the first catalog model.
+async function routerModelFor(preferred?: string[]): Promise<string> {
+  const models = await routerModels();
+  if (preferred) {
+    for (const want of preferred) {
+      const hit = models.find((m) => modelsMatch(want, m));
+      if (hit) return hit;
+    }
+  }
+  const configured = process.env.COMPUTE_ROUTER_MODEL;
+  if (configured && models.some((m) => modelsMatch(configured, m))) return configured;
+  return models[0] ?? configured ?? "qwen2.5-omni";
+}
+
 export async function callModel(params: CallParams): Promise<CallResult> {
   const mode = resolveMode();
 
@@ -80,7 +115,8 @@ export async function callModel(params: CallParams): Promise<CallResult> {
 
   if (mode === "0g-router") {
     const client = getRouterClient();
-    const model = process.env.COMPUTE_ROUTER_MODEL ?? "llama-3.3-70b-instruct";
+    // Tier-aware: route to the tier's preferred model when the router serves it.
+    const model = await routerModelFor(params.models);
     const t0 = Date.now();
     const completion = await client.chat.completions.create({
       model,
