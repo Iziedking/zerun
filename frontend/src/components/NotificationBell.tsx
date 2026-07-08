@@ -48,7 +48,11 @@ export function NotificationBell({ className = "" }: { className?: string }) {
       </button>
 
       {open && (
-          <div className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-chunk border-line border-ink bg-cloud shadow-pop">
+          // On phones the bell sits near the left of a wordmark-less bar, so a
+          // right-anchored 18rem panel would spill off the left edge. Pin it to the
+          // viewport (side insets, dropped below the top control row) on mobile and
+          // fall back to the tidy bell-anchored dropdown at sm+.
+          <div className="fixed inset-x-3 top-[3.75rem] z-50 w-auto overflow-hidden rounded-chunk border-line border-ink bg-cloud shadow-pop sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-72">
             <div className="flex items-center justify-between border-b-line border-ink/15 px-3 py-2">
               <span className="font-display text-sm text-ink">Notifications</span>
               <div className="flex items-center gap-3">
