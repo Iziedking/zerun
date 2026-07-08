@@ -8,6 +8,7 @@ import { runAnalystContest } from "./runAnalystContest.js";
 import { runPokerContest } from "./runPokerContest.js";
 import { runWorldCupContest } from "./runWorldCupContest.js";
 import { runChessContest } from "./runChessContest.js";
+import { broadcastChessLobby } from "./runChessTournament.js";
 import { startWorldCupResolver } from "./worldcupResolver.js";
 import { resettleFromStored, cancelContest } from "./finalize.js";
 import {
@@ -85,13 +86,23 @@ const WORLDCUP_PCT = Number(process.env.AUTOPILOT_WORLDCUP_PCT ?? "0.9");
 // UTC day, every one a many-entrant field (never a 1v1 duel), each seeded with house
 // agents near the close. "puzzle" and "solver" are the same kind (the puzzle-solving
 // contest); add "analyst" for a standalone (non-World-Cup) prediction. Tunable.
-const VALID_KINDS: ContestKind[] = ["solver", "poker", "worldcup", "analyst"];
+const VALID_KINDS: ContestKind[] = ["solver", "poker", "worldcup", "analyst", "chess"];
 const DAILY_KINDS: ContestKind[] = (process.env.AUTOPILOT_DAILY_KINDS ?? "solver,poker,worldcup")
   .split(",")
   .map((s) => s.trim().toLowerCase())
   .filter((s): s is ContestKind => (VALID_KINDS as string[]).includes(s));
 // Seats for the autopilot poker table: a many-entrant table, not a heads-up duel.
 const POKER_TABLE_SEATS = Number(process.env.AUTOPILOT_POKER_SEATS ?? "6");
+// Seats for a chess tournament: an 8-agent single-elimination knockout (the locked
+// design — 8 house agents can fill a full bracket if the real field is short).
+const CHESS_TOURNEY_SEATS = Number(process.env.CHESS_TOURNEY_SEATS ?? "8");
+// A chess tournament has no short join window: it opens as a lobby that either auto-starts
+// the instant the seats fill or, failing that, has the house fill the empty seats near
+// this deadline and starts. 10 minutes by default; set short for a demo.
+const CHESS_LOBBY_SECONDS = Number(process.env.CHESS_LOBBY_SECONDS ?? "600");
+// How often the chess-lobby poll runs: it broadcasts the filling lobby and auto-starts a
+// tournament the moment its seats are full (before the fill deadline).
+const CHESS_LOBBY_POLL_MS = Number(process.env.CHESS_LOBBY_POLL_MS ?? "5000");
 // Tasks (puzzles / prediction markets / World Cup events) per autopilot contest. Fewer
 // tasks means fewer paced 0G calls, so a contest settles faster. Tunable.
 const AUTOPILOT_TASK_COUNT = Number(process.env.AUTOPILOT_TASK_COUNT ?? "4");
@@ -179,8 +190,15 @@ const RUN_TIMEOUT_MS = 1_200_000; // paced 0G calls make a full field take longe
 // done in a few minutes. A tighter watchdog frees a hung poker run fast, so the next
 // sweep retries or the stale ceiling refunds it, instead of holding the slot 20 minutes.
 const POKER_RUN_TIMEOUT_MS = Number(process.env.POKER_RUN_TIMEOUT_MS ?? "600000"); // 10 min
+// A chess tournament plays up to seven games move by move on 0G and then, if it filled
+// early, waits out its lobby window before it can post the root on chain. That whole span
+// runs inside the runner, so its watchdog has to be far longer than a single contest's:
+// the lobby window plus a generous ceiling for the games. Tunable.
+const CHESS_RUN_TIMEOUT_MS = Number(process.env.CHESS_RUN_TIMEOUT_MS ?? String(CHESS_LOBBY_SECONDS * 1000 + 1_800_000));
 function runTimeoutFor(kind: ContestKind): number {
-  return kind === "poker" ? POKER_RUN_TIMEOUT_MS : RUN_TIMEOUT_MS;
+  if (kind === "poker") return POKER_RUN_TIMEOUT_MS;
+  if (kind === "chess") return CHESS_RUN_TIMEOUT_MS;
+  return RUN_TIMEOUT_MS;
 }
 
 // The wait before the next open: the fixed override, or a jittered draw around
@@ -606,6 +624,53 @@ async function fillClosingContests(): Promise<void> {
   }
 }
 
+// A chess tournament has no short join window: it opens as a lobby. This poll runs the
+// lobby lifecycle — it broadcasts the filling bracket to the room, and the instant the
+// seats fill it auto-starts the run (before the fill deadline), rather than waiting the
+// whole lobby window out. A tournament that never fills is topped up by the house-fill
+// poll near its deadline and then started by the due-sweeper, exactly like any other
+// field. Runs whenever the coordinator is up (independent of the AUTOPILOT toggle), so
+// user-hosted tournaments get the same lifecycle.
+async function tickChessLobbies(): Promise<void> {
+  const { rows } = await query<{ contest_id: string; max_operators: number | null; filled: string }>(
+    `select cm.contest_id, cm.max_operators,
+            (select count(*) from contest_entries e where e.contest_id = cm.contest_id) as filled
+       from contests_meta cm
+      where cm.status = 'open' and cm.kind = 'chess'`,
+  );
+  for (const r of rows) {
+    const id = Number(r.contest_id);
+    if (inFlight.has(id)) continue; // already starting/running
+    const cap = r.max_operators ?? CHESS_TOURNEY_SEATS;
+    if (cap <= 2) continue; // a 2-seat chess room is a duel, not a lobby tournament
+    const filled = Number(r.filled ?? 0);
+    // Show the room filling.
+    await broadcastChessLobby(id, cap);
+    // Auto-start the moment the bracket is full, ahead of the fill deadline. Fire and
+    // forget: a tournament runs for many minutes (and may then wait out its lobby window
+    // before it can settle), so awaiting it here would freeze every other room's lobby
+    // broadcast. runOnce marks the contest in-flight synchronously, so the next tick and
+    // the due-sweeper both skip it, and coordinator sends are already nonce-serialized.
+    if (filled >= cap) {
+      console.log(`autopilot: chess tournament ${id} full (${filled}/${cap}), auto-starting`);
+      void runOnce(id, "chess").catch((err) =>
+        console.error(`autopilot: chess auto-start ${id} failed:`, (err as Error).message),
+      );
+    }
+  }
+}
+
+async function startChessLobbyPoll(): Promise<void> {
+  for (;;) {
+    await sleep(CHESS_LOBBY_POLL_MS);
+    try {
+      await tickChessLobbies();
+    } catch (err) {
+      console.error("autopilot: chess lobby poll failed:", (err as Error).message);
+    }
+  }
+}
+
 // The dedicated house-fill loop. Runs far more often than the settle sweeper so the
 // house can join late (near close) yet reliably, independent of restarts.
 async function startHouseFillPoll(): Promise<void> {
@@ -730,22 +795,29 @@ async function startOpenLoop(): Promise<void> {
       } else {
         const kind = remaining[0]!;
         const isPoker = kind === "poker";
-        // Poker is a multi-seat table; every other kind is an open, uncapped field.
-        // Neither is a duel. The house fills the seats near close (see the house-fill
-        // poll), bounded by the house roster.
-        const seatCap = isPoker ? POKER_TABLE_SEATS : undefined;
+        const isChess = kind === "chess";
+        // Poker is a multi-seat table and chess an 8-seat knockout; every other kind is an
+        // open, uncapped field. None is a duel. The house fills the seats near close (see
+        // the house-fill poll), bounded by the house roster. Chess opens as a longer lobby
+        // that auto-starts the moment it fills (see the chess-lobby poll).
+        const seatCap = isPoker ? POKER_TABLE_SEATS : isChess ? CHESS_TOURNEY_SEATS : undefined;
         const winnerTakeAll = isPoker; // poker: chip leader takes it; fields pay the top 3
+        const durationSecs = isChess ? CHESS_LOBBY_SECONDS : WINDOW_S;
         const pool = POOL_CHOICES[Math.floor(Math.random() * POOL_CHOICES.length)]!;
         console.log(`autopilot: opening today's ${kind} field (${pool} tUSDC)`);
         const id = await openContest({
           prizePoolUsdc: pool,
-          durationSecs: WINDOW_S,
+          durationSecs,
           topN: winnerTakeAll ? 1 : 3,
           puzzleCount: AUTOPILOT_TASK_COUNT,
           kind,
           maxOperators: seatCap,
         });
-        console.log(`autopilot: ${kind} ${id} open; house seeds the field ~7s before close`);
+        console.log(
+          isChess
+            ? `autopilot: chess tournament ${id} open as a lobby; auto-starts when ${CHESS_TOURNEY_SEATS} seats fill, else house fills near the ${CHESS_LOBBY_SECONDS}s deadline`
+            : `autopilot: ${kind} ${id} open; house seeds the field ~7s before close`,
+        );
       }
     } catch (err) {
       console.error("autopilot open failed:", (err as Error).message);
@@ -774,6 +846,7 @@ export function startAutopilot(): void {
   void startDueSweeper();
   void startWorldCupResolver();
   void startHouseFillPoll();
+  void startChessLobbyPoll();
 
   // Print the live tier -> model routing once, so it is obvious from the logs whether
   // the premium tiers actually reach the stronger 0G models or fall back to the base
