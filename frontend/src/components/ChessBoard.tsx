@@ -89,6 +89,11 @@ export function ChessBoard({ snapshot }: { snapshot: WsChessSnapshot }) {
 
   return (
     <StickerCard className="p-4 sm:p-5">
+      {snapshot.match && (
+        <div className="mb-3 flex items-center gap-2">
+          <Chip tone="won">{snapshot.match.label}</Chip>
+        </div>
+      )}
       <PlayerBar snap={snapshot} color="b" active={snapshot.turn === "b"} />
 
       <div className="mx-auto my-3 w-full max-w-[420px]">

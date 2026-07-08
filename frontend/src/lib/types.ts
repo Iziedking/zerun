@@ -333,6 +333,14 @@ export interface WsPokerSnapshot {
   lastAction?: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null };
 }
 
+// Which tournament match a chess move belongs to (absent for a heads-up duel).
+export interface WsChessMatchInfo {
+  round: number;
+  index: number;
+  label: string;
+  totalRounds: number;
+}
+
 export interface WsChessSnapshot {
   fen: string;
   ply: number;
@@ -350,6 +358,41 @@ export interface WsChessSnapshot {
   source: string;
   captures: { w: number; b: number };
   turn: "w" | "b";
+  match?: WsChessMatchInfo | null;
+}
+
+// One seat in a chess tournament bracket.
+export interface WsBracketSeat {
+  agentId: number;
+  agentName: string;
+  operator: string;
+  isHouse: boolean;
+  tier: number;
+  seed: number;
+}
+
+// One match node in the bracket (seats referred to by agentId).
+export interface WsBracketMatch {
+  round: number;
+  index: number;
+  a: number | null;
+  b: number | null;
+  winner: number | null;
+  live: boolean;
+}
+
+// The whole single-elimination bracket, from lobby through completion.
+export interface WsBracketSnapshot {
+  contestId: number;
+  status: "lobby" | "playing" | "complete";
+  size: number;
+  capacity: number;
+  filled: number;
+  rounds: WsBracketMatch[][];
+  seats: WsBracketSeat[];
+  currentMatch: { round: number; index: number; label: string } | null;
+  champion: number | null;
+  placements: { agentId: number; place: number }[];
 }
 
 export type WsMessage =
@@ -359,4 +402,5 @@ export type WsMessage =
   | { type: "settled"; contestId: number; payload: WsSettledPayload }
   | { type: "x402"; contestId: number; payload: WsX402Payload }
   | { type: "poker"; contestId: number; payload: WsPokerSnapshot }
-  | { type: "chess"; contestId: number; payload: WsChessSnapshot };
+  | { type: "chess"; contestId: number; payload: WsChessSnapshot }
+  | { type: "bracket"; contestId: number; payload: WsBracketSnapshot };
