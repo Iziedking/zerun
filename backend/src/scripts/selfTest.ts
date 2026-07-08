@@ -2,6 +2,7 @@ import { concat, keccak256, type Hex } from "viem";
 import { generatePuzzles, extractAnswer } from "../runners/puzzles.js";
 import { rankAgents, computePayouts, type AgentScore } from "../runners/scoring.js";
 import { payoutLeaf, merkleRoot, merkleProof, contestSaltLeaf } from "../coordinator/merkle.js";
+import { normalizeModel, modelsMatch } from "../compute/modelMatch.js";
 
 // Offline checks for the deterministic core: puzzle generation, scoring, and
 // that every merkle proof we build verifies against the root the same way the
@@ -89,6 +90,17 @@ check(
   "salt leaf is not a payout leaf",
   payouts.every((p) => contestSaltLeaf(2010) !== payoutLeaf(p.operator as `0x${string}`, p.amount)),
 );
+
+// 6. Model routing tolerance: a tier's preferred model must match the same model
+// however a provider cosmetically spells it, so the premium tiers stop silently
+// falling back to the base model. Distinct models must NOT match.
+check("normalize strips prefix and separators", normalizeModel("google/gemma-3-27b-it") === "gemma327bit");
+check("exact-family match across spellings", modelsMatch("google/gemma-3-27b-it", "gemma3-27b-it"));
+check("prefixed vs bare match", modelsMatch("openai/gpt-oss-20b", "gpt-oss-20b"));
+check("suffix-tolerant match", modelsMatch("qwen/qwen2.5-omni-7b", "qwen2.5-omni-7b-instruct"));
+check("distinct models do not match", !modelsMatch("google/gemma-3-27b-it", "openai/gpt-oss-20b"));
+check("qwen not matched by gemma", !modelsMatch("google/gemma-3-27b-it", "qwen/qwen2.5-omni-7b"));
+check("empty never matches", !modelsMatch("", "qwen/qwen2.5-omni-7b"));
 
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} checks FAILED`);
 process.exit(failures === 0 ? 0 : 1);

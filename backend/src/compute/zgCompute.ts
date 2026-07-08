@@ -1,6 +1,7 @@
 import { ethers } from "ethers";
 import { createRequire } from "node:module";
 import { config } from "../config/index.js";
+import { modelsMatch } from "./modelMatch.js";
 
 // The serving broker ships a broken ESM re-export, so load its CommonJS build
 // through require. The types still resolve from the package's type entry.
@@ -293,13 +294,45 @@ export async function ensureReadyFor(preferredModels?: string[]): Promise<Provid
   await ensureLedger();
 
   const services = (await withTimeout("listService", broker.inference.listService())).map(readService);
+  const chat = services.filter((s) => s.serviceType === "chatbot");
+
+  // Walk the tier's preference list; take the first preferred model a healthy provider
+  // serves. Matching is tolerant (normalized/family) so a provider that advertises the
+  // model under a cosmetically different string still counts — the old exact-string
+  // compare is why the premium tiers silently fell back to the base model. Among the
+  // providers serving a matched model, prefer the strongest proof story (TEE + attest).
+  const providerScore = (s: ReturnType<typeof readService>) =>
+    (s.verifiability === "TeeML" ? 2 : 0) + (s.teeTarget ? 1 : 0);
   for (const want of preferredModels) {
-    const match = services.find((s) => s.serviceType === "chatbot" && s.model === want && s.healthy);
-    if (match) return getHandleFor(broker, match.provider);
+    const matches = chat
+      .filter((s) => s.healthy && modelsMatch(want, s.model))
+      .sort((a, b) => providerScore(b) - providerScore(a));
+    if (matches[0]) return getHandleFor(broker, matches[0].provider);
   }
 
   // Nothing preferred is healthy — use the default best provider.
   return ensureReady();
+}
+
+// Log which model each compute tier actually resolves to right now, from the live
+// provider list. Printed once at startup so the "does multi-model really work on
+// testnet, or does everything fall back to qwen?" question is answerable from the logs
+// instead of invisible. Best effort; never throws.
+export async function logTierRouting(tierModels: string[][]): Promise<void> {
+  try {
+    const providers = await listProviders();
+    const healthy = providers.filter((p) => p.serviceType === "chatbot" && p.healthy);
+    console.log(`0G models live (healthy chatbot): ${healthy.map((p) => p.model || "?").join(", ") || "(none)"}`);
+    tierModels.forEach((models, lvl) => {
+      const hit = models.find((want) => healthy.some((p) => modelsMatch(want, p.model)));
+      const resolved = hit
+        ? healthy.find((p) => modelsMatch(hit, p.model))!.model
+        : "(default best / qwen fallback)";
+      console.log(`  tier ${lvl}: prefers [${models.join(" > ") || "default"}]  ->  ${resolved}`);
+    });
+  } catch (err) {
+    console.warn(`logTierRouting skipped: ${(err as Error).message}`);
+  }
 }
 
 // One paid, verifiable inference call on 0G Compute.

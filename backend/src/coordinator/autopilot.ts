@@ -22,6 +22,9 @@ import {
   publicClient,
   waitReceipt,
 } from "../chain/contracts.js";
+import { computeMode } from "../compute/client.js";
+import { logTierRouting } from "../compute/zgCompute.js";
+import { computePlan, MAX_COMPUTE_LEVEL } from "../runners/computeLevels.js";
 
 // The self-driving arena. On a cadence it opens a contest, leading with Solver
 // (reasoning) and mixing in an Analyst (real markets) every Nth cycle, and seeds
@@ -773,6 +776,14 @@ export function startAutopilot(): void {
   void startDueSweeper();
   void startWorldCupResolver();
   void startHouseFillPoll();
+
+  // Print the live tier -> model routing once, so it is obvious from the logs whether
+  // the premium tiers actually reach the stronger 0G models or fall back to the base
+  // model. This is the "is multi-model real on testnet?" answer, on every boot.
+  if (computeMode() === "0g-compute") {
+    const tierModels = Array.from({ length: MAX_COMPUTE_LEVEL + 1 }, (_, l) => computePlan(l).models ?? []);
+    void logTierRouting(tierModels);
+  }
 
   if (autopilotEnabled()) {
     console.log(
