@@ -9,6 +9,7 @@ import {
   type Position,
 } from "../runners/chess/engine.js";
 import { bestCandidates } from "../runners/chess/search.js";
+import { buildBracket, nextMatch, recordResult, champion, placements, isComplete } from "../runners/chess/bracket.js";
 
 // Perft: count leaf nodes of the legal-move tree to a depth. Matching the known
 // reference counts proves the move generator (incl. castling, en passant, promotion,
@@ -84,5 +85,24 @@ check("self-play terminates", finalOc.over || plies >= 300 ? 1 : 0, 1);
 check("captured material in range", caps.w <= 39 && caps.b <= 39 && caps.w >= 0 && caps.b >= 0 ? 1 : 0, 1);
 console.log(`  self-play: ${plies} ply, result=${finalOc.over ? finalOc.result : "ply-cap"}, captured w:${caps.w} b:${caps.b}`);
 
-console.log(failures === 0 ? "\nall chess checks passed — engine rules-correct, brain finds tactics, games terminate" : `\n${failures} chess checks FAILED`);
+// --- tournament bracket: seed 8, play it out (stronger seed wins), check placements ---
+const field = Array.from({ length: 8 }, (_, i) => ({ agentId: i + 1, tier: 100 - (i + 1) }));
+let br = buildBracket(field);
+let played = 0;
+let bm = nextMatch(br);
+while (bm) {
+  // Lower agentId is the stronger seed here (tier = 100 - id), so it wins.
+  recordResult(br, bm.round, bm.index, bm.a! < bm.b! ? bm.a! : bm.b!);
+  played += 1;
+  bm = nextMatch(br);
+}
+check("bracket plays 7 matches", played, 7);
+check("champion is the top seed", champion(br) ?? 0, 1);
+check("bracket completes", isComplete(br) ? 1 : 0, 1);
+const pl = placements(br);
+check("runner-up is 2nd seed", pl.find((p) => p.place === 2)?.agentId ?? 0, 2);
+check("semifinal losers share 3rd", pl.filter((p) => p.place === 3).length, 2);
+check("quarterfinal losers share 5th", pl.filter((p) => p.place === 5).length, 4);
+
+console.log(failures === 0 ? "\nall chess checks passed — engine, brain, games, and bracket" : `\n${failures} chess checks FAILED`);
 process.exit(failures === 0 ? 0 : 1);
