@@ -160,6 +160,7 @@ export async function resolveAwaitingMissions(): Promise<void> {
 
   const ids = await awaitingMissionIds();
   if (ids.length === 0) return;
+  console.log(`worldcup resolver: ${ids.length} mission(s) awaiting resolution: ${ids.join(", ")}`);
 
   for (const contestId of ids) {
     if (grading.has(contestId)) continue;
@@ -215,13 +216,21 @@ export async function resolveAwaitingMissions(): Promise<void> {
     }
 
     grading.add(contestId);
+    console.log(`worldcup resolver: settling ${contestId} on ${resolvedCount}/${outcomes.length} resolved events`);
     gradeAndSettle(contestId)
-      .catch((e) => console.error(`worldcup resolver: settle ${contestId} failed:`, (e as Error).message))
+      .then(() => console.log(`worldcup resolver: settle ${contestId} attempt complete`))
+      // A failed settle (transient RPC, gas, nonce) is not terminal: the grading lock
+      // releases here and the next pass retries via finalize's resume path. Retrying
+      // beats refunding, so we deliberately do not cancel on settle failure.
+      .catch((e) => console.error(`worldcup resolver: settle ${contestId} failed, will retry:`, (e as Error).message))
       .finally(() => grading.delete(contestId));
   }
 }
 
 export async function startWorldCupResolver(): Promise<void> {
+  console.log(
+    `worldcup resolver: started (poll ${POLL_MS / 1000}s, grace ${SETTLE_GRACE_MS / 3600000}h, max-await ${MAX_AWAIT_MS / 3600000}h)`,
+  );
   for (;;) {
     await sleep(POLL_MS);
     try {
