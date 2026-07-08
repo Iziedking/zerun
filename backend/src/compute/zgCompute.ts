@@ -288,30 +288,58 @@ export async function ensureReady(): Promise<ProviderHandle> {
 // best provider, so routing can never stall an agent: the worst case is exactly
 // today's behaviour.
 export async function ensureReadyFor(preferredModels?: string[]): Promise<ProviderHandle> {
-  if (!preferredModels || preferredModels.length === 0) return ensureReady();
+  const [first] = await resolveCandidates(preferredModels);
+  return first ?? ensureReady();
+}
 
+// Build the ORDERED list of provider handles to try for a tier. The providers serving
+// the tier's preferred models come first (a healthy + TEE + attesting provider ranks
+// highest), then the default best provider as a guaranteed tail. Crucially this now
+// INCLUDES providers the broker flags unhealthy: on the 0G testnet the only TEE-capable
+// chat providers (gpt-oss, gemma) are usually flagged unhealthy yet still serve, and
+// the single healthy provider (qwen) carries no TEE — so hard-gating on `healthy`
+// silently collapsed every tier to qwen AND killed the "Verified on 0G" badge.
+// computeChat tries these in order and keeps the first that actually answers, so a real
+// premium/TEE call is attempted before falling back, and an unhealthy-and-truly-down
+// provider just costs one bounded attempt before the healthy fallback.
+async function resolveCandidates(preferredModels?: string[]): Promise<ProviderHandle[]> {
   const broker = await getBroker();
   await ensureLedger();
 
-  const services = (await withTimeout("listService", broker.inference.listService())).map(readService);
-  const chat = services.filter((s) => s.serviceType === "chatbot");
+  const out: ProviderHandle[] = [];
+  const seen = new Set<string>();
+  const push = async (provider: string) => {
+    if (seen.has(provider)) return;
+    seen.add(provider);
+    try {
+      out.push(await getHandleFor(broker, provider));
+    } catch (err) {
+      console.warn(`provider ${provider} setup skipped: ${(err as Error).message}`);
+    }
+  };
 
-  // Walk the tier's preference list; take the first preferred model a healthy provider
-  // serves. Matching is tolerant (normalized/family) so a provider that advertises the
-  // model under a cosmetically different string still counts — the old exact-string
-  // compare is why the premium tiers silently fell back to the base model. Among the
-  // providers serving a matched model, prefer the strongest proof story (TEE + attest).
-  const providerScore = (s: ReturnType<typeof readService>) =>
-    (s.verifiability === "TeeML" ? 2 : 0) + (s.teeTarget ? 1 : 0);
-  for (const want of preferredModels) {
-    const matches = chat
-      .filter((s) => s.healthy && modelsMatch(want, s.model))
-      .sort((a, b) => providerScore(b) - providerScore(a));
-    if (matches[0]) return getHandleFor(broker, matches[0].provider);
+  if (preferredModels && preferredModels.length > 0) {
+    const services = (await withTimeout("listService", broker.inference.listService())).map(readService);
+    const chat = services.filter((s) => s.serviceType === "chatbot");
+    // Health is a strong PREFERENCE, not a gate: healthy first, then TEE-capable and
+    // attesting, so a working provider is tried before a flapping one, but a flagged
+    // provider is still reachable. Matching is tolerant (normalized/family) so a
+    // provider that spells the model differently still counts.
+    const score = (s: ReturnType<typeof readService>) =>
+      (s.healthy ? 4 : 0) + (s.verifiability === "TeeML" ? 2 : 0) + (s.teeTarget ? 1 : 0);
+    for (const want of preferredModels) {
+      const matches = chat.filter((s) => modelsMatch(want, s.model)).sort((a, b) => score(b) - score(a));
+      for (const m of matches) await push(m.provider);
+    }
   }
 
-  // Nothing preferred is healthy — use the default best provider.
-  return ensureReady();
+  // Guaranteed tail: the default best (healthy) provider, so a tier can never stall.
+  try {
+    await push((await ensureReady()).provider);
+  } catch (err) {
+    console.warn(`default provider unavailable: ${(err as Error).message}`);
+  }
+  return out;
 }
 
 // Log which model each compute tier actually resolves to right now, from the live
@@ -335,81 +363,108 @@ export async function logTierRouting(tierModels: string[][]): Promise<void> {
   }
 }
 
-// One paid, verifiable inference call on 0G Compute.
+// One request to a single provider. Throws on any failure (HTTP error, timeout, or an
+// empty answer) so computeChat can fall back to the next candidate. Non-final attempts
+// get a shorter timeout so a truly-down premium provider fails fast instead of eating
+// the full call budget before the healthy fallback runs.
+async function attemptProvider(
+  broker: Broker,
+  h: ProviderHandle,
+  params: { systemPrompt: string; userPrompt: string; maxTokens: number; temperature: number },
+  timeoutMs: number,
+): Promise<ComputeAnswer> {
+  const messages = [
+    { role: "system", content: params.systemPrompt },
+    { role: "user", content: params.userPrompt },
+  ];
+  const headers = await withTimeout(
+    "getRequestHeaders",
+    broker.inference.getRequestHeaders(h.provider, params.userPrompt),
+  );
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const t0 = Date.now();
+  let data: { id?: string; choices?: Array<{ message?: { content?: string } }> };
+  try {
+    const res = await fetch(`${h.endpoint}/chat/completions`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json", ...(headers as unknown as Record<string, string>) },
+      body: JSON.stringify({ model: h.model, messages, max_tokens: params.maxTokens, temperature: params.temperature }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`0G provider ${h.model} responded ${res.status}: ${body.slice(0, 200)}`);
+    }
+    data = (await res.json()) as typeof data;
+  } finally {
+    clearTimeout(timer);
+  }
+  const latencyMs = Date.now() - t0;
+
+  const text = (data.choices?.[0]?.message?.content ?? "").trim();
+  if (!text) throw new Error(`0G provider ${h.model} returned an empty answer`);
+  const chatID = data.id ?? null;
+
+  // Verify the TEE-signed response on chain. This is the proof the answer came from the
+  // provider we paid, not a substitute. Only the TEE-capable providers can attest.
+  let verified: boolean | null = null;
+  if (chatID) {
+    try {
+      verified = await withTimeout("processResponse", broker.inference.processResponse(h.provider, chatID, text));
+    } catch {
+      verified = null;
+    }
+  }
+
+  return { text, chatID, verified, provider: h.provider, model: h.model, endpoint: h.endpoint, latencyMs };
+}
+
+// Bound each non-final (premium) attempt so a flagged-unhealthy provider that is truly
+// down fails fast and the healthy fallback still runs within the contest's budget.
+const PREMIUM_ATTEMPT_TIMEOUT_MS = Number(process.env.COMPUTE_PREMIUM_ATTEMPT_MS ?? "30000");
+
+// One paid, verifiable inference call on 0G Compute. Tries the tier's preferred models
+// in order (their providers first, then the default best), keeping the first that
+// actually answers. This is what makes multi-model real: a tier-5 agent genuinely
+// reaches gpt-oss (and its TEE attestation) when it serves, and only drops to the
+// healthy base model when the premium provider truly fails.
 export async function computeChat(params: {
   systemPrompt: string;
   userPrompt: string;
   maxTokens: number;
   temperature: number;
-  // Ordered model preference (a tier's ladder). The first one a healthy provider
-  // serves is used; otherwise it falls back to the default best provider.
+  // Ordered model preference (a tier's ladder). Tried in order; the first provider that
+  // answers is used, otherwise it falls back to the default best provider.
   models?: string[];
 }): Promise<ComputeAnswer> {
-  const h = await ensureReadyFor(params.models);
   const broker = await getBroker();
+  const candidates = await resolveCandidates(params.models);
+  if (candidates.length === 0) candidates.push(await ensureReady());
 
-  const messages = [
-    { role: "system", content: params.systemPrompt },
-    { role: "user", content: params.userPrompt },
-  ];
-
-  // One request at a time. Latency is measured around the actual call, not the
-  // time spent waiting in the queue, so the speed tiebreak stays fair.
+  // One request at a time. Latency is measured around the actual call, not the queue
+  // wait, so the speed tiebreak stays fair. Fallbacks happen inside the same serialized
+  // slot so a retry does not pay the throttle again.
   return serialize(async () => {
-    const headers = await withTimeout(
-      "getRequestHeaders",
-      broker.inference.getRequestHeaders(h.provider, params.userPrompt),
-    );
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), config.compute.callTimeoutMs);
-    const t0 = Date.now();
-    let data: { id?: string; choices?: Array<{ message?: { content?: string } }> };
-    try {
-      const res = await fetch(`${h.endpoint}/chat/completions`, {
-        method: "POST",
-        signal: controller.signal,
-        headers: { "Content-Type": "application/json", ...(headers as unknown as Record<string, string>) },
-        body: JSON.stringify({
-          model: h.model,
-          messages,
-          max_tokens: params.maxTokens,
-          temperature: params.temperature,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(`0G provider responded ${res.status}: ${body.slice(0, 200)}`);
-      }
-      data = (await res.json()) as typeof data;
-    } finally {
-      clearTimeout(timer);
-    }
-    const latencyMs = Date.now() - t0;
-
-    const text = (data.choices?.[0]?.message?.content ?? "").trim();
-    const chatID = data.id ?? null;
-
-    // Verify the TEE-signed response on chain. This is the proof the answer came
-    // from the provider we paid, not a substitute.
-    let verified: boolean | null = null;
-    if (chatID) {
+    let lastErr: unknown;
+    for (let i = 0; i < candidates.length; i++) {
+      const isLast = i === candidates.length - 1;
+      const timeoutMs = isLast
+        ? config.compute.callTimeoutMs
+        : Math.min(config.compute.callTimeoutMs, PREMIUM_ATTEMPT_TIMEOUT_MS);
       try {
-        verified = await withTimeout("processResponse", broker.inference.processResponse(h.provider, chatID, text));
-      } catch {
-        verified = null;
+        return await attemptProvider(broker, candidates[i]!, params, timeoutMs);
+      } catch (err) {
+        lastErr = err;
+        if (!isLast) {
+          console.warn(
+            `0G ${candidates[i]!.model} failed, falling back: ${(err as Error).message}`,
+          );
+        }
       }
     }
-
-    return {
-      text,
-      chatID,
-      verified,
-      provider: h.provider,
-      model: h.model,
-      endpoint: h.endpoint,
-      latencyMs,
-    };
+    throw (lastErr as Error) ?? new Error("no 0G provider answered");
   });
 }
 

@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "compute:check": "tsx src/scripts/computeCheck.ts",
+    "models:list": "tsx src/scripts/modelsList.ts",
     "storage:check": "tsx src/scripts/storageCheck.ts",
     "analyst:check": "tsx src/scripts/analystCheck.ts",
     "worldcup:check": "tsx src/scripts/worldcupCheck.ts",
