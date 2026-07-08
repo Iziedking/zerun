@@ -13,6 +13,25 @@ export function payoutLeaf(account: `0x${string}`, amount: bigint): Hex {
   return keccak256(inner);
 }
 
+// A per-contest salt leaf mixed into every payout tree. The on-chain claim leaf is
+// keccak(operator, amount) with no contestId, so two contests with the identical
+// winner set and amounts would otherwise produce the same root — and the duplicate
+// root guard in finalize then refuses to post the second one, bricking it forever.
+// (izie and pk repeatedly playing the same-stake two-entrant contests hit this.)
+// Seeding the tree with this leaf makes every root unique. It is domain-separated and
+// single-hashed, so it can never equal a real payout leaf (which is double-hashed) and
+// is unclaimable — reaching it on chain would need a keccak preimage. It is never
+// written to the payouts table; it only shapes the root, and the real payout leaves
+// still verify against that root unchanged.
+export function contestSaltLeaf(contestId: number): Hex {
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: "string" }, { type: "uint256" }],
+      ["zerun:contest-salt", BigInt(contestId)],
+    ),
+  );
+}
+
 function hashPair(a: Hex, b: Hex): Hex {
   return BigInt(a) < BigInt(b) ? keccak256(concat([a, b])) : keccak256(concat([b, a]));
 }

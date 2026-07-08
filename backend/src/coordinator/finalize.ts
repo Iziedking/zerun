@@ -1,7 +1,7 @@
 import type { Hex } from "viem";
 import { query } from "../db/pool.js";
 import { computePayouts, type RankedAgent } from "../runners/scoring.js";
-import { payoutLeaf, merkleRoot, merkleProof } from "./merkle.js";
+import { payoutLeaf, merkleRoot, merkleProof, contestSaltLeaf } from "./merkle.js";
 import { broadcast, type StandingRow } from "./ws.js";
 import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
 import {
@@ -112,7 +112,12 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
     return { contestId, root: null, posted: false, settled: false, payouts: [] };
   }
 
-  const leaves = payouts.map((p) => payoutLeaf(p.operator as `0x${string}`, p.amount));
+  // Seed the tree with a per-contest salt leaf (index 0) so two contests that pay the
+  // identical winners the identical amounts still get distinct roots. Without it the
+  // duplicate-root guard below would reject the second such contest and it would never
+  // settle. The real payout leaves follow the salt and still verify against this root.
+  const payoutLeaves = payouts.map((p) => payoutLeaf(p.operator as `0x${string}`, p.amount));
+  const leaves = [contestSaltLeaf(contestId), ...payoutLeaves];
   const root = merkleRoot(leaves);
 
   // The on-chain claim leaf is keccak(operator, amount) with no contestId, so two
@@ -133,7 +138,8 @@ export async function finalizeContest(contestId: number, ranked: RankedAgent[]):
 
   for (let i = 0; i < payouts.length; i++) {
     const p = payouts[i]!;
-    const proof = merkleProof(leaves, i);
+    // +1: the salt leaf occupies index 0, so payout i sits at i+1 in the tree.
+    const proof = merkleProof(leaves, i + 1);
     await query(
       `insert into payouts (contest_id, operator, amount, leaf_index, proof, rank, claimed)
        values ($1,$2,$3,$4,$5,$6,false)

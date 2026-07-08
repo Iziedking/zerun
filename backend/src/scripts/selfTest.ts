@@ -1,7 +1,7 @@
 import { concat, keccak256, type Hex } from "viem";
 import { generatePuzzles, extractAnswer } from "../runners/puzzles.js";
 import { rankAgents, computePayouts, type AgentScore } from "../runners/scoring.js";
-import { payoutLeaf, merkleRoot, merkleProof } from "../coordinator/merkle.js";
+import { payoutLeaf, merkleRoot, merkleProof, contestSaltLeaf } from "../coordinator/merkle.js";
 
 // Offline checks for the deterministic core: puzzle generation, scoring, and
 // that every merkle proof we build verifies against the root the same way the
@@ -66,6 +66,29 @@ for (let i = 0; i < leaves.length; i++) {
 }
 check("all merkle proofs verify", allVerify);
 check("wrong amount fails", !verify(merkleProof(leaves, 0), root, payoutLeaf(payouts[0]!.operator as `0x${string}`, payouts[0]!.amount + 1n)));
+
+// 5. Salted trees: finalize seeds each payout tree with a per-contest salt leaf so two
+// contests paying the identical winners the identical amounts still get different roots
+// (else the duplicate-root guard bricks the second forever). The real payout proofs,
+// generated at index i+1, must still verify against the salted root exactly as the
+// contract's MerkleProof.verify would.
+const saltedA = [contestSaltLeaf(2010), ...leaves];
+const saltedB = [contestSaltLeaf(2011), ...leaves]; // same winners/amounts, different contest
+const rootA = merkleRoot(saltedA);
+const rootB = merkleRoot(saltedB);
+check("identical payouts, different contests -> different roots", rootA !== rootB);
+check("plain (unsalted) root would have collided", merkleRoot(leaves) === merkleRoot(leaves));
+let saltedVerify = true;
+for (let i = 0; i < payouts.length; i++) {
+  if (!verify(merkleProof(saltedA, i + 1), rootA, leaves[i]!)) saltedVerify = false;
+}
+check("salted payout proofs verify against salted root", saltedVerify);
+check("proof from contest A fails against contest B root", !verify(merkleProof(saltedA, 1), rootB, leaves[0]!));
+// The salt leaf can never be a valid payout claim for any winner operator.
+check(
+  "salt leaf is not a payout leaf",
+  payouts.every((p) => contestSaltLeaf(2010) !== payoutLeaf(p.operator as `0x${string}`, p.amount)),
+);
 
 console.log(failures === 0 ? "\nall checks passed" : `\n${failures} checks FAILED`);
 process.exit(failures === 0 ? 0 : 1);
