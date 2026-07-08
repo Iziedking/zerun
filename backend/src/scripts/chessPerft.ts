@@ -1,4 +1,5 @@
 import { parseFEN, legalMoves, applyMove, START_FEN, type Position } from "../runners/chess/engine.js";
+import { bestCandidates } from "../runners/chess/search.js";
 
 // Perft: count leaf nodes of the legal-move tree to a depth. Matching the known
 // reference counts proves the move generator (incl. castling, en passant, promotion,
@@ -37,5 +38,23 @@ const promo = parseFEN("n1n5/PPPk4/8/8/8/8/4Kppp/5N1N b - - 0 1");
 check("promotions d1", perft(promo, 1), 24);
 check("promotions d2", perft(promo, 2), 496);
 
-console.log(failures === 0 ? "\nall perft checks passed — engine is rules-correct" : `\n${failures} perft checks FAILED`);
+// --- search / brain tactics: the engine must find the obvious best move ---
+function checkStr(name: string, got: string, want: string) {
+  const ok = got === want;
+  console.log(`${ok ? "ok  " : "FAIL"}  ${name}: ${got}${ok ? "" : ` (want ${want})`}`);
+  if (!ok) failures++;
+}
+
+// Back-rank mate in one: Ra1-a8# (king boxed in by its own pawns).
+const mate = parseFEN("6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1");
+const mateBest = bestCandidates(mate, 2, 4)[0]!;
+checkStr("finds mate in 1", mateBest.uci, "a1a8");
+check("mate scores as winning", mateBest.score > 100000 ? 1 : 0, 1);
+
+// A free queen hangs: Rd2xd5 wins it outright.
+const hang = parseFEN("4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1");
+const hangBest = bestCandidates(hang, 2, 4)[0]!;
+checkStr("takes the hanging queen", hangBest.uci, "d2d5");
+
+console.log(failures === 0 ? "\nall chess checks passed — engine rules-correct and brain finds tactics" : `\n${failures} chess checks FAILED`);
 process.exit(failures === 0 ? 0 : 1);
