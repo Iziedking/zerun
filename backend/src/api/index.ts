@@ -27,6 +27,7 @@ import { runContest } from "../coordinator/runContest.js";
 import { runAnalystContest } from "../coordinator/runAnalystContest.js";
 import { runPokerContest } from "../coordinator/runPokerContest.js";
 import { runWorldCupContest } from "../coordinator/runWorldCupContest.js";
+import { runChessContest } from "../coordinator/runChessContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { standingsFor } from "../coordinator/standings.js";
 import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
@@ -886,7 +887,9 @@ app.post("/api/contests/host", async (c) => {
         ? "poker"
         : body.kind === "worldcup"
           ? "worldcup"
-          : "solver";
+          : body.kind === "chess"
+            ? "chess"
+            : "solver";
   const puzzleCount = clampPuzzleCount(body.puzzleCount, kind === "analyst" ? 4 : 5);
   const maxOperators = Number(body.maxOperators ?? 0) > 0 ? Number(body.maxOperators) : null;
   if (!id) return c.json({ error: "contestId required" }, 400);
@@ -909,7 +912,7 @@ app.post("/api/contests/host", async (c) => {
          puzzle_count = excluded.puzzle_count, kind = excluded.kind,
          prize_pool = excluded.prize_pool, ends_at = excluded.ends_at,
          max_operators = excluded.max_operators, entry_fee = excluded.entry_fee`,
-    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : kind === "worldcup" ? "WORLDCUP" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators, con.entryFee.toString(), con.feePool.toString()],
+    [id, puzzleCount, kind === "analyst" ? "PREDICTION" : kind === "poker" ? "POKER" : kind === "worldcup" ? "WORLDCUP" : kind === "chess" ? "CHESS" : "PUZZLE", con.prizePool.toString(), kind, Number(con.endTime), maxOperators, con.entryFee.toString(), con.feePool.toString()],
   );
 
   // The house fills any empty seats near the end of the join window, so a real
@@ -1335,12 +1338,14 @@ app.post("/api/admin/contests/open", async (c) => {
         ? "poker"
         : body.kind === "worldcup"
           ? "worldcup"
-          : "solver";
+          : body.kind === "chess"
+            ? "chess"
+            : "solver";
   const maxOperators = Number(body.maxOperators) > 0 ? Number(body.maxOperators) : undefined;
   const id = await openContest({
     prizePoolUsdc: Number(body.prizePoolUsdc ?? 100),
     durationSecs: Number(body.durationSecs ?? 120),
-    topN: Number(body.topN ?? (kind === "poker" ? 1 : 3)),
+    topN: Number(body.topN ?? (kind === "poker" || kind === "chess" ? 1 : 3)),
     puzzleCount: clampPuzzleCount(body.puzzleCount, kind === "analyst" ? 4 : 5),
     kind,
     maxOperators,
@@ -1364,7 +1369,9 @@ app.post("/api/admin/contests/:id/run", async (c) => {
         ? runPokerContest(id)
         : kind === "worldcup"
           ? runWorldCupContest(id)
-          : runContest(id);
+          : kind === "chess"
+            ? runChessContest(id)
+            : runContest(id);
   run.catch((err) => console.error(`run contest ${id} (${kind}) failed:`, err));
   return c.json({ ok: true, accepted: true, contestId: id, kind });
 });

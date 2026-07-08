@@ -11,7 +11,8 @@ export type FeedMessage =
   | { type: "status"; contestId: number; payload: { status: string; detail?: string } }
   | { type: "settled"; contestId: number; payload: { root: string; payouts: SettledPayout[] } }
   | { type: "x402"; contestId: number; payload: X402Payload }
-  | { type: "poker"; contestId: number; payload: PokerSnapshot };
+  | { type: "poker"; contestId: number; payload: PokerSnapshot }
+  | { type: "chess"; contestId: number; payload: ChessSnapshot };
 
 // An agent paid for data over x402 (a poker opponent dossier, or World Cup intel).
 // The tx hash verifies on chain.
@@ -42,6 +43,27 @@ export interface PokerSnapshot {
   pot: number;
   seats: PokerSeat[];
   lastAction?: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null };
+}
+
+// A snapshot of the chess board after a move, so the UI can render a live game with the
+// mover's 0G reasoning and the running captured-material score.
+export interface ChessSnapshot {
+  fen: string;
+  ply: number;
+  lastMove: string; // UCI, e.g. e2e4
+  lastFrom: string; // algebraic, e.g. e2
+  lastTo: string;
+  capture: boolean;
+  mover: { agentId: number; agentName: string; operator: string; color: "w" | "b" };
+  reason: string;
+  provider: string;
+  model: string;
+  chatID: string | null;
+  verified: boolean | null;
+  latencyMs: number;
+  source: string;
+  captures: { w: number; b: number };
+  turn: "w" | "b";
 }
 
 export interface SolvePayload {

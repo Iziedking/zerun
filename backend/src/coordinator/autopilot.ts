@@ -7,6 +7,7 @@ import { runContest } from "./runContest.js";
 import { runAnalystContest } from "./runAnalystContest.js";
 import { runPokerContest } from "./runPokerContest.js";
 import { runWorldCupContest } from "./runWorldCupContest.js";
+import { runChessContest } from "./runChessContest.js";
 import { startWorldCupResolver } from "./worldcupResolver.js";
 import { resettleFromStored, cancelContest } from "./finalize.js";
 import {
@@ -632,7 +633,9 @@ async function runOnce(id: number, kind: ContestKind): Promise<void> {
           ? runPokerContest
           : kind === "worldcup"
             ? runWorldCupContest
-            : runContest;
+            : kind === "chess"
+              ? runChessContest
+              : runContest;
     const work = runner(id);
     work.catch(() => {}); // the awaiter below handles errors; avoid an unhandled rejection
     // Race the run against a watchdog. Releasing the in-flight slot in the finally

@@ -1,4 +1,13 @@
-import { parseFEN, legalMoves, applyMove, START_FEN, type Position } from "../runners/chess/engine.js";
+import {
+  parseFEN,
+  legalMoves,
+  applyMove,
+  outcome,
+  repetitionKey,
+  capturedValue,
+  START_FEN,
+  type Position,
+} from "../runners/chess/engine.js";
 import { bestCandidates } from "../runners/chess/search.js";
 
 // Perft: count leaf nodes of the legal-move tree to a depth. Matching the known
@@ -56,5 +65,24 @@ const hang = parseFEN("4k3/8/8/3q4/8/8/3R4/4K3 w - - 0 1");
 const hangBest = bestCandidates(hang, 2, 4)[0]!;
 checkStr("takes the hanging queen", hangBest.uci, "d2d5");
 
-console.log(failures === 0 ? "\nall chess checks passed — engine rules-correct and brain finds tactics" : `\n${failures} chess checks FAILED`);
+// Self-play smoke test: two engine players (depth 2) play a full game, the same loop the
+// runner drives. It must terminate with a real result (or hit the ply cap) — no infinite
+// game — and the captured-material score must stay within range.
+let g: Position = parseFEN(START_FEN);
+const seen = new Map<string, number>();
+let plies = 0;
+for (; plies < 300; plies++) {
+  const rk = repetitionKey(g);
+  const rep = (seen.get(rk) ?? 0) + 1;
+  seen.set(rk, rep);
+  if (outcome(g, rep).over) break;
+  g = applyMove(g, bestCandidates(g, 2, 1)[0]!.move);
+}
+const finalOc = outcome(g, seen.get(repetitionKey(g)) ?? 1);
+const caps = capturedValue(g);
+check("self-play terminates", finalOc.over || plies >= 300 ? 1 : 0, 1);
+check("captured material in range", caps.w <= 39 && caps.b <= 39 && caps.w >= 0 && caps.b >= 0 ? 1 : 0, 1);
+console.log(`  self-play: ${plies} ply, result=${finalOc.over ? finalOc.result : "ply-cap"}, captured w:${caps.w} b:${caps.b}`);
+
+console.log(failures === 0 ? "\nall chess checks passed — engine rules-correct, brain finds tactics, games terminate" : `\n${failures} chess checks FAILED`);
 process.exit(failures === 0 ? 0 : 1);

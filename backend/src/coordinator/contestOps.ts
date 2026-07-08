@@ -33,7 +33,7 @@ export interface OpenContestParams {
   entryFeeUsdc?: number;
 }
 
-export type ContestKind = "solver" | "analyst" | "poker" | "worldcup";
+export type ContestKind = "solver" | "analyst" | "poker" | "worldcup" | "chess";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 const METRIC = {
@@ -47,6 +47,9 @@ const METRIC = {
   // type and are identified by their WORLDCUP metric hash. Their runner defers
   // settlement until the real events resolve on Polymarket.
   worldcup: { hash: keccak256(toHex("WORLDCUP")), label: "WORLDCUP", contestType: CONTEST_TYPE.ANALYST },
+  // Chess, like poker, is a head-to-head game listed under the valid SOLVER type and
+  // identified by its own metric hash. Its runner plays the game move by move on 0G.
+  chess: { hash: keccak256(toHex("CHESS")), label: "CHESS", contestType: CONTEST_TYPE.SOLVER },
 } as const;
 
 // The contest kind, derived from the on-chain metric hash rather than the enum (which
@@ -55,6 +58,7 @@ const METRIC = {
 export function kindFromMetric(metricHash: string): ContestKind {
   const m = (metricHash ?? "").toLowerCase();
   if (m === METRIC.poker.hash.toLowerCase()) return "poker";
+  if (m === METRIC.chess.hash.toLowerCase()) return "chess";
   if (m === METRIC.worldcup.hash.toLowerCase()) return "worldcup";
   if (m === METRIC.analyst.hash.toLowerCase()) return "analyst";
   return "solver";

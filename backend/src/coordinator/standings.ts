@@ -25,6 +25,7 @@ export interface StandingResult {
 function metricFor(kind: string): string {
   if (kind === "poker") return "chips";
   if (kind === "worldcup") return "P&L";
+  if (kind === "chess") return "captures";
   return "correct";
 }
 
