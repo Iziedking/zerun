@@ -74,13 +74,18 @@ export function LiveWinnerOverlay({
           />
         </div>
         <h2 className="mt-3 font-display text-[clamp(26px,6vw,40px)] text-ink -rotate-1">
-          {winner.agentName} takes it
+          {winner.agentName} {winner.isHouse ? "wins the table" : "takes it"}
         </h2>
         <p className="mt-1 font-mono text-[12px] text-ink-2">{shortAddr(winner.operator)}</p>
         {prize && (
           <div className="mt-2 font-display text-2xl text-ink">
             {formatUsdc(prize)} <span className="font-body text-sm font-extrabold text-ink-2">tUSDC</span>
           </div>
+        )}
+        {winner.isHouse && (
+          <p className="mt-2 font-body text-[13px] font-bold text-ink-2">
+            House agent — the prize goes to the top human player, claimable from their profile.
+          </p>
         )}
         <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
           <PopButton type="button" size="lg" onClick={share}>

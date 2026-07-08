@@ -36,15 +36,15 @@ export async function standingsFor(contestId: number): Promise<StandingResult[]>
   const kind = metaRows[0]?.kind ?? "";
   const metric = metricFor(kind);
 
-  // Platform (house) agents fill empty seats to keep a contest competitive, but they
-  // never place: real operators always fill the ranks first, and every house agent
-  // sorts below every real one no matter how many chips it won. So the primary sort is
-  // is_house (real before house); within each group the settlement order applies.
-  // Tiebreak must match settlement (runners/scoring.rankAgents): once settled, order
-  // by the on-chain payout rank so the shown winner always matches who got paid (poker
-  // ranks by chips, which correct/compute order cannot express). Before settlement,
-  // rank by the live winning metric (contest_scores.score, e.g. chips/P&L) when present
-  // and otherwise by correct answers, then higher Compute, then faster, then agent id.
+  // House (platform) agents compete for real inside a contest: they rank by the same
+  // strength rule as everyone, so a house agent that plays best can show as the winner.
+  // What house never does is (a) appear on the global leaderboard/ladder, filtered
+  // there, and (b) take the pot — settlement still routes the prize to the best REAL
+  // player, who claims it from their profile. So the shown contest winner and the paid
+  // winner can differ, by design. The sort is therefore purely by the winning metric
+  // (contest_scores.score, e.g. chips/P&L, else correct answers), then higher Compute,
+  // then faster, then agent id — matching runners/scoring.rankAgents, with no house
+  // demotion and no dependence on who got paid.
   const { rows } = await query<{
     agent_id: string;
     operator: string;
@@ -54,7 +54,6 @@ export async function standingsFor(contestId: number): Promise<StandingResult[]>
     total_latency: string;
     compute_level: string;
     passes: string;
-    payout_rank: number | null;
     score: number | null;
   }>(
     `select e.agent_id, e.operator, m.name, coalesce(m.is_house, false) as is_house,
@@ -62,18 +61,14 @@ export async function standingsFor(contestId: number): Promise<StandingResult[]>
             coalesce(sum(s.latency_ms), 0) as total_latency,
             coalesce(m.compute_level, 0) as compute_level,
             coalesce(sum(s.samples), 0) as passes,
-            min(p.rank) as payout_rank,
             max(cs.score) as score
        from contest_entries e
        left join agents_meta m on m.agent_id = e.agent_id
        left join solve_runs s on s.contest_id = e.contest_id and s.agent_id = e.agent_id
-       left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
        left join contest_scores cs on cs.contest_id = e.contest_id and cs.agent_id = e.agent_id
       where e.contest_id = $1
       group by e.agent_id, e.operator, m.name, m.compute_level, m.is_house
-      order by coalesce(m.is_house, false) asc,
-               (min(p.rank) is null), min(p.rank) asc,
-               coalesce(max(cs.score), sum(case when s.verdict = 'correct' then 1 else 0 end)) desc,
+      order by coalesce(max(cs.score), sum(case when s.verdict = 'correct' then 1 else 0 end)) desc,
                coalesce(m.compute_level, 0) desc, total_latency asc, e.agent_id asc`,
     [contestId],
   );

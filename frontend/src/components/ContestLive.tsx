@@ -152,15 +152,16 @@ export function ContestLive({
     } else if (msg.type === "settled") {
       setSettled(msg.payload);
       setStatus({ status: "settled" });
-      // Surface the winner to everyone watching live, the instant it settles. The paid
-      // winner is rank 1 in the standings (real players rank above house), and the prize
-      // is that rank's payout from the settle payload. The winner themselves gets the
-      // personal "You won!" celebration app-wide, so skip the spectator overlay for them
-      // to avoid two stacked modals.
+      // Surface the winner to everyone watching live, the instant it settles. Rank 1 is
+      // the game winner by strength and may be a house agent. House never takes the pot,
+      // though: the prize routes to the best real player, so only attribute a prize when
+      // the winner is a real player (a house winner shows with a "prize to top human"
+      // note instead). The paid winner gets their own app-wide "You won!" celebration, so
+      // skip the spectator overlay for them to avoid two stacked modals.
       const winner = standingsRef.current[0];
       const isMe = highlight && winner?.operator?.toLowerCase() === highlight.toLowerCase();
       if (winner && !isMe) {
-        const prize = msg.payload.payouts.find((p) => p.rank === 1)?.amount ?? null;
+        const prize = winner.isHouse ? null : (msg.payload.payouts.find((p) => p.rank === 1)?.amount ?? null);
         setWinnerOverlay({ winner, prize });
       }
     } else if (msg.type === "poker") {

@@ -15,7 +15,9 @@ export function WinnerCard({
   prizePool,
 }: {
   contestId: number;
-  winner: { agentId: number; agentName: string; operator: string };
+  // A house agent can win the game (top by strength) but never takes the pot; the
+  // prize routes to the best real player. isHouse switches the card to say so.
+  winner: { agentId: number; agentName: string; operator: string; isHouse?: boolean };
   prizePool: string;
 }) {
   const { muted } = useMusic();
@@ -33,7 +35,9 @@ export function WinnerCard({
 
   const prize = formatUsdc(prizePool);
   const url = `https://zerun.site/contest/${contestId}`;
-  const text = `${winner.agentName} just won ${prize} tUSDC reasoning on 0G in a Zerun contest.`;
+  const text = winner.isHouse
+    ? `${winner.agentName} won the table reasoning on 0G in a Zerun contest.`
+    : `${winner.agentName} just won ${prize} tUSDC reasoning on 0G in a Zerun contest.`;
 
   const share = () => {
     const intent = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
@@ -56,12 +60,19 @@ export function WinnerCard({
         />
       </div>
       <h2 className="mt-3 font-display text-[clamp(26px,6vw,36px)] text-ink -rotate-1">
-        {winner.agentName} takes it
+        {winner.agentName} {winner.isHouse ? "wins the table" : "takes it"}
       </h2>
       <p className="mt-1 font-mono text-[12px] text-ink-2">{shortAddr(winner.operator)}</p>
-      <div className="mt-2 font-display text-2xl text-ink">
-        {prize} <span className="font-body text-sm font-extrabold text-ink-2">tUSDC</span>
-      </div>
+      {winner.isHouse ? (
+        <p className="mt-2 font-body text-[13px] font-bold text-ink-2">
+          House agent — the {prize} tUSDC pool goes to the top human player, claimable from their
+          profile.
+        </p>
+      ) : (
+        <div className="mt-2 font-display text-2xl text-ink">
+          {prize} <span className="font-body text-sm font-extrabold text-ink-2">tUSDC</span>
+        </div>
+      )}
       <div className="mt-5 flex justify-center">
         <PopButton type="button" size="lg" onClick={share}>
           Share on X
