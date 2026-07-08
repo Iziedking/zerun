@@ -115,22 +115,31 @@ async function gradeAndSettle(contestId: number): Promise<void> {
 
   const excludeHouse = await excludeHouseFor(contestId);
   const field = await scoringField(contestId);
-  const scores: AgentScore[] = [];
-  for (const f of field) {
-    if (f.isHouse && excludeHouse) continue;
-    const rec = pnl.get(f.agentId) ?? { pnl: 0, totalLatencyMs: 0 };
-    // Only agents that beat the market (positive P&L) are eligible to win. The pool
-    // splits by rank, so encode the P&L as the ranking score; order is what matters. If
-    // no one beats the market, no scores are added and finalizeContest refunds.
-    if (rec.pnl <= 0) continue;
-    scores.push({
+
+  // Rank the field against each OTHER, not against the market. The pot is the
+  // entrants' fees, so the best forecaster in the field wins it even when nobody beat
+  // the market's own price. Beating a market price is genuinely hard, so the whole
+  // field usually lands at or below it; the old rule "only positive P&L is payable"
+  // therefore refunded almost every mission (it added no scores, so finalizeContest
+  // cancelled). Now only a field with no graded forecaster at all refunds.
+  //
+  // computePayouts pays by rank among agents with correct > 0, so encode each agent's
+  // P&L as a positive, order-preserving integer: shift by the field's worst P&L so the
+  // last-placed agent maps to 1 and better agents rank above it. Magnitudes do not
+  // reach the payout (the split is rank-weighted); only the order matters. Determinism
+  // is preserved — same P&L in, same integers out.
+  const graded = field.filter((f) => !(f.isHouse && excludeHouse) && pnl.has(f.agentId));
+  const worstPnl = graded.length > 0 ? Math.min(...graded.map((f) => pnl.get(f.agentId)!.pnl)) : 0;
+  const scores: AgentScore[] = graded.map((f) => {
+    const rec = pnl.get(f.agentId)!;
+    return {
       agentId: f.agentId,
       operator: f.operator,
-      correct: Math.max(1, Math.round(rec.pnl * 1_000_000)),
+      correct: Math.round((rec.pnl - worstPnl) * 1_000_000) + 1,
       totalLatencyMs: rec.totalLatencyMs,
       computeLevel: f.level,
-    });
-  }
+    };
+  });
 
   broadcast({
     type: "status",
