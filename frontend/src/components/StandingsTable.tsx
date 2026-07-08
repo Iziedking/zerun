@@ -21,6 +21,9 @@ function formatScore(s: Standing): string {
   const v = s.score ?? s.correct;
   if (metric === "chips") return Math.max(0, POKER_START_BANKROLL + Math.round(v)).toLocaleString();
   if (metric === "P&L") return `${v >= 0 ? "+" : ""}${v.toFixed(3)}`;
+  // Chess ranks on captured material (value-weighted). The runner adds a small edge to
+  // the game winner so a decisive win always sorts first; clamp the display for tidiness.
+  if (metric === "captures") return String(Math.min(39, Math.round(v)));
   return String(s.correct);
 }
 
@@ -34,6 +37,7 @@ function scoreLabel(s: Standing): string {
     return `chips · ${v >= 0 ? "+" : ""}${v.toLocaleString()} this session`;
   }
   if (metric === "P&L") return "P&L";
+  if (metric === "captures") return "material won";
   if (s.passes != null && s.passes > 0) return `${s.passes} passes`;
   return formatLatency(s.totalLatencyMs);
 }

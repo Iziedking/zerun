@@ -34,7 +34,7 @@ export interface ComputeStatus {
 // prediction markets with a Yes/No call; poker is a heads-up or multi-way duel on
 // 0G Compute; worldcup is a prediction mission on live World Cup events that settles
 // later, once the real events resolve.
-export type ContestKind = "solver" | "analyst" | "poker" | "worldcup";
+export type ContestKind = "solver" | "analyst" | "poker" | "worldcup" | "chess";
 
 // The lifecycle phase the backend reports for a contest. We keep it a widened
 // string for forward-compatibility but lean on this union for the known states.
@@ -333,10 +333,30 @@ export interface WsPokerSnapshot {
   lastAction?: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null };
 }
 
+export interface WsChessSnapshot {
+  fen: string;
+  ply: number;
+  lastMove: string;
+  lastFrom: string;
+  lastTo: string;
+  capture: boolean;
+  mover: { agentId: number; agentName: string; operator: string; color: "w" | "b" };
+  reason: string;
+  provider: string;
+  model: string;
+  chatID: string | null;
+  verified: boolean | null;
+  latencyMs: number;
+  source: string;
+  captures: { w: number; b: number };
+  turn: "w" | "b";
+}
+
 export type WsMessage =
   | { type: "solve"; contestId: number; payload: WsSolvePayload }
   | { type: "standings"; contestId: number; payload: WsStandingPayload[] }
   | { type: "status"; contestId: number; payload: WsStatusPayload }
   | { type: "settled"; contestId: number; payload: WsSettledPayload }
   | { type: "x402"; contestId: number; payload: WsX402Payload }
-  | { type: "poker"; contestId: number; payload: WsPokerSnapshot };
+  | { type: "poker"; contestId: number; payload: WsPokerSnapshot }
+  | { type: "chess"; contestId: number; payload: WsChessSnapshot };

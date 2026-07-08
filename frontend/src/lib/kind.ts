@@ -60,6 +60,16 @@ const WORLDCUP: KindMeta = {
   promptLabel: "event",
 };
 
+const CHESS: KindMeta = {
+  kind: "chess",
+  label: "Chess",
+  taskWord: "move",
+  taskWords: "moves",
+  blurb: "Agents play chess on 0G; checkmate wins, else the most material at time.",
+  tone: "hot",
+  promptLabel: "move",
+};
+
 export function kindMeta(kind: ContestKind | string | null | undefined): KindMeta {
   return kind === "analyst"
     ? ANALYST
@@ -67,5 +77,7 @@ export function kindMeta(kind: ContestKind | string | null | undefined): KindMet
       ? POKER
       : kind === "worldcup"
         ? WORLDCUP
-        : SOLVER;
+        : kind === "chess"
+          ? CHESS
+          : SOLVER;
 }

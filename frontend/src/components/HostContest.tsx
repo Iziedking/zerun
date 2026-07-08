@@ -22,9 +22,10 @@ const METRIC = {
   analyst: keccak256(toHex("PREDICTION")),
   poker: keccak256(toHex("POKER")),
   worldcup: keccak256(toHex("WORLDCUP")),
+  chess: keccak256(toHex("CHESS")),
 } as const;
 
-type HostKind = "solver" | "analyst" | "poker" | "worldcup";
+type HostKind = "solver" | "analyst" | "poker" | "worldcup" | "chess";
 
 // How the pool is split among the top finishers. topN sets how many winners share
 // it; the pool is weighted so rank 1 takes the largest share, descending (the
@@ -91,9 +92,11 @@ export function HostContestForm({
   const [error, setError] = useState<string | null>(null);
 
   const isPoker = kind === "poker";
+  const isChess = kind === "chess";
+  const isGame = isPoker || isChess; // head-to-head games: winner takes the whole pool
   const isChallenge = mode === "challenge";
-  // A poker duel is fixed: two seats, winner takes the whole pool.
-  const split = isPoker ? SPLITS[0]! : SPLITS.find((s) => s.key === splitKey)!;
+  // A game (poker/chess) is winner-take-all; other kinds let the host pick a split.
+  const split = isGame ? SPLITS[0]! : SPLITS.find((s) => s.key === splitKey)!;
 
   const usdcAddr = deployment?.contracts.testUSDC;
   const engineAddr = deployment?.contracts.contestEngine;
@@ -223,11 +226,13 @@ export function HostContestForm({
       // Mirror it to the backend so it shows in the arena. Poker seats the table
       // (2 = heads-up duel, up to 6-max); other flavors use the optional operator cap.
       setPhase("saving");
-      const maxOperators = isPoker
-        ? Math.max(2, Math.min(6, Math.round(Number(pokerSeats) || 2)))
-        : maxOps.trim()
-          ? Math.max(1, Math.round(Number(maxOps)))
-          : 0;
+      const maxOperators = isChess
+        ? 2 // a chess duel is 1v1
+        : isPoker
+          ? Math.max(2, Math.min(6, Math.round(Number(pokerSeats) || 2)))
+          : maxOps.trim()
+            ? Math.max(1, Math.round(Number(maxOps)))
+            : 0;
       // The contest is now live on chain. If only the arena mirror fails, do NOT
       // re-run the listing (which would stake a second pool); route to the contest,
       // which reads its state from chain, and let the mirror catch up.
@@ -297,6 +302,9 @@ export function HostContestForm({
           <KindOption kind="poker" active={kind === "poker"} onClick={() => setKind("poker")}>
             Poker
           </KindOption>
+          <KindOption kind="chess" active={kind === "chess"} onClick={() => setKind("chess")}>
+            Chess
+          </KindOption>
           <KindOption kind="worldcup" active={kind === "worldcup"} onClick={() => setKind("worldcup")}>
             World Cup
           </KindOption>
@@ -343,7 +351,7 @@ export function HostContestForm({
             className={inputCx}
           />
         </Field>
-        {!isPoker && (
+        {!isGame && (
           <Field label={kind === "analyst" ? "Markets" : kind === "worldcup" ? "Events" : "Puzzles"}>
             <input
               inputMode="numeric"
@@ -375,7 +383,14 @@ export function HostContestForm({
         )}
       </p>
 
-      {isPoker ? (
+      {isChess ? (
+        <p className="rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
+          Chess duel: two agents play a full game, winner takes the whole pool. The join
+          window above is the entry period; if no challenger joins it cancels and refunds.
+          Once entries close the game plays out in up to 5 minutes — checkmate wins, or the
+          most material captured if the clock runs out.
+        </p>
+      ) : isPoker ? (
         <>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Table size">

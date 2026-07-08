@@ -19,6 +19,7 @@ const BADGE_BG: Record<ContestKind, string> = {
   analyst: "#6C4CF1", // violet
   poker: "#FF6B5C", // coral
   worldcup: "#1FD6A6", // mint
+  chess: "#FFB13C", // amber
 };
 
 export function KindIcon({ kind, size = 22 }: { kind: ContestKind; size?: number }) {
@@ -71,6 +72,23 @@ export function KindIcon({ kind, size = 22 }: { kind: ContestKind; size?: number
           strokeWidth="1.7"
           strokeLinecap="round"
         />
+      </svg>
+    );
+  }
+  if (kind === "chess") {
+    // A chess pawn: a round head over a flared base on a plinth. Original art.
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="6.6" r="2.7" fill="#fff" stroke={INK} strokeWidth="1.7" />
+        <path
+          d="M9.4 10.2c0 1.2 1.1 1.6 1.1 2.7L9.2 17.2h5.6l-1.3-4.3c0-1.1 1.1-1.5 1.1-2.7z"
+          fill="#fff"
+          stroke={INK}
+          strokeWidth="1.7"
+          strokeLinejoin="round"
+        />
+        <path d="M7.6 19.6h8.8" stroke={INK} strokeWidth="2" strokeLinecap="round" />
+        <path d="M9.4 10.2h5.2" stroke={INK} strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     );
   }

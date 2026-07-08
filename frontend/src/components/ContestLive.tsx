@@ -11,6 +11,7 @@ import type {
   WsSettledPayload,
   WsStatusPayload,
   WsPokerSnapshot,
+  WsChessSnapshot,
   WsX402Payload,
 } from "@/lib/types";
 import { kindMeta } from "@/lib/kind";
@@ -18,6 +19,7 @@ import { useMusic } from "@/lib/music";
 import { playActionSound } from "@/lib/sound";
 import { SolveCard, type SolveRow } from "./SolveCard";
 import { PokerTable, X402Feed } from "./PokerTable";
+import { ChessBoard } from "./ChessBoard";
 import { StandingsTable } from "./StandingsTable";
 import { SettledBanner } from "./SettledBanner";
 import { LiveWinnerOverlay } from "./LiveWinnerOverlay";
@@ -67,6 +69,7 @@ export function ContestLive({
   const [status, setStatus] = useState<WsStatusPayload | null>(null);
   const [settled, setSettled] = useState<WsSettledPayload | null>(null);
   const [snapshot, setSnapshot] = useState<WsPokerSnapshot | null>(null);
+  const [chessSnap, setChessSnap] = useState<WsChessSnapshot | null>(null);
   const [payments, setPayments] = useState<WsX402Payload[]>([]);
   const [winnerOverlay, setWinnerOverlay] = useState<{ winner: Standing; prize: string | null } | null>(null);
   const seqRef = useRef(0);
@@ -166,6 +169,8 @@ export function ContestLive({
       }
     } else if (msg.type === "poker") {
       setSnapshot(msg.payload);
+    } else if (msg.type === "chess") {
+      setChessSnap(msg.payload);
     } else if (msg.type === "x402") {
       setPayments((prev) => [msg.payload, ...prev].slice(0, 20));
     }
@@ -184,6 +189,7 @@ export function ContestLive({
         />
       )}
       {kind === "poker" && snapshot && <PokerTable snapshot={snapshot} />}
+      {kind === "chess" && chessSnap && <ChessBoard snapshot={chessSnap} />}
       {(kind === "poker" || kind === "worldcup") && <X402Feed payments={payments} />}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
       {/* Live solve feed */}
