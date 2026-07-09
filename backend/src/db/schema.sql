@@ -317,7 +317,8 @@ create table if not exists worldcup_forecasts (
 -- read instead of a blank prior. This is the agent's memory of ITSELF, distinct from the
 -- poker dossier (memory of OPPONENTS). The summary is authored on 0G and anchored on 0G
 -- Storage for provenance, so "the agent learned on 0G" is provable. House agents are
--- never summarized. Gated by AGENT_MEMORY so the lift can be A/B measured (memory on vs off).
+-- never summarized. Gated by AGENT_MEMORY. A version that could not be anchored on 0G
+-- Storage is never written: the agent keeps its previous, provable memory instead.
 create table if not exists agent_memory (
   agent_id      bigint primary key,
   summary       text not null default '',            -- the self-summary injected at decision time

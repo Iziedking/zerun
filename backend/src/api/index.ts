@@ -32,7 +32,7 @@ import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { standingsFor } from "../coordinator/standings.js";
 import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
-import { getAgentMemory, memoryEnabled, memoryLift } from "../runners/agentMemory.js";
+import { getAgentMemory, memoryEnabled, memoryLift, memoryQueueDepth } from "../runners/agentMemory.js";
 import { xConfigured, verifyWalletSig, beginXAuth, completeXAuth, xIdentityFor } from "../auth/xConnect.js";
 import { scheduleHouseFill, coordinatorGasBalance } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
@@ -63,7 +63,11 @@ function adminOk(c: { req: { header: (k: string) => string | undefined } }): boo
   return c.req.header("x-admin-token") === adminToken;
 }
 
-app.get("/api/health", (c) => c.json({ ok: true }));
+// Liveness, plus the one background queue that can silently fall behind: agent memory is
+// written off the settle path, so its depth is the only way to see it backing up.
+app.get("/api/health", (c) =>
+  c.json({ ok: true, memory: { enabled: memoryEnabled(), queue: memoryQueueDepth() } }),
+);
 
 // Client-side failure sink. Some failures (hosting, entering, training) happen in
 // a wallet transaction that goes straight from the browser to the 0G RPC and never

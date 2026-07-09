@@ -4,7 +4,7 @@ import { fetchLiveInsight } from "../runners/onchain.js";
 import { solvePuzzle } from "../runners/solver.js";
 import { getAgentCompute } from "../runners/traitStore.js";
 import { computePlan } from "../runners/computeLevels.js";
-import { memoryHintFor, updateMemoriesForContest } from "../runners/agentMemory.js";
+import { memoryHintFor, scheduleMemoryUpdates } from "../runners/agentMemory.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { broadcast } from "./ws.js";
 import { finalizeContest, pushStandings, cancelContest, type RunResult } from "./finalize.js";
@@ -306,9 +306,8 @@ export async function runContest(contestId: number): Promise<RunResult> {
 
   const result = await finalizeContest(contestId, rankAgents([...scores.values()]));
   // Fold this contest's play into each real agent's memory (0G-authored, anchored on 0G
-  // Storage). No-op unless AGENT_MEMORY is on; best effort, never unsettles a paid contest.
-  await updateMemoriesForContest(entries).catch((err) =>
-    console.error(`contest ${contestId}: memory update failed:`, (err as Error).message),
-  );
+  // Storage). Queued, not awaited: the payout has landed, and holding the run open for a
+  // 0G call per agent would only eat the contest's watchdog budget.
+  scheduleMemoryUpdates(`contest ${contestId}`, entries);
   return result;
 }
