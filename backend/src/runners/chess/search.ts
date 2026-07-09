@@ -118,11 +118,17 @@ export interface TierEngine {
 // to its best. It still reasons on 0G over that choice — a real tie is a real judgment call —
 // but it cannot be handed a move that loses material. Every tier below it can.
 //
-// What slack does NOT do is separate adjacent rungs. Widening tier 2's window from 200 to 260
-// left its loss rate against tier 3 unchanged (2 in 12) and cost it a game against tier 1. Two
-// engines one ply apart split games whatever rope you give them, and under this harness — where
-// the agent picks by coin flip, not judgment — they always will. The bar that matters is the
-// PREMIUM BAND: tiers 0-3 take zero games off tiers 4-5, across all eight matchups.
+// What NOTHING does is make two adjacent rungs a clean sweep, and both attempts are recorded
+// here so nobody spends another afternoon on it. Widening tier 2's slack from 200cp to 260cp
+// left its loss rate against tier 3 unchanged (2 in 12) and cost it a game against tier 1.
+// Giving tier 3 the endgame king table moved 83% to 82% — noise, and it would have narrowed
+// tier 3 against tier 4, a rung already verified clean.
+//
+// The reason is the harness, not the ladder: it picks among candidates by COIN FLIP, and two
+// engines one ply apart handed the same shortlist will trade the odd game forever. A real model
+// picks its engine's recommendation most of the time. The bar that actually matters is the
+// PREMIUM BAND — tiers 0-3 take zero games off tiers 4-5, across all eight matchups — and that
+// is the claim the product makes: what you paid 0G for cannot lose to what is free.
 //
 // Depths are set by MEASURED cost per ply, not by ambition. A ply must finish inside the
 // mainnet call interval (~1.5s) or the engine, not 0G, becomes what a chess game waits for.

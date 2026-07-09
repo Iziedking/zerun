@@ -165,12 +165,20 @@ export interface LeaderboardRow {
 // contests, its graded tendencies, and the 0G Storage anchor that proves it was produced
 // on 0G. `enabled` reflects the backend AGENT_MEMORY flag.
 export interface AgentMemoryTendencies {
+  // "general" (solver + analyst): a graded correct/wrong record.
   graded: number;
   correct: number;
   wrong: number;
   accuracy: number | null;
   byKind: Record<string, { correct: number; wrong: number }>;
-  recentForm: string;
+  recentForm: string; // "WWLWL", newest first
+  // "poker" and "chess": a move is never right or wrong, so these kinds carry their own
+  // outcomes instead of a graded record. `plays` is the sample size for both.
+  plays?: number;
+  wins?: number;
+  rating?: number | null; // poker: conservative TrueSkill (mu - 3*sigma)
+  avgPlace?: number | null; // chess: mean bracket finish, 1 is the championship
+  best?: number | null; // chess: best finish so far
 }
 
 export interface AgentMemory {
