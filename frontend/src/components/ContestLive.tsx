@@ -17,7 +17,15 @@ import type {
 } from "@/lib/types";
 import { kindMeta } from "@/lib/kind";
 import { useMusic } from "@/lib/music";
-import { playActionSound, playChessMove, playChessGameEnd, preloadChessSfx } from "@/lib/sound";
+import {
+  playActionSound,
+  playChessMove,
+  playChessGameEnd,
+  playChessGameStart,
+  playPokerAction,
+  preloadChessSfx,
+  preloadPokerSfx,
+} from "@/lib/sound";
 import { SolveCard, type SolveRow } from "./SolveCard";
 import { PokerTable, X402Feed } from "./PokerTable";
 import { ChessBoard } from "./ChessBoard";
@@ -80,15 +88,16 @@ export function ContestLive({
   const [winnerOverlay, setWinnerOverlay] = useState<{ winner: Standing; prize: string | null } | null>(null);
   const seqRef = useRef(0);
 
-  // Warm the chess samples on mount, so the first move is not the one that discovers a file is
-  // missing and falls back mid-game.
+  // Warm this game's samples on mount, so the first action is not the one that discovers a file
+  // is missing and falls back mid-game.
   useEffect(() => {
     if (kind === "chess") preloadChessSfx();
+    if (kind === "poker") preloadPokerSfx();
   }, [kind]);
 
   // Sound: gated by the global mute (the music toggle also mutes effects). Refs let the
   // stable message handler read the latest values without re-subscribing the socket.
-  const { muted } = useMusic();
+  const { muted, duck } = useMusic();
   const mutedRef = useRef(muted);
   const lastSfxRef = useRef(0);
   // How many bracket matches were decided at the last snapshot, so a newly finished game
@@ -100,6 +109,15 @@ export function ContestLive({
   useEffect(() => {
     mutedRef.current = muted;
   }, [muted]);
+
+  // A game brings its own sound. Pause the theme while a chess or poker contest is on screen
+  // and give it back on the way out — without touching the mute setting, so the operator's own
+  // choice survives the visit. The other kinds have no in-game audio, so they keep the theme.
+  useEffect(() => {
+    if (kind !== "chess" && kind !== "poker") return;
+    duck(true);
+    return () => duck(false);
+  }, [kind, duck]);
 
   // Initial feed load (live updates then arrive over the WS).
   useEffect(() => {
@@ -149,7 +167,8 @@ export function ContestLive({
       const t = Date.now();
       if (!mutedRef.current && t - lastSfxRef.current > SFX_THROTTLE_MS) {
         lastSfxRef.current = t;
-        playActionSound(kind);
+        if (kind === "poker") playPokerAction(p.answer);
+        else playActionSound(kind);
       }
     } else if (msg.type === "standings") {
       const mapped = msg.payload.map((s) => ({
@@ -217,9 +236,16 @@ export function ContestLive({
       // few seconds apart, so this is never throttled away the way a fast solve feed is —
       // but keep the guard, because the engine can play a fallback move instantly.
       const tc = Date.now();
-      if (!mutedRef.current && tc - lastSfxRef.current > SFX_THROTTLE_MS) {
-        lastSfxRef.current = tc;
-        playChessMove(p.capture);
+      if (!mutedRef.current) {
+        // Ply 1 is the opening move of a game — of the duel, or of each bracket match, since
+        // playChessGame restarts the count per game. Announce it, then let the moves knock.
+        if (p.ply === 1) {
+          lastSfxRef.current = tc;
+          playChessGameStart();
+        } else if (tc - lastSfxRef.current > SFX_THROTTLE_MS) {
+          lastSfxRef.current = tc;
+          playChessMove(p.capture);
+        }
       }
     } else if (msg.type === "bracket") {
       // A game just ended when one more match has a winner than it did a tick ago. The board

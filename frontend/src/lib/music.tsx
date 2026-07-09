@@ -25,6 +25,16 @@ interface MusicState {
   available: boolean;
   toggle: () => void;
   play: () => void;
+  /**
+   * Duck the theme without touching the mute setting.
+   *
+   * A live contest has its own sound — chess pieces, poker chips — and the theme playing over
+   * it is two pieces of music at once. Ducking pauses the theme for the duration and restores
+   * it afterwards, WITHOUT flipping `muted`, so the user's own choice survives: someone who
+   * muted the theme stays muted when they leave the contest, and someone who had it on gets it
+   * back.
+   */
+  duck: (on: boolean) => void;
 }
 
 const MusicContext = createContext<MusicState | null>(null);
@@ -36,6 +46,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const tabIdRef = useRef(Math.random().toString(36).slice(2));
   const wasPlayingRef = useRef(false);
   const [muted, setMutedState] = useState(false); // default: sound on
+  // Whether the theme was playing when a contest ducked it, so it can be restored on exit.
+  const duckedRef = useRef(false);
   const [playing, setPlaying] = useState(false);
   const [available, setAvailable] = useState(true);
 
@@ -162,6 +174,24 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     return detach;
   }, [announcePlay]);
 
+  const duck = useCallback((on: boolean) => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (on) {
+      duckedRef.current = !a.paused;
+      if (!a.paused) {
+        a.pause();
+        setPlaying(false);
+      }
+      return;
+    }
+    // Restore only if we were the ones who paused it, and the user has not muted meanwhile.
+    if (duckedRef.current && !mutedRef.current) {
+      a.play().then(() => announcePlay()).catch(() => {});
+    }
+    duckedRef.current = false;
+  }, [announcePlay]);
+
   const play = useCallback(() => {
     const a = audioRef.current;
     if (!a || mutedRef.current || !a.paused) return;
@@ -181,7 +211,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   }, [setMuted, announcePlay]);
 
   return (
-    <MusicContext.Provider value={{ muted, playing, available, toggle, play }}>
+    <MusicContext.Provider value={{ muted, playing, available, toggle, play, duck }}>
       {children}
     </MusicContext.Provider>
   );
@@ -189,6 +219,6 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
 export function useMusic(): MusicState {
   const ctx = useContext(MusicContext);
-  if (!ctx) return { muted: false, playing: false, available: false, toggle: () => {}, play: () => {} };
+  if (!ctx) return { muted: false, playing: false, available: false, toggle: () => {}, play: () => {}, duck: () => {} };
   return ctx;
 }

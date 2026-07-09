@@ -60,9 +60,18 @@ function tones(
 // Files are optional. Nothing is fetched until the first time a sound is asked for.
 
 export const CHESS_SFX = {
+  gameStart: "/audio/chess/game-start.mp3",
   move: "/audio/chess/move.mp3",
   capture: "/audio/chess/capture.mp3",
   gameEnd: "/audio/chess/game-end.mp3",
+} as const;
+
+export const POKER_SFX = {
+  fold: "/audio/poker/fold.mp3",
+  check: "/audio/poker/check.mp3",
+  call: "/audio/poker/call.mp3",
+  raise: "/audio/poker/raise.mp3",
+  showdown: "/audio/poker/showdown.mp3",
 } as const;
 
 type SampleState = "unknown" | "ready" | "missing";
@@ -85,6 +94,32 @@ function sample(url: string): { el: HTMLAudioElement; state: SampleState } | nul
 /** Warm the cache so the very first move is not the one that discovers the file is missing. */
 export function preloadChessSfx(): void {
   for (const url of Object.values(CHESS_SFX)) sample(url);
+}
+
+export function preloadPokerSfx(): void {
+  for (const url of Object.values(POKER_SFX)) sample(url);
+}
+
+/**
+ * A poker action. The runner writes a label like "raises to 60", "folds", "checks",
+ * "calls 20", or a showdown line, so match on the verb and play its sample when one exists.
+ * Falls back to the synthesized chip clicks, which is what shipped before any assets did.
+ */
+export function playPokerAction(label = ""): void {
+  const l = label.toLowerCase();
+  const url = l.startsWith("fold")
+    ? POKER_SFX.fold
+    : l.startsWith("check")
+      ? POKER_SFX.check
+      : l.startsWith("call")
+        ? POKER_SFX.call
+        : l.startsWith("raise") || l.startsWith("bet") || l.includes("all-in")
+          ? POKER_SFX.raise
+          : l.startsWith("showdown")
+            ? POKER_SFX.showdown
+            : "";
+  if (url && playSample(url, 0.45)) return;
+  playActionSound("poker");
 }
 
 /** Play a sample if it is loaded. Returns false when it is absent, so a caller can synthesize. */
@@ -165,6 +200,19 @@ export function playChessMove(capture = false): void {
   // Then the capturing piece, landing where it stood.
   knock({ t: 0.075, freq: 1100, q: 2.5, dur: 0.06, gain: 0.1 });
   tones([{ f: 140, t: 0.075, dur: 0.09, type: "sine", gain: 0.07 }]);
+}
+
+/**
+ * A game beginning: the first ply of a duel, or of each match in a bracket.
+ * Fallback is a light rising two-note, distinct from the descending end cadence.
+ */
+export function playChessGameStart(): void {
+  if (playSample(CHESS_SFX.gameStart, 0.5)) return;
+  knock({ freq: 1200, q: 2.5, dur: 0.05, gain: 0.07 });
+  tones([
+    { f: 329.63, t: 0.03, dur: 0.16, type: "sine", gain: 0.08 }, // E4
+    { f: 493.88, t: 0.14, dur: 0.24, type: "sine", gain: 0.08 }, // B4
+  ]);
 }
 
 /** Checkmate, or a game decided on the clock. A short, settled two-note cadence. */
