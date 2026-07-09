@@ -19,7 +19,8 @@
     "chess:perft": "tsx src/scripts/chessPerft.ts",
     "worldcup:test": "tsx src/scripts/worldcupTest.ts",
     "seed": "tsx src/scripts/seedAndRun.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "providers:probe": "tsx src/scripts/providerProbe.ts"
   },
   "dependencies": {
     "@0gfoundation/0g-storage-ts-sdk": "1.2.10",

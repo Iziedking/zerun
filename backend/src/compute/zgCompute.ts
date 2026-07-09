@@ -106,15 +106,27 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 // The serving struct is an ethers tuple; read the fields we care about by index.
-// [0] provider, [1] serviceType, [6] model, [7] verifiability, [8] additionalInfo, [10] healthy
+// [0] provider, [1] serviceType, [2] url, [3] inputPrice, [4] outputPrice, [5] updatedAt,
+// [6] model, [7] verifiability, [8] additionalInfo, [9] TEE signer, [10] healthy
 function readService(s: unknown) {
   const t = s as unknown[];
+
+  // The attesting signer. It was read from additionalInfo.TargetTeeAddress, but every live
+  // provider on both networks publishes that as an empty string and carries the real signer
+  // at tuple index [9]. Reading only the JSON made almost every TeeML provider score as
+  // non-attesting, which distorted the ranking. Prefer the JSON when populated, since it is
+  // the documented field, then fall back to the struct.
   let teeTarget = "";
   try {
-    teeTarget = JSON.parse(String(t[8] ?? "{}")).TargetTeeAddress ?? "";
+    teeTarget = String(JSON.parse(String(t[8] ?? "{}")).TargetTeeAddress ?? "");
   } catch {
     teeTarget = "";
   }
+  if (!teeTarget) {
+    const signer = String(t[9] ?? "");
+    if (/^0x[0-9a-fA-F]{40}$/.test(signer) && !/^0x0{40}$/.test(signer)) teeTarget = signer;
+  }
+
   return {
     provider: String(t[0]),
     serviceType: String(t[1]),
@@ -321,8 +333,11 @@ function makeNetwork(net: NetworkConfig) {
 
     const chat = services.filter((s) => s.serviceType === "chatbot");
     const pool = chat.length ? chat : services;
+    // Health dominates. The old weights let an UNHEALTHY TEE provider tie or beat a healthy
+    // one, and this is the guaranteed tail every tier falls back to — the last provider that
+    // should be down. Same weights as resolveCandidates, so the two agree on "best".
     const score = (s: ReturnType<typeof readService>) =>
-      (s.verifiability === "TeeML" ? 2 : 0) + (s.healthy ? 1 : 0) + (s.teeTarget ? 1 : 0);
+      (s.healthy ? 4 : 0) + (s.verifiability === "TeeML" ? 2 : 0) + (s.teeTarget ? 1 : 0);
     pool.sort((a, b) => score(b) - score(a));
     return pool[0]!.provider;
   }
