@@ -136,21 +136,64 @@ export async function readPokerStats(agentId: number): Promise<PokerStats | null
   };
 }
 
-// Plain-language scouting note derived from the stats. Deterministic, so the same
-// history always reads the same way.
-export function summarizeDossier(s: PokerStats): string {
+// A dossier is sold in TIERS, and it is never the full picture. An agent can learn a lot
+// about an opponent, but never as much as that opponent knows about itself: `summarizeDossier`
+// is what the SUBJECT sees; a buyer sees only what it paid to see.
+//
+//   tier 1  a coarse read. Style and looseness as bands, volume rounded. No exact numbers,
+//           and no structured stats, so it informs the agent's reasoning but cannot drive a
+//           deterministic policy tweak.
+//   tier 2  the numbers. Raise-to-call ratio and fold frequency, plus the structured stats,
+//           so the buyer can actually model the opponent.
+//   tier 3  the showdown profile. All-in frequency and how often it wins when it gets there.
+//
+// Levels 0-3 may buy one tier, level 4 two, level 5 three. So more 0G buys depth of
+// information as well as depth of thought, and the two compound.
+export const MAX_DOSSIER_TIER = 3;
+
+export function dossierTierCap(computeLevel: number): number {
+  if (computeLevel >= 5) return 3;
+  if (computeLevel === 4) return 2;
+  return 1;
+}
+
+// Round volume to a band, so tier 1 never leaks an exact count.
+function band(n: number): string {
+  if (n < 5) return "a handful of";
+  if (n < 20) return "a couple dozen";
+  if (n < 100) return "dozens of";
+  return "hundreds of";
+}
+
+/** What a buyer at `tier` gets to read. Cumulative: tier 3 includes tiers 1 and 2. */
+export function revealDossier(s: PokerStats, tier: number): string {
   const decisions = s.folds + s.checks + s.calls + s.raises;
   if (s.hands === 0 || decisions === 0) return "No prior duels on record.";
+
   const af = s.raises / Math.max(1, s.calls);
   const foldPct = Math.round((s.folds / decisions) * 100);
-  const sdWinPct = s.showdowns > 0 ? Math.round((s.showdownsWon / s.showdowns) * 100) : 0;
   const style = af > 1.5 ? "aggressive" : af < 0.6 ? "passive" : "balanced";
   const looseness = foldPct > 40 ? "tight" : foldPct < 15 ? "loose" : "measured";
-  return [
-    `${s.duels} duels (${s.duelsWon} won), ${s.hands} hands.`,
-    `Plays ${looseness} and ${style} (raise-to-call ratio ${af.toFixed(2)}, folds ${foldPct}% of spots).`,
-    `Goes all-in ${s.allins} times. Reaches showdown ${s.showdowns} times, winning ${sdWinPct}% of them.`,
-  ].join(" ");
+
+  const parts = [`Has played ${band(s.hands)} hands across ${band(s.duels)} duels.`, `Reads as ${looseness} and ${style}.`];
+
+  if (tier >= 2) {
+    parts.push(
+      `Exactly: ${s.duels} duels (${s.duelsWon} won), ${s.hands} hands, raise-to-call ratio ${af.toFixed(2)}, folds ${foldPct}% of spots.`,
+    );
+  }
+  if (tier >= 3) {
+    const sdWinPct = s.showdowns > 0 ? Math.round((s.showdownsWon / s.showdowns) * 100) : 0;
+    parts.push(`Goes all-in ${s.allins} times. Reaches showdown ${s.showdowns} times, winning ${sdWinPct}% of them.`);
+  }
+  return parts.join(" ");
+}
+
+// Plain-language scouting note derived from the stats. This is the FULL read: an agent's
+// own record, and the tier-3 dossier. Deterministic, so the same history always reads the
+// same way.
+export function summarizeDossier(s: PokerStats): string {
+  return revealDossier(s, MAX_DOSSIER_TIER);
 }
 
 // Build the dossier another agent would read on this opponent. Null if the opponent

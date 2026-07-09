@@ -46,9 +46,11 @@ import {
 import { xConfigured, verifyWalletSig, beginXAuth, completeXAuth, xIdentityFor } from "../auth/xConnect.js";
 import { scheduleHouseFill, coordinatorGasBalance } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
-import { buildDossier } from "../runners/poker/dossier.js";
+import { buildDossier, dossierTierCap, revealDossier } from "../runners/poker/dossier.js";
 import {
   freeAllotment,
+  purchasedTier,
+  recordDossierPurchase,
   freeUsed,
   consumeFree,
   buildRequirements,
@@ -859,17 +861,36 @@ app.get("/api/dossiers/:opponentId", async (c) => {
     Boolean(forOwner && forIssued && forSig) &&
     (await verifyAgentOwner("scout", forId, { owner: forOwner, issuedAt: forIssued, signature: forSig })).ok;
 
+  // A dossier is sold in tiers and is never the full picture. How many tiers this agent may
+  // ever hold on one opponent is capped by its Compute level: 1 below level 4, 2 at level
+  // 4, 3 at level 5. Structured stats are withheld below tier 2 — a coarse read informs
+  // reasoning, it does not let you model anyone mechanically.
   const level = await getAgentCompute(forId);
+  const cap = dossierTierCap(level);
+  const owned = await purchasedTier(forId, opponentId);
+  const reveal = (tier: number) => ({
+    dossier: revealDossier(dossier.stats, tier),
+    tier,
+    cap,
+    ...(tier >= 2 ? { stats: dossier.stats } : {}),
+  });
+
+  if (owned >= cap) {
+    // Already at the depth its 0G investment allows. More Compute is the only way deeper.
+    return c.json({ ...reveal(owned), paid: false, atCap: true });
+  }
+
   const allot = freeAllotment(level);
   const used = await freeUsed(forId);
   if (authed && used < allot) {
     await consumeFree(forId);
-    return c.json({ dossier: dossier.text, stats: dossier.stats, paid: false, freeRemaining: allot - used - 1 });
+    await recordDossierPurchase(forId, opponentId, owned + 1, null, 0n, null);
+    return c.json({ ...reveal(owned + 1), paid: false, freeRemaining: allot - used - 1 });
   }
 
-  // Free allotment used up: require an x402 payment.
+  // Free allotment used up: require an x402 payment for the next tier.
   const resource = new URL(c.req.url).pathname;
-  const description = `Opponent dossier on agent ${opponentId}`;
+  const description = `Opponent dossier on agent ${opponentId}, tier ${owned + 1} of ${cap}`;
   const header = c.req.header("x-payment");
   if (!header) return c.json(buildRequirements(resource, description), 402);
   const txHash = decodePaymentHeader(header);
@@ -881,7 +902,8 @@ app.get("/api/dossiers/:opponentId", async (c) => {
   if (!(await consumePaymentTx(txHash, forId, opponentId))) {
     return c.json({ error: "this payment has already been used", ...buildRequirements(resource, description) }, 402);
   }
-  return c.json({ dossier: dossier.text, stats: dossier.stats, paid: true, txHash });
+  await recordDossierPurchase(forId, opponentId, owned + 1, null, 0n, txHash);
+  return c.json({ ...reveal(owned + 1), paid: true, txHash });
 });
 
 // The stored hand-by-hand replay of a poker duel, read back from 0G Storage by its

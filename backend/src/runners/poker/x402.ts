@@ -1,25 +1,29 @@
-import { parseEventLogs } from "viem";
+import { formatEther, parseEther, parseEventLogs } from "viem";
 import { query } from "../../db/pool.js";
-import {
-  GAS_PRICE,
-  coordinatorAccount,
-  coordinatorAddress,
-  coordinatorWallet,
-  loadDeployment,
-  publicClient,
-  testUsdcAbi,
-  waitReceipt,
-} from "../../chain/contracts.js";
-import { buildDossier, type PokerStats } from "./dossier.js";
+import { chargeAgent, spendableWei } from "../memoryMarket.js";
+import { decideBuyDossier } from "./scoutDecision.js";
+import { coordinatorAddress, loadDeployment, publicClient, testUsdcAbi } from "../../chain/contracts.js";
+import { buildDossier, dossierTierCap, revealDossier, type PokerStats } from "./dossier.js";
 
-// x402 micropayments for opponent dossiers, on 0G. The Coinbase-hosted facilitator
-// does not support 0G Galileo, so this implements the x402 flow natively: a dossier
-// request over the free allotment gets an HTTP 402 with payment requirements, the
-// caller pays testUSDC on 0G, and this module acts as the self-hosted facilitator
-// that verifies the on-chain payment before the dossier is served.
+// The opponent dossier market.
 //
-// Free allotment by compute level (the 0G investment): level 5 gets 3 free reads,
-// level 4 two, level 3 one, below that none. Beyond that, each read is paid.
+// A dossier is sold in TIERS and is never the full picture: an agent can never learn as
+// much about an opponent as that opponent knows about itself. How deep it may ever read one
+// opponent is capped by its Compute level — 1 tier below level 4, 2 at level 4, 3 at level
+// 5 — so 0G buys depth of information as well as depth of thought.
+//
+// Two ways to buy, and both are real payments:
+//
+//   In a contest, the agent decides FOR ITSELF on 0G whether the next tier is worth its
+//   price, and pays for it out of its own MemoryEscrow balance. The payment unlocks the
+//   read, which is x402 as it was always described.
+//
+//   Over HTTP, a caller gets a 402 with payment requirements and pays testUSDC on 0G. The
+//   Coinbase-hosted facilitator does not support 0G Galileo, so this module is the
+//   self-hosted facilitator that verifies the payment on chain before serving.
+//
+// The old free allotment survives only on the HTTP path, for an authenticated owner
+// reading their own agent's first tiers.
 
 const NETWORK = "0g-galileo";
 const PRICE_USDC = process.env.X402_DOSSIER_PRICE_USDC ?? "0.5";
@@ -142,70 +146,125 @@ export async function verifyPaymentTx(txHash: `0x${string}`): Promise<boolean> {
   }
 }
 
-// The coordinator settles a payment on behalf of a house agent (the demo path). Mints
-// the price to itself if short, then transfers it to payTo, returning the payment tx.
-async function coordinatorPay(): Promise<`0x${string}`> {
-  const dep = loadDeployment();
-  const me = coordinatorAddress();
-  const bal = (await publicClient.readContract({
-    address: dep.testUSDC,
-    abi: testUsdcAbi,
-    functionName: "balanceOf",
-    args: [me],
-  })) as bigint;
-  if (bal < PRICE_ATOMIC) {
-    const mintHash = await coordinatorWallet().writeContract({
-      address: dep.testUSDC,
-      abi: testUsdcAbi,
-      functionName: "mint",
-      args: [me, PRICE_ATOMIC],
-      account: coordinatorAccount(),
-      chain: undefined,
-      gasPrice: GAS_PRICE,
-    });
-    await waitReceipt(mintHash);
-  }
-  const hash = await coordinatorWallet().writeContract({
-    address: dep.testUSDC,
-    abi: testUsdcAbi,
-    functionName: "transfer",
-    args: [payTo(), PRICE_ATOMIC],
-    account: coordinatorAccount(),
-    chain: undefined,
-    gasPrice: GAS_PRICE,
-  });
-  await waitReceipt(hash);
-  return hash;
+// The 0G price of one dossier tier. Each tier costs more than the last, because each
+// reveals more: tier N costs N x the base.
+const DOSSIER_BASE_OG = process.env.DOSSIER_PRICE_OG ?? "0.001";
+export function dossierPriceWei(tier: number): bigint {
+  return parseEther(DOSSIER_BASE_OG) * BigInt(Math.max(1, tier));
+}
+
+/** The highest tier this buyer already owns on this opponent (0 = knows nothing). */
+export async function purchasedTier(buyerId: number, opponentId: number): Promise<number> {
+  const { rows } = await query<{ tier: number }>(
+    "select coalesce(max(tier), 0) as tier from dossier_purchases where buyer_agent = $1 and opponent_agent = $2",
+    [buyerId, opponentId],
+  );
+  return rows[0]?.tier ?? 0;
+}
+
+/** Record that a buyer now owns `tier` on this opponent. Permanent; idempotent. */
+export async function recordDossierPurchase(
+  buyerId: number,
+  opponentId: number,
+  tier: number,
+  contestId: number | null,
+  amountWei: bigint,
+  txHash: string | null,
+): Promise<void> {
+  await query(
+    `insert into dossier_purchases (buyer_agent, opponent_agent, tier, contest_id, amount_wei, charge_tx)
+       values ($1,$2,$3,$4,$5,$6)
+     on conflict (buyer_agent, opponent_agent, tier) do nothing`,
+    [buyerId, opponentId, tier, contestId, amountWei.toString(), txHash],
+  );
+}
+
+export interface DossierPurchase {
+  tier: number;
+  priceOg: string;
+  txHash: string;
+  reason: string;
 }
 
 export interface DossierAccess {
-  text: string | null; // the scouting report, or null if the opponent has no history
-  paid: boolean; // whether this read required an x402 payment
-  txHash?: string; // the payment tx, when paid
-  priceUsdc?: string; // the price paid, for the feed
-  stats?: PokerStats; // structured tendencies, so the buyer can model the opponent
+  text: string | null; // the scouting report at the tier the buyer owns, or null with no history
+  tier: number; // 0 = knows nothing about this opponent
+  cap: number; // the most tiers this agent's Compute level allows
+  paid: boolean; // whether this contest bought anything
+  purchases: DossierPurchase[]; // each tier bought here, with its on-chain payment
+  // Structured tendencies, so the buyer can model the opponent mechanically. Withheld
+  // below tier 2: a coarse read informs reasoning, it does not drive a policy tweak.
+  stats?: PokerStats;
 }
 
-// Acquire the opponent's dossier for an agent, honoring the free allotment and paying
-// via x402 (coordinator-settled for house agents) when the allotment is used up. Used
-// by the runner to prefetch before the clock starts.
+/**
+ * Acquire an opponent's dossier for an agent, as far as it is willing and able to go.
+ *
+ * The agent's Compute level caps how many tiers it may ever hold on one opponent (1 below
+ * level 4, 2 at level 4, 3 at level 5). Tiers it bought in past contests are kept. For each
+ * tier it does not yet own, the agent decides on 0G whether the read is worth the price,
+ * and pays for it out of its own MemoryEscrow balance. The payment is what unlocks the
+ * read, so this is x402 as it was always described: pay, then receive.
+ *
+ * House agents are the platform's own, have no escrow, and are given the tier-1 read free.
+ * An agent that cannot pay simply knows less, which is the whole point of the market.
+ */
 export async function acquireDossier(
   requesterId: number,
   requesterLevel: number,
   opponentId: number,
+  opts: { contestId: number; isHouse: boolean; opponentName: string },
 ): Promise<DossierAccess> {
+  const cap = dossierTierCap(requesterLevel);
   const d = await buildDossier(opponentId);
-  if (!d) return { text: null, paid: false };
+  if (!d) return { text: null, tier: 0, cap, paid: false, purchases: [] };
 
-  const allot = freeAllotment(requesterLevel);
-  const used = await freeUsed(requesterId);
-  if (used < allot) {
-    await consumeFree(requesterId);
-    return { text: d.text, paid: false, stats: d.stats };
+  let tier = await purchasedTier(requesterId, opponentId);
+
+  // The house never buys. It scouts at tier 1 so an empty arena still plays a real game.
+  if (opts.isHouse) {
+    const t = Math.max(tier, 1);
+    return { text: revealDossier(d.stats, t), tier: t, cap, paid: false, purchases: [], ...(t >= 2 ? { stats: d.stats } : {}) };
   }
 
-  const txHash = await coordinatorPay();
-  const ok = await verifyPaymentTx(txHash);
-  if (!ok) return { text: null, paid: false }; // unverified payment: play without the edge
-  return { text: d.text, paid: true, txHash, priceUsdc: PRICE_USDC, stats: d.stats };
+  const purchases: DossierPurchase[] = [];
+  while (tier < cap) {
+    const next = tier + 1;
+    const price = dossierPriceWei(next);
+    const balance = await spendableWei(requesterId);
+    if (balance < price) break; // cannot afford it: play with what it knows
+
+    const decision = await decideBuyDossier({
+      tier: next,
+      cap,
+      priceWei: price,
+      balanceWei: balance,
+      known: tier === 0 ? "nothing" : revealDossier(d.stats, tier),
+      opponentName: opts.opponentName,
+      tierModelLevel: requesterLevel,
+    });
+    if (!decision.buy) break;
+
+    const charged = await chargeAgent(requesterId, opts.contestId, `dossier:${next}`, price);
+    if (!charged) break; // could not pay: it does not get the read
+
+    await recordDossierPurchase(requesterId, opponentId, next, opts.contestId, price, charged.txHash);
+    purchases.push({
+      tier: next,
+      priceOg: formatEther(price),
+      txHash: charged.txHash,
+      reason: decision.reason,
+    });
+    tier = next;
+  }
+
+  return {
+    text: revealDossier(d.stats, tier),
+    tier,
+    cap,
+    paid: purchases.length > 0,
+    purchases,
+    // Below tier 2 the buyer has bands, not numbers, and cannot mechanically model anyone.
+    ...(tier >= 2 ? { stats: d.stats } : {}),
+  };
 }

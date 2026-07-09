@@ -244,6 +244,66 @@ async function chargeDebit(debitId: number, agentId: number, amountWei: bigint):
   }
 }
 
+/**
+ * Charge an agent once, now, for one thing it is about to receive.
+ *
+ * Memory batches its debits because a chess tournament makes hundreds of calls. A dossier
+ * does not: an agent buys at most three in a contest, before the clock starts, and the
+ * payment is what unlocks the read. So this settles immediately and returns the tx, which
+ * is the x402 semantic the dossier market always claimed and never had.
+ *
+ * Returns null when the agent cannot pay, which is not an error: it just does not get the
+ * thing. Never throws.
+ */
+export async function chargeAgent(
+  agentId: number,
+  contestId: number,
+  item: string,
+  amountWei: bigint,
+): Promise<{ txHash: string; amountWei: bigint } | null> {
+  const address = memoryEscrowAddress();
+  if (!address || amountWei <= 0n) return null;
+
+  const spendable = await spendableWei(agentId);
+  if (spendable < amountWei) return null;
+
+  // Record the debt before collecting it, so a crash between charge and insert can never
+  // take payment we did not account for.
+  let debitId: number;
+  try {
+    const { rows } = await query<{ id: string }>(
+      "insert into memory_debits (agent_id, contest_id, kind, item, calls, amount_wei) values ($1,$2,$3,$4,1,$5) returning id",
+      [agentId, contestId, "poker", item, amountWei.toString()],
+    );
+    debitId = Number(rows[0]!.id);
+  } catch (err) {
+    console.error(`memory market: could not record ${item} debit for agent ${agentId}:`, (err as Error).message);
+    return null;
+  }
+
+  try {
+    const hash = await coordinatorWallet().writeContract({
+      address,
+      abi: memoryEscrowAbi,
+      functionName: "charge",
+      args: [BigInt(agentId), amountWei],
+      account: coordinatorAccount(),
+      chain: ogGalileo,
+      gasPrice: GAS_PRICE,
+    });
+    await waitReceipt(hash);
+    await query("update memory_debits set charge_tx = $2 where id = $1", [debitId, hash]);
+    console.log(`memory market: agent ${agentId} bought ${item} for ${formatEther(amountWei)} 0G (${hash.slice(0, 10)}…)`);
+    return { txHash: hash, amountWei };
+  } catch (err) {
+    // The charge failed, so the agent never paid and must not receive the goods. Drop the
+    // debit row rather than leaving a phantom debt against them.
+    await query("delete from memory_debits where id = $1", [debitId]).catch(() => {});
+    console.error(`memory market: ${item} charge for agent ${agentId} failed:`, (err as Error).message);
+    return null;
+  }
+}
+
 /** Total 0G an agent still owes for memory it already used. */
 export async function unsettledWei(agentId: number): Promise<bigint> {
   const { rows } = await query<{ total: string | null }>(

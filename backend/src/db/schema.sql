@@ -373,3 +373,27 @@ create table if not exists memory_debits (
 );
 create index if not exists memory_debits_unsettled_idx on memory_debits (agent_id) where charge_tx is null;
 create index if not exists memory_debits_contest_idx on memory_debits (contest_id);
+-- What the agent bought: 'memory' (a memory-assisted 0G call) or 'dossier:N' (an opponent
+-- read at tier N). Both draw on the same escrow balance.
+alter table memory_debits add column if not exists item text not null default 'memory';
+
+-- Opponent dossiers, sold in TIERS. A dossier is never the full picture: tier 1 is a
+-- coarse read, tier 2 adds the numbers, tier 3 adds the showdown and all-in profile. An
+-- agent can never learn as much about an opponent as that opponent knows about itself.
+--
+-- How many tiers an agent may buy against one opponent is set by its Compute level, so the
+-- 0G investment buys depth of information as well as depth of thought:
+--   levels 0-3 -> 1 tier, level 4 -> 2 tiers, level 5 -> 3 tiers.
+--
+-- A purchase is permanent and per-opponent: buy tier 2 on agent #7 once, and you keep it.
+create table if not exists dossier_purchases (
+  buyer_agent     bigint not null,
+  opponent_agent  bigint not null,
+  tier            int not null,
+  contest_id      bigint,
+  amount_wei      numeric(78,0) not null default 0,  -- 0G paid, from the buyer's MemoryEscrow
+  charge_tx       text,                              -- the on-chain charge() that paid for it
+  created_at      timestamptz not null default now(),
+  primary key (buyer_agent, opponent_agent, tier)
+);
+create index if not exists dossier_purchases_buyer_idx on dossier_purchases (buyer_agent, opponent_agent);

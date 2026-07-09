@@ -35,7 +35,7 @@ async function loadStoredOverride(contestId: number, agentId: number): Promise<P
   const raw = rows[0]?.override;
   return raw && typeof raw === "object" ? (raw as Partial<Policy>) : null;
 }
-import { acquireDossier } from "../runners/poker/x402.js";
+import { acquireDossier, purchasedTier } from "../runners/poker/x402.js";
 import { runPokerTable } from "./runPokerTable.js";
 
 // The poker duel loop. Two agents play heads-up No-Limit Hold'em over a bounded
@@ -200,18 +200,41 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
         overrideOf.set(me.agentId, stored);
         continue;
       }
+      // Rederive from what this agent actually BOUGHT on this opponent. A replay must not
+      // hand it a deeper read than it paid for.
       const d = await buildDossier(opponent.agentId).catch(() => null);
-      if (d?.stats) {
+      const owned = await purchasedTier(me.agentId, opponent.agentId).catch(() => 0);
+      if (d?.stats && owned >= 2) {
         const ov = scoutOverride(levelOf.get(me.agentId) ?? 0, d.stats);
         if (ov) overrideOf.set(me.agentId, ov);
       }
       continue;
     }
-    // Free within the agent's tier allotment, otherwise paid for with an x402 tUSDC
-    // micropayment on 0G. Either way it resolves here, before the clock starts.
-    const access = await acquireDossier(me.agentId, levelOf.get(me.agentId) ?? 0, opponent.agentId).catch(
-      () => null,
-    );
+    // Scouting, resolved before the clock starts. The agent decides on 0G how deep to read
+    // its opponent, bounded by the tier cap its Compute level allows, and pays for each
+    // tier out of its own escrow. An agent that cannot pay simply knows less.
+    const access = await acquireDossier(me.agentId, levelOf.get(me.agentId) ?? 0, opponent.agentId, {
+      contestId,
+      isHouse: me.isHouse,
+      opponentName: opponent.agentName,
+    }).catch(() => null);
+
+    // Every purchase is a real payment for a real read. Show it, with its tx.
+    for (const p of access?.purchases ?? []) {
+      broadcast({
+        type: "x402",
+        contestId,
+        payload: {
+          agentId: me.agentId,
+          agentName: me.agentName,
+          opponentName: opponent.agentName,
+          label: `dossier tier ${p.tier}/${access!.cap}: ${p.reason}`,
+          priceUsdc: `${p.priceOg} 0G`,
+          txHash: p.txHash,
+        },
+      });
+    }
+
     if (access?.text) {
       // P3: when enabled, the strategy tuning is authored on 0G Compute (routed to the
       // agent's tier model) and anchored on 0G Storage — a stronger model authors a
@@ -243,26 +266,17 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
         const ov = scoutOverride(levelOf.get(me.agentId) ?? 0, access.stats);
         if (ov) overrideOf.set(me.agentId, ov);
       }
-      const how = access.paid ? `paid ${access.priceUsdc} tUSDC via x402 to scout` : "scouted";
+      // Each purchase already went to the feed as its own x402 event with its tx. This is
+      // the summary: how deep this agent chose to read its opponent, out of what its
+      // Compute level allowed.
+      const how = access.tier === 0
+        ? `could not scout`
+        : `read ${opponent.agentName} to tier ${access.tier}/${access.cap}`;
       broadcast({
         type: "status",
         contestId,
-        payload: { status: "running", detail: `${me.agentName} ${how} ${opponent.agentName}` },
+        payload: { status: "running", detail: `${me.agentName} ${how}` },
       });
-      // Surface a paid dossier as a verifiable x402 event with its on-chain tx.
-      if (access.paid && access.txHash) {
-        broadcast({
-          type: "x402",
-          contestId,
-          payload: {
-            agentId: me.agentId,
-            agentName: me.agentName,
-            opponentName: opponent.agentName,
-            priceUsdc: access.priceUsdc ?? "0.5",
-            txHash: access.txHash,
-          },
-        });
-      }
     }
   }
 
