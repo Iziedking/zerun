@@ -595,6 +595,8 @@ function snapshot(
   const streets = ["preflop", "flop", "turn", "river"];
   const foldedLoser =
     t.handOver && t.result && !t.result.showdown && t.result.winner !== null ? (t.result.winner === 0 ? 1 : 0) : -1;
+  // Heads-up: the button posts the small blind, so there is no separate SB seat.
+  const highBet = Math.max(t.streetPut[0], t.streetPut[1]);
   const seats = ([0, 1] as const).map((s) => ({
     agentId: players[s].agentId,
     name: players[s].agentName,
@@ -603,6 +605,10 @@ function snapshot(
     folded: s === foldedLoser,
     isTurn: !t.handOver && t.toAct === s,
     isHouse: players[s].isHouse,
+    bet: t.streetPut[s],
+    committed: t.handPut[s],
+    toCall: Math.max(0, highBet - t.streetPut[s]),
+    position: s === t.button ? "BTN" : "BB",
   }));
   return {
     handIndex: handIndex + 1,

@@ -34,6 +34,16 @@ export interface PokerSeat {
   folded: boolean;
   isTurn: boolean;
   isHouse: boolean;
+  // What this seat has put in front of it on THIS street. The engine has always tracked it;
+  // the payload used to drop it, so a spectator could see the pot grow but never see who was
+  // paying for it. This is the number that belongs on the felt between the seat and the pot.
+  bet: number;
+  // Everything this seat has put in across the whole hand (what drives the side pots).
+  committed: number;
+  // Chips this seat still owes to call. 0 when the action is square.
+  toCall: number;
+  // "BTN" | "SB" | "BB" | "UTG" | "HJ" | "CO", by distance from the button.
+  position: string;
 }
 
 // A snapshot of the poker table after an action, so the UI can render a live table.

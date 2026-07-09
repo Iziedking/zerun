@@ -345,6 +345,14 @@ export interface WsPokerSeat {
   folded: boolean;
   isTurn: boolean;
   isHouse: boolean;
+  /** Chips this seat has in front of it on the CURRENT street. Rendered on the felt. */
+  bet: number;
+  /** Chips this seat has put in across the whole hand. */
+  committed: number;
+  /** Chips still owed to call. 0 when the action is square. */
+  toCall: number;
+  /** "BTN" | "SB" | "BB" | "UTG" | "HJ" | "CO". */
+  position: string;
 }
 
 export interface WsPokerSnapshot {

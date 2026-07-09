@@ -58,6 +58,35 @@ function ActionTag({ action }: { action?: string }) {
   );
 }
 
+// The chips a seat has pushed out on the current street, sitting between the player and the
+// pot the way they would on a real table. Without this the pot grew and nobody could see who
+// was paying for it: the number existed in the engine and never reached the felt.
+function BetToken({ amount }: { amount: number }) {
+  if (!amount) return null;
+  return (
+    <span className="flex items-center gap-1 whitespace-nowrap rounded-pill border-2 border-ink bg-cloud px-1.5 py-0.5 font-display text-[11px] leading-none text-ink shadow-[2px_2px_0_#171449]">
+      <span className="h-2 w-2 rounded-full border border-ink bg-amber" aria-hidden />
+      {amount.toLocaleString()}
+    </span>
+  );
+}
+
+// A seat's own money: what is still behind them. A coin leads it so it reads as chips rather
+// than as a score badge.
+function Stack({ chips, small }: { chips: number; small?: boolean }) {
+  return (
+    <span
+      className={cx(
+        "flex items-center gap-1 rounded-pill border-line border-ink bg-amber px-2 py-0.5 font-display text-candyink",
+        small ? "text-[12px]" : "text-[13px]",
+      )}
+    >
+      <span className="h-2.5 w-2.5 rounded-full border border-ink bg-cloud" aria-hidden />
+      {chips.toLocaleString()}
+    </span>
+  );
+}
+
 function Seat({
   seat,
   action,
@@ -70,7 +99,7 @@ function Seat({
   small?: boolean;
 }) {
   return (
-    <div className={cx("flex flex-col items-center gap-1.5", seat.folded && "opacity-45")}>
+    <div className={cx("flex flex-col items-center gap-1.5", seat.folded && "opacity-50")}>
       <div className="relative">
         <SkinnedAgent
           agentId={seat.agentId}
@@ -88,15 +117,24 @@ function Seat({
       </div>
       <div className="flex flex-wrap items-center justify-center gap-1">
         <span className={cx("font-display text-ink", small ? "text-[13px]" : "text-[15px]")}>{seat.name}</span>
+        <span className="rounded-pill border border-ink/25 bg-cloud-2 px-1.5 font-mono text-[9px] font-bold uppercase text-ink-3">
+          {seat.position}
+        </span>
         {seat.isHouse && <Chip tone="neutral">house</Chip>}
       </div>
-      <div className="flex gap-1">
-        <Card token={seat.holeCards[0]} small={small} />
-        <Card token={seat.holeCards[1]} small={small} />
-      </div>
-      <span className="rounded-pill border-line border-ink bg-amber px-2.5 py-0.5 font-display text-[13px] text-candyink">
-        {seat.chips}
-      </span>
+
+      {/* A folded seat drops its cards entirely rather than dimming them. Six dimmed hands all
+          compete for the eye with the two that are still live; an empty slot does not. */}
+      {seat.folded ? (
+        <span className="py-1 font-body text-[12px] font-extrabold italic text-ink-3">folded</span>
+      ) : (
+        <div className="flex gap-1">
+          <Card token={seat.holeCards[0]} small={small} />
+          <Card token={seat.holeCards[1]} small={small} />
+        </div>
+      )}
+
+      <Stack chips={seat.chips} small={small} />
       <div className="min-h-[20px]">
         <ActionTag action={action} />
       </div>
@@ -108,16 +146,19 @@ function Seat({
 function Felt({ board, pot, hand, street }: { board: string[]; pot: number; hand: number; street: string }) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-chunk-lg border-line border-ink/20 bg-mint/10 px-5 py-3">
-      <span className="font-body text-[11px] font-extrabold uppercase tracking-[0.03em] text-ink-3">
-        Hand {hand} · {street}
-      </span>
       <div className="flex gap-1.5">
         {[0, 1, 2, 3, 4].map((i) => (
           <Card key={i} token={board[i]} hidden={!board[i]} />
         ))}
       </div>
-      <span className="rounded-pill border-line border-ink bg-amber px-3 py-0.5 font-display text-[14px] text-candyink">
-        pot {pot}
+      {/* The pot, the street and the hand as ONE object. They used to be scattered across the
+          card header and the felt, so the number that matters appeared twice, in two styles. */}
+      <span className="flex items-center gap-2 rounded-pill border-line border-ink bg-ink px-3 py-1 shadow-pop-press">
+        <span className="h-3 w-3 rounded-full border-2 border-cloud bg-amber" aria-hidden />
+        <span className="font-display text-[16px] leading-none text-cloud">{pot.toLocaleString()}</span>
+        <span className="font-body text-[10px] font-extrabold uppercase tracking-[0.06em] text-cloud/60">
+          {street} · hand {hand}
+        </span>
       </span>
     </div>
   );
@@ -164,6 +205,25 @@ function RoundTable({
           </div>
         );
       })}
+
+      {/* Each seat's live bet, parked on the felt between that seat and the pot: same angle,
+          shorter radius. The pot in the middle is the sum of these plus what earlier streets
+          already swept in, so the felt now shows where the money came from, not just how much. */}
+      {seats.map((seat, i) => {
+        if (!seat.bet) return null;
+        const angle = (i / n) * 2 * Math.PI - Math.PI / 2;
+        const x = 50 + 26 * Math.cos(angle);
+        const y = 50 + 25 * Math.sin(angle);
+        return (
+          <div
+            key={`bet-${seat.agentId}`}
+            className="absolute -translate-x-1/2 -translate-y-1/2"
+            style={{ left: `${x}%`, top: `${y}%` }}
+          >
+            <BetToken amount={seat.bet} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -185,9 +245,12 @@ function HeadsUp({
   street: string;
 }) {
   return (
-    <div className="flex flex-col items-center gap-5">
+    <div className="flex flex-col items-center gap-2">
       {seats[0] && <Seat seat={seats[0]} action={actions[seats[0].agentId]} />}
+      {/* The two bets face each other across the board, exactly as they sit on a real table. */}
+      <div className="flex h-6 items-center">{seats[0] && <BetToken amount={seats[0].bet} />}</div>
       <Felt board={board} pot={pot} hand={hand} street={street} />
+      <div className="flex h-6 items-center">{seats[1] && <BetToken amount={seats[1].bet} />}</div>
       {seats[1] && <Seat seat={seats[1]} action={actions[seats[1].agentId]} />}
     </div>
   );
@@ -215,15 +278,18 @@ export function PokerTable({ snapshot }: { snapshot: WsPokerSnapshot }) {
   }, [s]);
 
   const last = s.lastAction;
+  // What the player on the clock owes. The one number a spectator needs to judge the decision
+  // they are about to watch, and it was nowhere on the table before.
+  const toCallNow = s.seats.find((x) => x.isTurn)?.toCall ?? 0;
   return (
     <StickerCard className="p-5 sm:p-6">
       <div className="mb-4 flex items-center justify-between">
-        <span className="font-display text-lg text-ink">
-          Hand {s.handIndex} · {s.street}
-        </span>
+        <span className="font-display text-lg text-ink">Table</span>
         <div className="flex items-center gap-2">
           {s.seats.length > 2 && <Chip tone="neutral">{s.seats.length}-max</Chip>}
-          <Chip tone="won">pot {s.pot}</Chip>
+          {/* The pot and the street live on the felt now. Repeating them here made the reader
+              check two places for one number. */}
+          {toCallNow > 0 && <Chip tone="won">to call {toCallNow.toLocaleString()}</Chip>}
         </div>
       </div>
 

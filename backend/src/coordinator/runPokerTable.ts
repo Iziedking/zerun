@@ -305,6 +305,18 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
 // Every seat's hole cards are shown to spectators (it is AI, and it makes the table
 // watchable); a folded seat is dimmed, the acting seat is highlighted. Same payload
 // shape as the heads-up duel so one PokerTable component renders both.
+// Seat names by distance from the button, the way a poker player reads a table. Heads-up is
+// its own thing: the button IS the small blind, so there is no separate SB seat.
+//
+// Beyond six-max the middle seats have more names than we need, so anything further out than
+// UTG just reports UTG -- the table never seats more than MAX_SEATS anyway.
+const POSITIONS_FROM_BUTTON = ["BTN", "SB", "BB", "UTG", "HJ", "CO"];
+function positionName(seat: number, button: number, n: number): string {
+  if (n === 2) return seat === button ? "BTN" : "BB";
+  const offset = (seat - button + n) % n;
+  return POSITIONS_FROM_BUTTON[offset] ?? "UTG";
+}
+
 function tableSnapshot(
   t: MultiTable,
   players: TableEntry[],
@@ -314,6 +326,8 @@ function tableSnapshot(
   lastAction?: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null },
 ) {
   const streets = ["preflop", "flop", "turn", "river"];
+  // The highest bet anyone has made on this street; what everyone else has to match.
+  const highBet = Math.max(0, ...t.streetBet);
   const seats = players.map((p, s) => ({
     agentId: p.agentId,
     name: p.agentName,
@@ -322,6 +336,10 @@ function tableSnapshot(
     folded: Boolean(t.folded[s]),
     isTurn: !t.handOver && t.toAct === s,
     isHouse: p.isHouse,
+    bet: t.streetBet[s] ?? 0,
+    committed: t.committed[s] ?? 0,
+    toCall: Math.max(0, highBet - (t.streetBet[s] ?? 0)),
+    position: positionName(s, t.button, t.n),
   }));
   return {
     handIndex: handIndex + 1,
