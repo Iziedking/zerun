@@ -1,5 +1,5 @@
 import { config } from "../config/index.js";
-import { ensureReady, ensureLedger, listProviders } from "../compute/zgCompute.js";
+import { ensureReady, ensureLedger, listProviders, mainnetComputeEnabled } from "../compute/zgCompute.js";
 import { callModel, computeMode } from "../compute/client.js";
 import { computePlan, MAX_COMPUTE_LEVEL } from "../runners/computeLevels.js";
 
@@ -13,7 +13,14 @@ import { computePlan, MAX_COMPUTE_LEVEL } from "../runners/computeLevels.js";
 async function main() {
   const mode = computeMode();
   console.log(`compute mode: ${mode}`);
-  console.log(`rpc: ${config.chain.rpcUrl}  chainId: ${config.chain.chainId}`);
+  console.log(`testnet rpc: ${config.chain.rpcUrl}  chainId: ${config.chain.chainId}`);
+  if (mainnetComputeEnabled()) {
+    console.log(
+      `mainnet 0G Compute: ON (primary) — rpc: ${config.compute.mainnet.rpcUrl}  chainId: ${config.compute.mainnet.chainId || "?"}; testnet is the per-call fallback`,
+    );
+  } else {
+    console.log("mainnet 0G Compute: off (testnet only). Set COMPUTE_MAINNET_RPC_URL + a funded wallet to enable.");
+  }
 
   if (mode === "0g-compute") {
     console.log("funding ledger (this submits an on-chain transaction)...");

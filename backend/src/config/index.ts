@@ -42,6 +42,21 @@ export const config = {
     // Fallback path: the 0G Compute Router (OpenAI-compatible single endpoint).
     routerBaseUrl: process.env.COMPUTE_ROUTER_BASE_URL ?? "",
     routerApiKey: process.env.COMPUTE_ROUTER_API_KEY ?? "",
+    // Mainnet 0G Compute, paid with REAL 0G. Inference is decoupled from the contract
+    // chain: the arena's contracts stay on the testnet (config.chain), but when a mainnet
+    // compute RPC + a funded wallet are set here, every agent call goes to MAINNET first
+    // (its own broker, ledger, and provider catalog — the real models) and only falls back
+    // to the testnet compute path per-call if mainnet fails. Unset = testnet-only, the
+    // unchanged behavior. The wallet below must hold real mainnet 0G; it defaults to the
+    // deployer key (same address, funded on mainnet) but can be a dedicated key.
+    mainnet: {
+      rpcUrl: process.env.COMPUTE_MAINNET_RPC_URL ?? "",
+      chainId: Number(optional("COMPUTE_MAINNET_CHAIN_ID", "0")),
+      signerKey: process.env.COMPUTE_MAINNET_PRIVATE_KEY ?? process.env.DEPLOYER_PRIVATE_KEY ?? "",
+      ledgerOg: Number(optional("COMPUTE_MAINNET_LEDGER_OG", optional("COMPUTE_LEDGER_OG", "3"))),
+      perProviderOg: Number(optional("COMPUTE_MAINNET_PROVIDER_OG", optional("COMPUTE_PROVIDER_OG", "1"))),
+      pinnedProvider: process.env.COMPUTE_MAINNET_PROVIDER ?? "",
+    },
   },
   intel: {
     // Exa (exa.ai) search key. When set, high-Compute agents research a market
