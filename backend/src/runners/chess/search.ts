@@ -109,25 +109,39 @@ export interface TierEngine {
   candidates: number;
 }
 
+// Every rung must add a lever the rung below does not have, or the two are the same player.
+// Measured, not guessed, and it took three tries. Tiers 1 and 2 first shared a depth with no
+// quiescence, separated only by slack, and split 2-2-2. Giving tier 4 a third ply then collapsed
+// it onto tier 3, and tier 3 took a game off it. Slack alone does not separate two engines.
+//
+// So tier 5's lever is a slack of ZERO: it is offered only moves the engine scores identically
+// to its best. It still reasons on 0G over that choice — a real tie is a real judgment call —
+// but it cannot be handed a move that loses material. Every tier below it can.
+//
+// Tier 2 sits at 260 rather than 200 for the same reason: one extra ply of depth was not enough
+// to keep tier 3 clear of it, and widening the LOWER tier's rope is the safe correction. It
+// leaves every rung above untouched, where narrowing tier 3 would have collapsed it toward 4.
+//
 // Depths are set by MEASURED cost per ply, not by ambition. A ply must finish inside the
 // mainnet call interval (~1.5s) or the engine, not 0G, becomes what a chess game waits for.
 // `legalMoves` replays every move onto a fresh board to test the king, so it dominates every
 // node, and quiescence calls it once per capture node. Measured from an 8-ply opening:
 //
-//   tier 0 (d1)             9 ms      tier 3 (d3)            2023 ms
-//   tier 1 (d2)           130 ms      tier 4 (d2 + quiesce)   218 ms
-//   tier 2 (d2)           313 ms      tier 5 (d3 + q + chk)  1706 ms
+//   tier 0 (d1)                   9 ms      tier 3 (d3+q)             1428 ms
+//   tier 1 (d2)                 130 ms      tier 4 (d3+q+king)        ~1400 ms
+//   tier 2 (d2+q)               139 ms      tier 5 (d3+q+king+chk)    1706 ms
 //
-// Tier 4 is CHEAPER than tier 3 while being much stronger: quiescence at depth 2 costs less
-// than a raw depth-3 search, and tier 4's tighter slack prunes its own root harder. The
-// obvious table — depth 4 and 5 at the top — measured 43s and 133s per ply. Never shippable.
+// Note tier 2 costs LESS than a raw depth-3 search while playing far better: quiescence is the
+// cheapest strength in the table, and a tighter slack window also prunes that tier's own root
+// harder. The obvious table — depth 4 and 5 at the top — measured 43s and 133s per ply. It was
+// never shippable, and the number nobody had measured was the reason it looked reasonable.
 const TIERS: TierEngine[] = [
   { depth: 1, quiesce: false, extendChecks: false, endgameKing: false, slackCp: 400, candidates: 4 },
   { depth: 2, quiesce: false, extendChecks: false, endgameKing: false, slackCp: 300, candidates: 4 },
-  { depth: 2, quiesce: false, extendChecks: false, endgameKing: false, slackCp: 220, candidates: 3 },
-  { depth: 3, quiesce: false, extendChecks: false, endgameKing: false, slackCp: 150, candidates: 3 },
-  { depth: 2, quiesce: true, extendChecks: false, endgameKing: true, slackCp: 60, candidates: 3 },
-  { depth: 3, quiesce: true, extendChecks: true, endgameKing: true, slackCp: 25, candidates: 2 },
+  { depth: 2, quiesce: true, extendChecks: false, endgameKing: false, slackCp: 260, candidates: 3 },
+  { depth: 3, quiesce: true, extendChecks: false, endgameKing: false, slackCp: 120, candidates: 3 },
+  { depth: 3, quiesce: true, extendChecks: true, endgameKing: true, slackCp: 60, candidates: 3 },
+  { depth: 3, quiesce: true, extendChecks: true, endgameKing: true, slackCp: 0, candidates: 2 },
 ];
 
 export function engineForTier(tier: number): TierEngine {
