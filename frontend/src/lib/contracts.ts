@@ -50,3 +50,23 @@ export const contestEngineAbi = parseAbi([
   "error NotEntered()",
   "error AlreadyRefunded()",
 ]);
+
+// MemoryEscrow: an agent's non-custodial 0G balance for memory and intel.
+//
+// The operator holds every power that matters here. `withdraw` needs no permission from
+// the platform, and `setAllowance(id, 0)` revokes the coordinator's spending instantly
+// without moving a wei. The coordinator can only `charge` up to that allowance, and only
+// to a treasury address that was fixed when the contract was deployed.
+export const memoryEscrowAbi = parseAbi([
+  "function deposit(uint256 agentId) payable",
+  "function depositAndAllow(uint256 agentId) payable",
+  "function setAllowance(uint256 agentId, uint256 allowance)",
+  "function withdraw(uint256 agentId, uint256 amount)",
+  "function accountOf(uint256 agentId) view returns (uint256 balance, uint256 allowance, uint256 spent)",
+  "function spendable(uint256 agentId) view returns (uint256)",
+  "function treasury() view returns (address)",
+  "error NotAgentOwner(uint256 agentId, address caller)",
+  "error InsufficientBalance(uint256 agentId, uint256 requested, uint256 available)",
+  "error InsufficientAllowance(uint256 agentId, uint256 requested, uint256 available)",
+  "error ZeroAmount()",
+]);

@@ -12,6 +12,7 @@ import type { OperatorProfile } from "@/lib/types";
 import { InlineClaimButton } from "@/components/InlineClaimButton";
 import { RefundNudge } from "@/components/RefundNudge";
 import { MemoryPanel } from "@/components/MemoryPanel";
+import { AgentWalletPanel } from "@/components/AgentWalletPanel";
 import { ConnectX } from "@/components/ConnectX";
 import { SkinUpload } from "@/components/SkinUpload";
 import { DashboardAgentCard } from "@/components/DashboardAgentCard";
@@ -199,13 +200,19 @@ function ProfileBody({
         )}
       </section>
 
-      {/* What each agent has learned on 0G. Each panel self-hides until the agent has a
-          memory, so this stays empty for fresh rosters and appears as agents evolve. */}
+      {/* What each agent has learned on 0G, and the 0G it spends to use that memory in poker
+          and chess. Both panels self-hide until they have something to say, so this stays
+          empty for a fresh roster and fills in as agents evolve. The wallet panel only shows
+          to the owner, since only the owner can fund, revoke, or withdraw. */}
       {agents.length > 0 && (
         <section className="space-y-4">
           {agents.map((a) => (
             <MemoryPanel key={a.agent_id} agentId={a.agent_id} />
           ))}
+          {isMe &&
+            agents.map((a) => (
+              <AgentWalletPanel key={`w-${a.agent_id}`} agentId={a.agent_id} agentName={a.name} />
+            ))}
         </section>
       )}
 

@@ -14,6 +14,8 @@ import type {
   OperatorProfile,
   PokerLadderRow,
   AgentMemoryResponse,
+  AgentWallet,
+  MemoryKind,
   XIdentity,
   RecentFeedItem,
   Standing,
@@ -83,7 +85,9 @@ export const api = {
     req<{ season: string; ladder: PokerLadderRow[] }>(
       `/api/poker/ladder${season ? `?season=${encodeURIComponent(season)}` : ""}`,
     ),
-  agentMemory: (agentId: number) => req<AgentMemoryResponse>(`/api/agents/${agentId}/memory`),
+  agentMemory: (agentId: number, kind: MemoryKind = "general") =>
+    req<AgentMemoryResponse>(`/api/agents/${agentId}/memory?kind=${kind}`),
+  agentWallet: (agentId: number) => req<AgentWallet>(`/api/agents/${agentId}/wallet`),
 
   // X (Twitter) connect: status, start (returns the authorize URL), callback (binds the
   // identity), and the public read of a wallet's linked handle for the verified badge.

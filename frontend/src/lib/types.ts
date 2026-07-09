@@ -10,6 +10,8 @@ export interface Deployment {
     prizeEscrow: Address;
     agentRegistry: Address;
     contestEngine: Address;
+    // null until the memory market is deployed.
+    memoryEscrow?: Address | null;
   };
 }
 
@@ -181,9 +183,30 @@ export interface AgentMemory {
   updatedAt: string | null;
 }
 
+// Which memory: "general" is Solver + Analyst (free); poker and chess are paid.
+export type MemoryKind = "general" | "poker" | "chess";
+
 export interface AgentMemoryResponse {
   enabled: boolean;
+  kind: MemoryKind;
+  paid: boolean;
   memory: AgentMemory | null;
+}
+
+// An agent's address and its non-custodial memory balance. The address is identity, not
+// custody: it never holds value, and the backend derives it from a public key it cannot
+// sign with. The 0G lives in MemoryEscrow, where only the owner can withdraw.
+export interface AgentWallet {
+  agentId: number;
+  address: string | null;
+  escrow: string | null;
+  market: boolean; // false when MemoryEscrow is not deployed yet
+  pricePerCallWei: string;
+  callsRemaining: number;
+  balanceWei: string;
+  allowanceWei: string;
+  spentWei: string;
+  unsettledWei: string;
 }
 
 // A verified X (Twitter) identity linked to an operator wallet, for the profile badge.
