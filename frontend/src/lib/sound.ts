@@ -49,6 +49,59 @@ function tones(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Sample layer
+// ---------------------------------------------------------------------------
+//
+// The synthesized knocks below are the FALLBACK, and they always work. Drop a real recording
+// at the paths in CHESS_SFX and it is used instead, with no code change. A missing file must
+// never produce silence: a chess tournament with no move sound is worse than a synthetic one.
+//
+// Files are optional. Nothing is fetched until the first time a sound is asked for.
+
+export const CHESS_SFX = {
+  move: "/audio/chess/move.mp3",
+  capture: "/audio/chess/capture.mp3",
+  gameEnd: "/audio/chess/game-end.mp3",
+} as const;
+
+type SampleState = "unknown" | "ready" | "missing";
+const samples = new Map<string, { el: HTMLAudioElement; state: SampleState }>();
+
+function sample(url: string): { el: HTMLAudioElement; state: SampleState } | null {
+  if (typeof window === "undefined") return null;
+  let s = samples.get(url);
+  if (!s) {
+    const el = new Audio(url);
+    el.preload = "auto";
+    s = { el, state: "unknown" };
+    el.addEventListener("canplaythrough", () => (s!.state = "ready"), { once: true });
+    el.addEventListener("error", () => (s!.state = "missing"), { once: true });
+    samples.set(url, s);
+  }
+  return s;
+}
+
+/** Warm the cache so the very first move is not the one that discovers the file is missing. */
+export function preloadChessSfx(): void {
+  for (const url of Object.values(CHESS_SFX)) sample(url);
+}
+
+/** Play a sample if it is loaded. Returns false when it is absent, so a caller can synthesize. */
+function playSample(url: string, volume = 0.5): boolean {
+  const s = sample(url);
+  if (!s || s.state !== "ready") return false;
+  try {
+    // Clone so overlapping moves do not cut each other off.
+    const node = s.el.cloneNode(true) as HTMLAudioElement;
+    node.volume = volume;
+    void node.play().catch(() => {});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // A short burst of filtered noise. Oscillators can only sing; a chess piece meeting a board
 // is a transient, and no pure tone will ever sound like wood. Band-passing white noise gives
 // the knock its body, and the tight envelope gives it the click.
@@ -99,6 +152,9 @@ function knock(opts: { t?: number; freq: number; q?: number; dur?: number; gain?
  * Both are brief: a tournament plays a few hundred of these and it must never become nagging.
  */
 export function playChessMove(capture = false): void {
+  // A real recording if one was dropped in; the synth otherwise.
+  if (playSample(capture ? CHESS_SFX.capture : CHESS_SFX.move, capture ? 0.55 : 0.42)) return;
+
   if (!capture) {
     knock({ freq: 1500, q: 3, dur: 0.04, gain: 0.075 });
     tones([{ f: 190, t: 0, dur: 0.06, type: "sine", gain: 0.05 }]);
@@ -113,6 +169,8 @@ export function playChessMove(capture = false): void {
 
 /** Checkmate, or a game decided on the clock. A short, settled two-note cadence. */
 export function playChessGameEnd(): void {
+  if (playSample(CHESS_SFX.gameEnd, 0.5)) return;
+
   knock({ freq: 900, q: 2, dur: 0.07, gain: 0.09 });
   tones([
     { f: 261.63, t: 0.02, dur: 0.28, type: "sine", gain: 0.1 }, // C4

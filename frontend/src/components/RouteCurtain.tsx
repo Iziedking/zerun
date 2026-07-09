@@ -7,7 +7,7 @@ import { ZerunLoader } from "./ZerunLoader";
 // The loading curtain, twice over.
 //
 //   1. FIRST LOAD: the splash. The bouncing Z, the wordmark, and "Built on 0G" with the 0G
-//      mark. Held for SPLASH_MS so the brand lands before the arena does.
+//      mark. Held 7s the first time this browser ever opens Zerun, 3s on every load after.
 //   2. EVERY ROUTE AFTER: the same curtain, without the 0G credit — repeating the credit on
 //      each click turns a statement into wallpaper. This one exists purely for feel: the app
 //      is not fetching anything behind it, so the wait is real and it is deliberate.
@@ -15,15 +15,33 @@ import { ZerunLoader } from "./ZerunLoader";
 // It is skipped entirely for `prefers-reduced-motion`, and on back/forward navigation, where
 // a person expects the page they just left to come straight back rather than a loading screen.
 
-// The first load is the brand moment: the mark bounces, the bar fills, and "Built on 0G"
-// sits under it long enough to be read rather than glimpsed.
-export const SPLASH_MS = 7000;
+// The FIRST time anyone opens Zerun: the brand moment. The mark bounces, the bar fills, and
+// "Built on 0G" sits under it long enough to be read rather than glimpsed.
+export const SPLASH_FIRST_MS = 7000;
+
+// Every load after that, including a plain reload. The same splash, but a returning visitor
+// has already read the credit and does not need seven seconds of it.
+export const SPLASH_RETURN_MS = 3000;
 
 // A deliberate pause on every route after the first. Arena and Leaderboard already fetch in
-// well under this, so the user is waiting on the animation and nothing else. Three seconds
-// makes a click feel like a level loading rather than a page swapping; it is also long enough
-// that a regular visitor will feel it on the thirtieth click. Lower it here if that trade sours.
-export const ROUTE_MS = 3000;
+// well under this, so the user is waiting on the animation and nothing else.
+export const ROUTE_MS = 2000;
+
+// Remembers that this browser has seen the long splash. localStorage rather than session:
+// a reload is not a first visit, and neither is coming back tomorrow.
+const SEEN_KEY = "zerun:splash:seen";
+
+function firstEverVisit(): boolean {
+  try {
+    if (localStorage.getItem(SEEN_KEY) === "1") return false;
+    localStorage.setItem(SEEN_KEY, "1");
+    return true;
+  } catch {
+    // Private mode, or storage denied. Treat it as a return visit: a stranger who cannot be
+    // remembered should not be held for seven seconds on every single load.
+    return false;
+  }
+}
 
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -35,6 +53,9 @@ export function RouteCurtain() {
 
   // Start shown so the splash covers the very first paint rather than flashing in after it.
   const [phase, setPhase] = useState<"splash" | "route" | "idle">("splash");
+  // How long this particular splash is held. Resolved on mount, because localStorage is not
+  // readable during the server render.
+  const [splashMs, setSplashMs] = useState(SPLASH_RETURN_MS);
   const firstPath = useRef<string | null>(null);
   const popped = useRef(false);
 
@@ -54,7 +75,9 @@ export function RouteCurtain() {
       setPhase("idle");
       return;
     }
-    const t = setTimeout(() => setPhase("idle"), SPLASH_MS);
+    const ms = firstEverVisit() ? SPLASH_FIRST_MS : SPLASH_RETURN_MS;
+    setSplashMs(ms);
+    const t = setTimeout(() => setPhase("idle"), ms);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -78,5 +101,5 @@ export function RouteCurtain() {
 
   if (phase === "idle") return null;
   const splash = phase === "splash";
-  return <ZerunLoader built={splash} durationMs={splash ? SPLASH_MS : ROUTE_MS} />;
+  return <ZerunLoader built={splash} durationMs={splash ? splashMs : ROUTE_MS} />;
 }

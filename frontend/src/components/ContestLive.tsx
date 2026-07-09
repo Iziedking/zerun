@@ -17,7 +17,7 @@ import type {
 } from "@/lib/types";
 import { kindMeta } from "@/lib/kind";
 import { useMusic } from "@/lib/music";
-import { playActionSound, playChessMove, playChessGameEnd } from "@/lib/sound";
+import { playActionSound, playChessMove, playChessGameEnd, preloadChessSfx } from "@/lib/sound";
 import { SolveCard, type SolveRow } from "./SolveCard";
 import { PokerTable, X402Feed } from "./PokerTable";
 import { ChessBoard } from "./ChessBoard";
@@ -79,6 +79,12 @@ export function ContestLive({
   const [payments, setPayments] = useState<WsX402Payload[]>([]);
   const [winnerOverlay, setWinnerOverlay] = useState<{ winner: Standing; prize: string | null } | null>(null);
   const seqRef = useRef(0);
+
+  // Warm the chess samples on mount, so the first move is not the one that discovers a file is
+  // missing and falls back mid-game.
+  useEffect(() => {
+    if (kind === "chess") preloadChessSfx();
+  }, [kind]);
 
   // Sound: gated by the global mute (the music toggle also mutes effects). Refs let the
   // stable message handler read the latest values without re-subscribing the socket.

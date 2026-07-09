@@ -119,19 +119,48 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [announcePlay]);
 
-  // Sound is on by default, so start at the first user gesture (autoplay-safe).
+  // Sound is on by default. Browsers block audible autoplay until the page has been
+  // interacted with, so: try immediately (Chrome allows it once a visitor has a history of
+  // playing media on the origin), and otherwise wait for the first gesture.
+  //
+  // Two bugs lived here. The listeners were registered `once`, so if the very first gesture
+  // arrived before the <audio> could play — or play() was rejected — the handler was gone and
+  // the theme never started for the rest of the session. And a touch that never becomes a
+  // pointerdown (a scroll flick) left it silent. Keep listening until a play actually resolves.
   useEffect(() => {
+    let done = false;
+
     const start = () => {
+      if (done) return;
       const a = audioRef.current;
-      if (a && a.paused && !mutedRef.current) a.play().then(() => announcePlay()).catch(() => {});
+      if (!a || !a.paused || mutedRef.current) return;
+      a.play()
+        .then(() => {
+          done = true;
+          detach();
+          announcePlay();
+        })
+        .catch(() => {
+          /* still blocked: leave the listeners attached and wait for the next gesture */
+        });
     };
-    window.addEventListener("pointerdown", start, { once: true });
-    window.addEventListener("keydown", start, { once: true });
-    return () => {
+
+    const detach = () => {
       window.removeEventListener("pointerdown", start);
+      window.removeEventListener("touchstart", start);
       window.removeEventListener("keydown", start);
+      window.removeEventListener("click", start);
     };
-  }, []);
+
+    // The optimistic attempt. Silently rejected on a first-ever visit; that is fine.
+    start();
+
+    window.addEventListener("pointerdown", start);
+    window.addEventListener("touchstart", start, { passive: true });
+    window.addEventListener("keydown", start);
+    window.addEventListener("click", start);
+    return detach;
+  }, [announcePlay]);
 
   const play = useCallback(() => {
     const a = audioRef.current;
