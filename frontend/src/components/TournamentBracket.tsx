@@ -120,7 +120,7 @@ function Lobby({ snapshot, isChallenge = false }: { snapshot: WsBracketSnapshot;
           </Chip>
         </div>
         <span className="font-body text-[13px] font-extrabold text-ink-2">
-          {need === 0 ? "Bracket full — starting…" : `Auto-starts the moment all ${snapshot.capacity} seats fill`}
+          {need === 0 ? "Bracket full, starting…" : `Auto-starts the moment all ${snapshot.capacity} seats fill`}
         </span>
       </div>
 
@@ -132,7 +132,7 @@ function Lobby({ snapshot, isChallenge = false }: { snapshot: WsBracketSnapshot;
           {isChallenge ? (
             <>
               This is an entry-fee challenge, so the pot is the entrants&apos; fees and{" "}
-              <strong className="text-ink">house agents never join</strong> — they cannot pay in.
+              <strong className="text-ink">house agents never join</strong>, since they cannot pay in.
               At the deadline it plays with whoever turned up: two entrants play a duel, three or
               more play a bracket. With only one entrant it cancels and every fee is refunded.
             </>

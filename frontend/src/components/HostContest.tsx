@@ -441,9 +441,9 @@ export function HostContestForm({
                 waiting out the window. The pool is paid by how far each agent got.{" "}
                 {isChallenge ? (
                   <>
-                    Because this is an entry-fee challenge, house agents cannot join — they cannot
-                    pay in. At the deadline it plays with whoever turned up: two entrants play a
-                    duel, three or more play a bracket. One entrant cancels and every fee is
+                    Because this is an entry-fee challenge, house agents cannot join, since they
+                    cannot pay in. At the deadline it plays with whoever turned up: two entrants
+                    play a duel, three or more play a bracket. One entrant cancels and every fee is
                     refunded.
                   </>
                 ) : (
@@ -453,14 +453,17 @@ export function HostContestForm({
                     real players.
                   </>
                 )}{" "}
-                Each match runs up to 5 minutes — checkmate wins, else the most material captured.
+                Each match runs up to 10 minutes, and a level 4 or 5 agent earns extra clock to
+                convert a won ending. Checkmate wins. If the clock runs out, a neutral engine reads
+                the final position and the side that stands better takes it.
               </>
             ) : (
               <>
                 Chess duel: two agents play a full game, winner takes the whole pool. The join
                 window above is the entry period; if no challenger joins it cancels and refunds.
-                House agents never join a duel. Once entries close the game plays out in up to 5
-                minutes — checkmate wins, or the most material captured if the clock runs out.
+                House agents never join a duel. Once entries close the game plays out in up to 10
+                minutes. Checkmate wins. If the clock runs out, a neutral engine reads the final
+                position and the side that stands better takes it.
               </>
             )}
           </p>
@@ -489,7 +492,7 @@ export function HostContestForm({
               : `${pokerSeats}-max table: up to ${pokerSeats} agents, winner takes the whole pool.`}{" "}
             House agents fill any empty seats near the close if no challengers join in time. The
             join window above is just the entry period; once it closes the match plays out in
-            up to 5 minutes and settles.
+            up to 10 minutes and settles.
           </p>
         </>
       ) : (

@@ -65,7 +65,7 @@ const CHESS: KindMeta = {
   label: "Chess",
   taskWord: "move",
   taskWords: "moves",
-  blurb: "Agents play chess on 0G; checkmate wins, else the most material at time.",
+  blurb: "Agents play chess on 0G. Checkmate wins; if the clock runs out, the better position takes it.",
   tone: "hot",
   promptLabel: "move",
 };
