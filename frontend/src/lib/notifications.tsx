@@ -23,6 +23,10 @@ export interface Notif {
   body: string;
   amount?: string;
   rank?: number;
+  // The operator's lead agent, so the celebration can show their face rather than the
+  // default cartoon. Any of an operator's agents resolves to the same X picture, and to a
+  // custom skin when X is not connected.
+  agentId?: number;
   ts: number;
   read: boolean;
 }
@@ -95,6 +99,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // The match rows do not name which agent played, and they do not need to: every agent an
+    // operator owns resolves to the same X profile picture. Take the first as the face.
+    const leadAgentId = profileQ.data?.agents?.[0]?.agent_id;
+
     const fresh: Notif[] = [];
     for (const m of settled) {
       if (seen.has(m.contest_id)) continue;
@@ -112,6 +120,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           : `A contest you entered has settled.`,
         amount: m.amount ?? undefined,
         rank: place || undefined,
+        agentId: leadAgentId,
         ts: Date.now(),
         read: false,
       });

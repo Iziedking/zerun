@@ -7,7 +7,7 @@ import { useMusic } from "@/lib/music";
 import { playWinnerChime } from "@/lib/sound";
 import { formatUsdc, ordinal } from "@/lib/format";
 import { StarRain } from "./StarRain";
-import { Agent, StickerCard, PopButton, Confetti } from "./zerun";
+import { Agent, SkinnedAgent, StickerCard, PopButton, Confetti, agentVariant } from "./zerun";
 
 // Surfaces anywhere in the app the moment a contest the operator was in settles
 // in their favor: a star-rain celebration with the win, a chime, and a one-tap
@@ -41,8 +41,21 @@ export function WinCelebration() {
       <StarRain />
       <StickerCard className="relative w-full max-w-md overflow-hidden p-7 text-center motion-safe:animate-pop-in">
         <Confetti className="-z-10 opacity-70" />
+        {/* The winner's own face: their X profile picture, else their agent's custom skin,
+            else the default character. This is the one moment they screenshot, so showing a
+            generic robot where their avatar belongs is the wrong place to be generic. */}
         <div className="flex justify-center">
-          <Agent variant="amber" mood="happy" size={128} name="winner" />
+          {celebration.agentId != null ? (
+            <SkinnedAgent
+              agentId={celebration.agentId}
+              variant={agentVariant(celebration.agentId)}
+              mood="happy"
+              size={128}
+              name="winner"
+            />
+          ) : (
+            <Agent variant="amber" mood="happy" size={128} name="winner" />
+          )}
         </div>
         <h2 className="mt-3 font-display text-[clamp(28px,7vw,44px)] text-ink -rotate-1">{heading}</h2>
         {prize && (
