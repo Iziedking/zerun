@@ -1,5 +1,11 @@
 import { shuffle } from "../runners/poker/cards.js";
 import { startHand, legalActions, applyAction, viewFor, START_STACK, type Seat } from "../runners/poker/table.js";
+import {
+  startHand as startMultiHand,
+  legalActions as multiLegal,
+  applyAction as applyMulti,
+  viewFor as multiView,
+} from "../runners/poker/multi.js";
 import { decideStrategy } from "../runners/poker/strategy.js";
 
 // Does the Compute ladder actually make a poker agent stronger?
@@ -17,6 +23,7 @@ import { decideStrategy } from "../runners/poker/strategy.js";
 //   HANDS=2000 npx tsx src/scripts/pokerLadderCheck.ts
 
 const HANDS = Number(process.env.HANDS ?? "1200");
+const SEED_OFFSET = Number(process.env.SEED ?? "0");
 const TIERS = [0, 1, 2, 3, 4, 5];
 // Hands are capped so a pathological line cannot loop forever.
 const MAX_ACTIONS = 400;
@@ -59,7 +66,118 @@ function match(tierA: number, tierB: number): number {
   return (net / HANDS) * 100;
 }
 
+// ---------------------------------------------------------------------------
+// Six-handed. The heads-up grid says nothing about a full table: multiway, equity is
+// judged against everyone still live, so an aggressive tier that prints heads-up can
+// bleed chips stacking off into a five-player field. This mirrors the real table runner:
+// a CASH GAME (stacks reset to START_STACK each hand, chip profit accumulates) with the
+// button rotating, so over any multiple of six hands every tier sits in every position
+// an equal number of times and no seat can flatter its occupant.
+// ---------------------------------------------------------------------------
+
+function tableSession(tiers: number[], hands: number, seedOffset = SEED_OFFSET): number[] {
+  const n = tiers.length;
+  const net = new Array<number>(n).fill(0);
+  let button = 0;
+
+  for (let handIndex = 0; handIndex < hands; handIndex++) {
+    // SEED shifts the whole deck sequence, so a second run is an independent sample rather
+    // than a longer look at the same cards. Replication beats one long run for spotting a
+    // result that only one deal order supports.
+    const h = handIndex + seedOffset;
+    const seedHex = `0x${(h * 2654435761 + 12345).toString(16).padStart(16, "0")}` as `0x${string}`;
+    const t = startMultiHand(new Array(n).fill(START_STACK), button, shuffle(seedHex));
+    const decisionSeq = new Array<number>(n).fill(0);
+
+    let guard = 0;
+    while (!t.handOver && guard++ < 2000) {
+      const seat = t.toAct;
+      const view = multiView(t);
+      const legal = multiLegal(t);
+      const dseq = decisionSeq[seat]!;
+      decisionSeq[seat] = dseq + 1;
+
+      const { action } = decideStrategy({
+        hole: t.holes[seat]!,
+        board: t.board,
+        legal,
+        pot: view.pot,
+        toCall: view.legal.callAmount,
+        street: t.street,
+        inPosition: seat === t.button,
+        tier: tiers[seat]!,
+        // Exactly what runPokerTable passes: equity against everyone still in the hand.
+        opponents: Math.max(1, t.folded.filter((f) => !f).length - 1),
+        seed: (handIndex * 1_000_003 + seat * 17 + dseq) >>> 0,
+      });
+      applyMulti(t, action);
+    }
+
+    for (let s = 0; s < n; s++) net[s] = net[s]! + (t.stacks[s]! - START_STACK);
+    button = (button + 1) % n;
+  }
+  return net;
+}
+
+function sixHanded(hands: number, reps: number) {
+  const tiers = [0, 1, 2, 3, 4, 5];
+  console.log(`\nsix-handed table: one agent per tier, cash game, button rotating`);
+  console.log(`${reps} independent session(s) of ${hands} hands (a multiple of 6 keeps positions equal)\n`);
+
+  // Independent sessions, not one long one. A single six-handed session at a few thousand
+  // hands does NOT resolve the ordering: L4 and L5 trade first place between deck orders.
+  // Reporting the spread across sessions is the difference between a measurement and a
+  // number that happens to be true of one shuffle.
+  const samples: number[][] = [];
+  for (let r = 0; r < reps; r++) {
+    const net = tableSession(tiers, hands, r * 1_000_003);
+    samples.push(net.map((c) => (c / hands) * 100));
+    process.stdout.write(`  session ${r + 1}/${reps} done\n`);
+  }
+
+  const stat = (i: number) => {
+    const xs = samples.map((s) => s[i]!);
+    const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const sd = xs.length > 1 ? Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (xs.length - 1)) : NaN;
+    const se = xs.length > 1 ? sd / Math.sqrt(xs.length) : NaN;
+    return { mean, se, lo: Math.min(...xs), hi: Math.max(...xs) };
+  };
+
+  console.log(`\n  tier   chips/100      +/- se        min        max`);
+  const ranked = tiers.map((t) => ({ t, ...stat(t) })).sort((a, b) => b.mean - a.mean);
+  for (const r of ranked) {
+    const se = Number.isNaN(r.se) ? "     n/a" : r.se.toFixed(1).padStart(8);
+    console.log(`  L${r.t}   ${r.mean.toFixed(1).padStart(10)}  ${se}  ${r.lo.toFixed(1).padStart(9)}  ${r.hi.toFixed(1).padStart(9)}`);
+  }
+
+  console.log(`\nordering check (is each tier's mean above every lower tier's?):`);
+  let inversions = 0;
+  for (let a = 0; a < tiers.length; a++) {
+    for (let b = 0; b < a; b++) {
+      const A = stat(a);
+      const B = stat(b);
+      if (A.mean <= B.mean) {
+        // Only call it a finding if the gap clears the noise of both estimates.
+        const noisy = Number.isNaN(A.se) || B.mean - A.mean < 2 * (A.se + B.se);
+        console.log(
+          `  L${a} earns less than L${b}: ${A.mean.toFixed(1)} vs ${B.mean.toFixed(1)}` +
+            (noisy ? "   (within noise; more sessions needed)" : "   <-- outside noise"),
+        );
+        inversions += 1;
+      }
+    }
+  }
+  if (inversions === 0) console.log(`  ok — mean chip rate rises monotonically with tier`);
+  if (reps < 5) console.log(`\n  ${reps} session(s) is too few to trust the ordering. Try REPS=8.`);
+}
+
 function main() {
+  // TABLE=1 runs the six-handed check instead of the heads-up grid.
+  if (process.env.TABLE === "1") {
+    sixHanded(Math.max(6, Math.round(HANDS / 6) * 6), Number(process.env.REPS ?? "1"));
+    return;
+  }
+
   // PAIR=a,b runs one pairing at high volume, to check a suspicious cell is not a seed artefact.
   const pair = process.env.PAIR?.split(",").map(Number);
   if (pair && pair.length === 2) {
