@@ -101,6 +101,7 @@ async function decideMove(
       maxTokens: 48,
       temperature: 0.3,
       models,
+      tier, // only the premium tiers reason on mainnet
     });
     const { pick, matched } = parseChessChoice(res.text, candidates);
     const reason = matched ? (res.text.split("\n").slice(1).join(" ").trim() || `plays ${pick.uci}`) : `plays ${pick.uci}`;

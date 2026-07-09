@@ -62,36 +62,38 @@ const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
 //   glm-*              the matcher does substring matching, so "glm-5" also swallows
 //                      "glm-5.1", "glm-5.2", and "GLM-5-FP8".
 //
-// The premium tiers were MEASURED on mainnet and both candidates failed:
+// ONLY the premium tiers reach mainnet at all (see `MAINNET_MIN_TIER` in zgCompute): levels
+// 0-3 never leave testnet, so no mainnet model is listed for them and a house agent never
+// spends real 0G. Levels 4-5 lead with a mainnet model and fall back to the testnet catalog
+// on any hiccup, which is why each still lists its testnet models after.
+//
+// Both obvious premium candidates were MEASURED on mainnet and both failed:
 //
 //   deepseek-v4-pro  solver PASS 5.7s | chess EMPTY ANSWER | forecast EMPTY ANSWER
 //   qwen3.7-max      solver PASS 10.9s | chess PASS 10.4s  | forecast ABORTED (>30s)
 //
-// `deepseek-v4-pro` returns an empty completion on anything but a generous budget: it is a
-// reasoning model whose hidden tokens eat the allowance, and chess only grants 48. And
+// `deepseek-v4-pro` returns an empty completion unless the budget is generous: it is a
+// reasoning model whose hidden tokens eat the allowance, and chess grants only 48. And
 // `qwen3.7-max` spends 10.4s per chess move, so against the 300s match cap a game reaches
-// roughly 28 plies before the clock decides it — and its forecast overruns the 30s
+// roughly 28 plies before the clock decides it, and its forecast overruns the 30s
 // premium-attempt timeout.
 //
-// Routing a tier at either would be worse than not routing it at all: `resolveCandidates`
-// tries the preferred model FIRST, so every one of a few hundred chess moves would burn a
-// doomed premium attempt before falling back. So on mainnet every tier currently reasons on
-// the base model, and the Compute ladder is carried by self-consistency passes and the token
-// budget alone. Testnet keeps its premium models, which do work.
-//
-// To restore a mainnet model gradient, measure candidates with `models:bakeoff` — but note
-// each new provider now locks 2 0G of ledger (1 0G reserve + 1 0G fee headroom), so explore
-// deliberately. Untried and plausible: openai/gpt-5.4-mini (0.009 out/1k), MiniMax-M3, glm-5.2.
-const MODEL_BASE_MAINNET = "deepseek-v4-flash"; // every tier, on mainnet: terse, fast, correct
+// So the premium tiers lead with `deepseek-v4-flash`, the one mainnet model verified on all
+// three task shapes: terse, correct, ~3s. It is a real gradient — a different model on a
+// different network from the base tiers — just not the one we wanted. To do better, measure
+// candidates with `models:bakeoff`; each new provider locks 2 0G of ledger (1 0G reserve +
+// 1 0G fee headroom), so explore deliberately. Untried: openai/gpt-5.4-mini, MiniMax-M3, glm-5.2.
 const MODEL_PRO_MAINNET = "deepseek-v4-flash"; // level 4  (was deepseek-v4-pro: empty answers)
 const MODEL_MAX_MAINNET = "deepseek-v4-flash"; // level 5  (was qwen3.7-max: too slow for chess)
 
 // Higher tiers keep their bigger compute (more self-consistency passes and a
 // bigger token budget) AND route to a stronger model, so the advantages compound:
 // more 0G invested buys both more thinking and a better brain.
-const BASE_MODELS = [MODEL_BASE_MAINNET, MODEL_BASE];
+// Levels 0-3 are testnet-only, so they list testnet models exclusively.
+const BASE_MODELS = [MODEL_BASE];
 
-const LEVELS: InferencePlan[] = [
+// `level` is filled in by computePlan, which is the only way a plan is ever handed out.
+const LEVELS: Omit<InferencePlan, "level">[] = [
   { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "", intel: 0, models: BASE_MODELS },
   { maxTokens: 440, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step.", intel: 0, models: BASE_MODELS },
   { maxTokens: 620, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer.", intel: 0, models: BASE_MODELS },
@@ -104,9 +106,11 @@ export function computeLevelClamp(level: number): number {
   return Math.max(0, Math.min(MAX_COMPUTE_LEVEL, Math.floor(level || 0)));
 }
 
-// The inference plan for a compute level.
+// The inference plan for a compute level. `level` rides along on the plan because it
+// selects the network as well as the model: only the premium tiers reason on 0G mainnet.
 export function computePlan(level: number): InferencePlan {
-  return LEVELS[computeLevelClamp(level)]!;
+  const l = computeLevelClamp(level);
+  return { ...LEVELS[l]!, level: l };
 }
 
 // 0G (in wei, 18 decimals) needed to reach the next level from `current`, or null

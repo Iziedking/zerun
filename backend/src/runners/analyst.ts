@@ -95,6 +95,7 @@ export async function predictMarket(market: Market, plan: InferencePlan): Promis
           maxTokens: plan.maxTokens,
           temperature: plan.temperature,
           models: plan.models,
+          tier: plan.level,
         });
         latencyMs += res.latencyMs;
         last = res;

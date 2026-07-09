@@ -73,6 +73,7 @@ export async function decideBuyDossier(params: {
       maxTokens: 80,
       temperature: 0.3,
       models: plan.models,
+      tier: params.tierModelLevel,
     });
     const { buy, reason } = parseVerdict(res.text ?? "");
     return { buy, reason, model: res.model, chatID: res.chatID };

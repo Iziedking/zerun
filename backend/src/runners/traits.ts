@@ -37,6 +37,10 @@ export function rollTraits(agentId: number): Traits {
 }
 
 export interface InferencePlan {
+  // The Compute level this plan came from. It decides which NETWORK serves the call, not
+  // only which model: the premium tiers reason on 0G mainnet (real 0G, the real catalog)
+  // and the rest stay on testnet. See `mainnetMinTier` in the compute layer.
+  level: number;
   maxTokens: number;
   temperature: number;
   samples: number; // self-consistency passes; the majority answer wins
@@ -86,5 +90,5 @@ export function traitInferencePlan(traits: Traits, tier: number): InferencePlan 
         ? " Check your work before giving the final answer."
         : "";
 
-  return { maxTokens, temperature, samples, retries, hint };
+  return { level: Math.max(0, Math.min(5, Math.floor(tier))), maxTokens, temperature, samples, retries, hint };
 }

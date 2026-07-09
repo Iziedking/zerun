@@ -20,6 +20,11 @@ export interface CallParams {
   // Tier's ordered model preference for 0G Compute. Ignored by the router/offline
   // paths, which have a single model.
   models?: string[];
+  // The agent's Compute level. Decides the NETWORK as well as the model: only the premium
+  // tiers reason on 0G mainnet, so a level-0 house agent never spends real 0G. Omit it and
+  // the call stays on testnet, which is the safe default for anything not tied to an agent
+  // (the memory summarizer, diagnostics).
+  tier?: number;
 }
 
 export interface CallResult {

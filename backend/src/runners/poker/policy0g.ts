@@ -94,6 +94,7 @@ export async function author0gPolicy(
       maxTokens: 120,
       temperature: 0.3,
       models: plan.models,
+      tier,
     });
   } catch {
     memory.refund(); // paid for a call that never landed

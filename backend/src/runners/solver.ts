@@ -80,6 +80,7 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
           maxTokens: plan.maxTokens,
           temperature: plan.temperature,
           models: plan.models,
+          tier: plan.level,
         },
         Math.max(1, plan.retries),
       );

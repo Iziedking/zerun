@@ -810,6 +810,22 @@ export async function listProviders(): Promise<
   return networks()[0]!.listProviders();
 }
 
+/**
+ * The catalog of one specific network, or [] when it is not configured.
+ *
+ * A tier resolves its model against the network that actually serves it, and those catalogs
+ * share no model names. Resolving a testnet-only tier against the mainnet catalog reports
+ * "no match, falling back", which is nonsense — that tier never asks mainnet anything.
+ */
+export async function listProvidersOn(
+  label: "mainnet" | "testnet",
+): Promise<
+  { provider: string; model: string; serviceType: string; verifiability: string; healthy: boolean; teeTarget: string }[]
+> {
+  const net = networks().find((n) => n.label === label);
+  return net ? net.listProviders() : [];
+}
+
 // Log tier -> model routing for every configured network at startup.
 export async function logTierRouting(tierModels: string[][]): Promise<void> {
   for (const n of networks()) await n.logTierRouting(tierModels);
