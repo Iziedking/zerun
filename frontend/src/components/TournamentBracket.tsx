@@ -1,7 +1,7 @@
 "use client";
 
 import type { WsBracketSnapshot, WsBracketSeat, WsBracketMatch } from "@/lib/types";
-import { agentVariant, Chip, SkinnedAgent, StickerCard, cx } from "./zerun";
+import { agentVariant, Chip, Crown, SkinnedAgent, StickerCard, cx } from "./zerun";
 
 // The live chess tournament view: a single-elimination bracket rendered as rounds of
 // match cards, with the current match pulsing, winners promoted, and the champion and
@@ -60,7 +60,7 @@ function SeatRow({
         {name}
       </span>
       {seat && <span className="shrink-0 font-mono text-[10px] text-ink-3">#{seat.seed}</span>}
-      {isWinner && decided && <span className="shrink-0 text-[12px]" aria-hidden>👑</span>}
+      {isWinner && decided && <Crown size={13} />}
     </div>
   );
 }
@@ -213,8 +213,9 @@ export function TournamentBracket({
           </span>
         )}
         {complete && champSeat && (
-          <span className="font-body text-[13px] font-extrabold text-ink">
-            👑 {champSeat.agentName} takes the crown
+          <span className="flex items-center gap-1.5 font-body text-[13px] font-extrabold text-ink">
+            <Crown size={15} />
+            {champSeat.agentName} takes the crown
           </span>
         )}
       </div>
@@ -254,7 +255,7 @@ export function TournamentBracket({
                     name={champSeat.agentName}
                   />
                   <span className="text-center font-display text-[14px] text-ink">{champSeat.agentName}</span>
-                  <span className="text-[16px]" aria-hidden>👑</span>
+                  <Crown size={18} title={`${champSeat.agentName} is the champion`} />
                 </>
               ) : (
                 <span className="py-6 text-center font-body text-[12px] font-extrabold uppercase tracking-[0.04em] text-ink-3">
