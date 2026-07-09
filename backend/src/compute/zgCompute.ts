@@ -107,14 +107,22 @@ export interface ComputeAnswer {
 // Shared, network-agnostic helpers (rate limiting, timeouts, the raw HTTP call).
 // ---------------------------------------------------------------------------
 
-// The broker signs single-use headers per request, and those nonces collide if two
-// requests overlap. Run the per-request work one at a time so concurrent agents queue
-// instead of stepping on each other. This queue is GLOBAL across both networks: it is
-// deliberately conservative (a per-call mainnet->testnet fallback then queues once more),
-// which is safe, and it keeps the 0G provider rate limit honoured. ~6.5s between call
-// starts keeps a full field under the ~10 req/min cap. Tunable via COMPUTE_MIN_INTERVAL_MS.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const MIN_CALL_INTERVAL_MS = Number(process.env.COMPUTE_MIN_INTERVAL_MS ?? "7000");
+
+// MEASURED, not guessed (src/scripts/rateProbe.ts, 2026-07-09):
+//
+//   testnet  qwen2.5-omni   429 after exactly 10 calls: "limit: 10 requests/min". Latency ~3.8s.
+//   mainnet  qwen3-vl       45/45 back-to-back, zero refusals, ~48 req/min. Latency ~1.3s.
+//
+// The 10/min ceiling belongs to the testnet provider, not to 0G. Pacing both networks at 7s
+// throttled mainnet to testnet's budget: five times slower than it needed to be, and one 0G
+// call per chess ply is what decides whether a game can reach checkmate.
+//
+// So the queue is PER NETWORK. Each has its own interval and its own in-flight chain. A mainnet
+// call and a testnet call may overlap: different brokers, different chains, different provider
+// sub-accounts, so the single-use request-header nonces cannot collide.
+const TESTNET_MIN_INTERVAL_MS = Number(process.env.COMPUTE_MIN_INTERVAL_MS ?? "7000");
+const MAINNET_MIN_INTERVAL_MS = Number(process.env.COMPUTE_MAINNET_MIN_INTERVAL_MS ?? "1500");
 
 // Cap every 0G broker SDK call (broker creation, ledger funding, provider setup, header
 // signing, TEE verification). Those calls hit the 0G chain/RPC and have no timeout of
@@ -140,21 +148,28 @@ function withTimeout<T>(label: string, p: Promise<T>): Promise<T> {
   });
 }
 
-let inflight: Promise<unknown> = Promise.resolve();
-let lastCallStart = 0;
-function serialize<T>(fn: () => Promise<T>): Promise<T> {
-  const throttled = async (): Promise<T> => {
-    const wait = lastCallStart + MIN_CALL_INTERVAL_MS - Date.now();
-    if (wait > 0) await sleep(wait);
-    lastCallStart = Date.now();
-    return fn();
+/**
+ * One serialized, paced queue. The broker signs single-use headers per request and those
+ * nonces collide if two requests to the same provider overlap, so calls within a network run
+ * one at a time, `minIntervalMs` apart at the start.
+ */
+function makeQueue(minIntervalMs: number) {
+  let inflight: Promise<unknown> = Promise.resolve();
+  let lastCallStart = 0;
+  return function serialize<T>(fn: () => Promise<T>): Promise<T> {
+    const throttled = async (): Promise<T> => {
+      const wait = lastCallStart + minIntervalMs - Date.now();
+      if (wait > 0) await sleep(wait);
+      lastCallStart = Date.now();
+      return fn();
+    };
+    const run = inflight.then(throttled, throttled);
+    inflight = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   };
-  const run = inflight.then(throttled, throttled);
-  inflight = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
 }
 
 // The serving struct is an ethers tuple; read the fields we care about by index.
@@ -263,6 +278,8 @@ export interface NetworkConfig {
   ledgerOg: number;
   /** Hard ceiling on the ledger's TOTAL balance. We never deposit past this. */
   ledgerMaxOg: number;
+  /** Minimum gap between the START of two calls on this network. Measured, see above. */
+  minIntervalMs: number;
   /**
    * Extra 0G locked into each provider's sub-account ON TOP of the 1 0G the SDK transfers,
    * which is itself exactly the provider's minimum reserve. Without headroom the account
@@ -302,6 +319,8 @@ function explainLedgerRevert(err: unknown, label: string, sentOg: number): strin
 }
 
 function makeNetwork(net: NetworkConfig) {
+  // This network's own paced queue. Not shared: their rate limits differ by 5x.
+  const serialize = makeQueue(net.minIntervalMs);
   let brokerPromise: Promise<Broker> | null = null;
   let handle: ProviderHandle | null = null;
   let readyPromise: Promise<ProviderHandle> | null = null;
@@ -678,6 +697,7 @@ type Network = ReturnType<typeof makeNetwork>;
 
 const testnetNetwork = makeNetwork({
   label: "testnet",
+  minIntervalMs: TESTNET_MIN_INTERVAL_MS,
   rpcUrl: config.chain.rpcUrl,
   signerKey: config.signerKey,
   ledgerOg: config.compute.ledgerOg,
@@ -692,6 +712,7 @@ const mainnetEnabled = Boolean(config.compute.mainnet.rpcUrl && config.compute.m
 const mainnetNetwork: Network | null = mainnetEnabled
   ? makeNetwork({
       label: "mainnet",
+      minIntervalMs: MAINNET_MIN_INTERVAL_MS,
       rpcUrl: config.compute.mainnet.rpcUrl,
       signerKey: config.compute.mainnet.signerKey,
       ledgerOg: config.compute.mainnet.ledgerOg,
