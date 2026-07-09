@@ -94,7 +94,7 @@ export default function ContestPage() {
       </Link>
 
       {phase === "settled" && winner && (
-        <WinnerCard contestId={id} winner={winner} prizePool={contest.prize_pool} />
+        <WinnerCard contestId={id} winner={winner} prizePool={potValue} />
       )}
 
       {/* Header */}

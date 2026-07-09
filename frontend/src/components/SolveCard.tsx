@@ -31,6 +31,8 @@ const VERDICT: Record<Verdict, { label: string; tone: ChipTone; mood: AgentMood 
   action: { label: "acts", tone: "thinking", mood: "thinking" },
   // A World Cup forecast: no right or wrong yet, it grades when the event resolves.
   forecast: { label: "forecast", tone: "info", mood: "thinking" },
+  // A chess move: a play, not a graded answer, so it must never read as an error.
+  move: { label: "move", tone: "thinking", mood: "thinking" },
 };
 
 const RED_SUITS = new Set(["h", "d"]);

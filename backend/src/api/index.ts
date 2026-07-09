@@ -1053,14 +1053,15 @@ app.post("/api/agents/:id/skin", async (c) => {
   });
   if (!auth.ok) return c.json({ error: auth.error }, auth.status);
 
-  // Skins live on 0G Storage. Upload the image and keep its root hash; the bytes
-  // are served back from 0G, not from the database. If storage is off (local dev
-  // without funds), fall back to keeping the base64 in the database.
+  // Skins go on 0G Storage as the decentralized anchor, but we ALWAYS keep the base64
+  // bytes in the database too, so serving is a fast local read that never depends on a
+  // live 0G download. (Nulling the local copy is what made the skin endpoint stall into a
+  // gateway 503 whenever the 0G indexer was slow and the in-memory cache was cold.)
   let skinRoot: string | null = null;
   if (storageConfigured()) {
     const bytes = new Uint8Array(Buffer.from(dataB64, "base64"));
-    // 0G storage nodes can drop a connection; a couple of tries clears it before
-    // we fall back to keeping the image in the database.
+    // 0G storage nodes can drop a connection; a couple of tries clears it. The local
+    // base64 copy below is kept regardless, so a failed upload just means no anchor yet.
     for (let attempt = 0; attempt < 3 && !skinRoot; attempt++) {
       try {
         const { rootHash } = await uploadBytes(bytes);
@@ -1071,18 +1072,11 @@ app.post("/api/agents/:id/skin", async (c) => {
     }
   }
 
-  if (skinRoot) {
-    await query(
-      "update agents_meta set skin_mime = $2, skin_root = $3, skin_b64 = null where agent_id = $1",
-      [agentId, mime, skinRoot],
-    );
-  } else {
-    await query(
-      "update agents_meta set skin_mime = $2, skin_root = null, skin_b64 = $3 where agent_id = $1",
-      [agentId, mime, dataB64],
-    );
-  }
-  return c.json({ ok: true, skinRoot, source: skinRoot ? "0g-storage" : "db" });
+  await query(
+    "update agents_meta set skin_mime = $2, skin_root = $3, skin_b64 = $4 where agent_id = $1",
+    [agentId, mime, skinRoot, dataB64],
+  );
+  return c.json({ ok: true, skinRoot, source: skinRoot ? "0g-storage+db" : "db" });
 });
 
 // Small in-memory cache so a skin is fetched from 0G Storage once, not on every
@@ -1101,7 +1095,20 @@ app.get("/api/skins/:id", async (c) => {
   const row = rows[0];
   if (!row || !row.skin_mime) return c.json({ error: "no skin" }, 404);
 
-  // Prefer 0G Storage.
+  // Fast path: the locally-stored bytes. Always available and never dependent on a live
+  // 0G download, so this can never stall into a gateway 503. This is the primary path for
+  // every skin uploaded since we keep a local copy alongside the 0G anchor.
+  if (row.skin_b64) {
+    return c.body(Uint8Array.from(Buffer.from(row.skin_b64, "base64")), 200, {
+      "Content-Type": row.skin_mime,
+      "Cache-Control": "public, max-age=600",
+    });
+  }
+
+  // Legacy path: skins uploaded before we kept a local copy live only on 0G Storage.
+  // Serve from the in-memory cache, else fetch from 0G (now time-bounded, so a stalled
+  // indexer returns a fast 404 the UI falls back on rather than hanging into a 503). On a
+  // successful fetch, backfill skin_b64 so every later serve is fast and 0G-independent.
   if (row.skin_root) {
     let entry = skinCache.get(row.skin_root);
     if (!entry) {
@@ -1113,6 +1120,11 @@ app.get("/api/skins/:id", async (c) => {
           if (oldest) skinCache.delete(oldest);
         }
         skinCache.set(row.skin_root, entry);
+        // Self-heal: persist the bytes locally so this skin never needs 0G again.
+        const b64 = Buffer.from(entry.bytes).toString("base64");
+        void query("update agents_meta set skin_b64 = $2 where agent_id = $1 and skin_b64 is null", [agentId, b64]).catch(
+          (err) => console.error(`skin ${agentId} backfill failed:`, (err as Error).message),
+        );
       } catch (err) {
         console.error(`skin ${agentId} read from 0G failed:`, (err as Error).message);
       }
@@ -1125,13 +1137,6 @@ app.get("/api/skins/:id", async (c) => {
     }
   }
 
-  // Local-dev fallback: base64 in the database.
-  if (row.skin_b64) {
-    return c.body(Uint8Array.from(Buffer.from(row.skin_b64, "base64")), 200, {
-      "Content-Type": row.skin_mime,
-      "Cache-Control": "public, max-age=600",
-    });
-  }
   return c.json({ error: "no skin" }, 404);
 });
 

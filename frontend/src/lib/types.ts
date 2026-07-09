@@ -93,8 +93,8 @@ export interface ContestDetail {
   standings: Standing[];
 }
 
-// "action" is a poker betting move: no right/wrong, just a play.
-export type Verdict = "correct" | "wrong" | "error" | "action" | "forecast";
+// "action" is a poker betting move and "move" a chess move: no right/wrong, just a play.
+export type Verdict = "correct" | "wrong" | "error" | "action" | "forecast" | "move";
 
 export interface FeedItem {
   id: number;

@@ -40,6 +40,11 @@ export function storageConfigured(): boolean {
 // contest. Bound it: on timeout we throw, and the caller treats the audit upload as a
 // best-effort failure rather than blocking the money.
 const UPLOAD_TIMEOUT_MS = Number(process.env.ZG_STORAGE_UPLOAD_TIMEOUT_MS ?? "45000");
+// A download must also be bounded. It runs on the request path (e.g. serving an agent
+// skin), and an unbounded stall on a slow/flaky indexer hangs the HTTP handler until the
+// hosting gateway kills it with a 503 instead of the app returning a clean fallback. Keep
+// this well under any gateway/proxy request timeout so a stalled read fails fast.
+const DOWNLOAD_TIMEOUT_MS = Number(process.env.ZG_STORAGE_DOWNLOAD_TIMEOUT_MS ?? "12000");
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -87,16 +92,25 @@ export async function uploadJson(value: unknown): Promise<StoreResult> {
 // Read a stored object back by its root hash. Used to prove retrievability.
 export async function downloadJson<T = unknown>(rootHash: string): Promise<T> {
   const indexer = getIndexer();
-  const [blob, err] = await indexer.downloadToBlob(rootHash, { proof: true });
+  const [blob, err] = await withTimeout(
+    indexer.downloadToBlob(rootHash, { proof: true }),
+    DOWNLOAD_TIMEOUT_MS,
+    "0G Storage download",
+  );
   if (err !== null || !blob) throw new Error(`0G Storage download failed: ${err}`);
   const text = await blob.text();
   return JSON.parse(text) as T;
 }
 
-// Read raw bytes back by root hash (e.g. an agent skin image).
+// Read raw bytes back by root hash (e.g. an agent skin image). Bounded so a stalled
+// indexer read fails fast instead of hanging the request into a gateway 503.
 export async function downloadBytes(rootHash: string): Promise<Uint8Array> {
   const indexer = getIndexer();
-  const [blob, err] = await indexer.downloadToBlob(rootHash, { proof: true });
+  const [blob, err] = await withTimeout(
+    indexer.downloadToBlob(rootHash, { proof: true }),
+    DOWNLOAD_TIMEOUT_MS,
+    "0G Storage download",
+  );
   if (err !== null || !blob) throw new Error(`0G Storage download failed: ${err}`);
   const ab = await blob.arrayBuffer();
   return new Uint8Array(ab);
