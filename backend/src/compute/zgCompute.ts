@@ -22,14 +22,19 @@ const { createZGComputeNetworkBroker } =
 //
 // Lifecycle per network, matching the 0G serving-broker SDK (0.6.2):
 //   1. createZGComputeNetworkBroker(wallet)
-//   2. ledger.addLedger(n) once, or ledger.depositFund(n) to top up
+//   2. ledger.addLedger(n) once, or ledger.depositFund(n) to top up. `n` is the AVAILABLE
+//      float; mainnet rejects a first deposit under 3 0G.
 //   3. inference.listService() -> pick a provider
 //   4. inference.acknowledgeProviderSigner(provider)  (accept its TEE signer)
-//   5. ledger.transferFund(provider, "inference", lockedAmount)
-//   6. inference.getServiceMetadata(provider) -> { endpoint, model }
-//   7. per request: inference.getRequestHeaders(provider, content) -> headers
+//   5. inference.getServiceMetadata(provider) -> { endpoint, model }
+//   6. once per provider: GET {endpoint}/attestation/report -> can it sign a response at all?
+//   7. per request: inference.getRequestHeaders(provider, content) -> headers.
+//      NOTE: this ALSO funds the provider's sub-account on first use, transferring
+//      max(2e6 * (inputPrice + outputPrice), 1 0G) out of the ledger's available balance.
+//      We do not call transferFund ourselves; the SDK would override it upward anyway.
 //   8. POST {endpoint}/chat/completions with those single-use headers
-//   9. inference.processResponse(provider, id, answer) -> TEE verified boolean
+//   9. inference.processResponse(provider, id, answer) -> TEE verified boolean, but only
+//      when step 6 said the provider attests. No live provider does, today.
 
 type Broker = Awaited<ReturnType<typeof createZGComputeNetworkBroker>>;
 
@@ -228,7 +233,15 @@ export interface NetworkConfig {
   label: string; // "mainnet" | "testnet"
   rpcUrl: string;
   signerKey: string;
+  /** The AVAILABLE ledger float to maintain. Mainnet enforces a 3 0G minimum first deposit. */
   ledgerOg: number;
+  /** Hard ceiling on the ledger's TOTAL balance. We never deposit past this. */
+  ledgerMaxOg: number;
+  /**
+   * @deprecated Ignored. The SDK sizes provider sub-accounts itself inside
+   * `getRequestHeaders` (`topUpAccountIfNeeded` transfers at least 1 0G per provider), so
+   * this value never took effect. Kept only so existing env files do not break.
+   */
   perProviderOg: number;
   pinnedProvider: string;
 }
@@ -302,17 +315,32 @@ function makeNetwork(net: NetworkConfig) {
     return brokerPromise;
   }
 
-  async function ledgerBalanceOg(broker: Broker): Promise<number | null> {
+  // The ledger's AVAILABLE balance, not its total.
+  //
+  // `totalBalance` counts 0G already locked into provider sub-accounts; `availableBalance`
+  // is what can still fund a new provider. Reading the total meant that once the ledger was
+  // fully locked across a few providers, `ensureLedger` saw "balance >= target" and never
+  // deposited again — so a new tier's provider could never be set up, its
+  // `acknowledgeProviderSigner` reverted, and every agent at that tier silently fell back to
+  // the base model. The old code read `.balance`, which does not exist on the struct at all,
+  // and so always landed on `totalBalance`.
+  async function readLedger(broker: Broker): Promise<{ available: number; total: number } | null> {
     try {
-      const ledger = await withTimeout("getLedger", broker.ledger.getLedger());
-      const raw =
-        (ledger as { balance?: bigint; totalBalance?: bigint }).balance ??
-        (ledger as { totalBalance?: bigint }).totalBalance ??
-        0n;
-      return Number(ethers.formatEther(raw));
+      const ledger = (await withTimeout("getLedger", broker.ledger.getLedger())) as unknown as {
+        availableBalance?: bigint;
+        totalBalance?: bigint;
+      };
+      const total = ledger.totalBalance ?? 0n;
+      const available = ledger.availableBalance ?? total;
+      return { available: Number(ethers.formatEther(available)), total: Number(ethers.formatEther(total)) };
     } catch {
       return null;
     }
+  }
+
+  async function ledgerBalanceOg(broker: Broker): Promise<number | null> {
+    const l = await readLedger(broker);
+    return l ? l.available : null;
   }
 
   // Single-flight and cached: every inference call funnels through here, and three agents
@@ -346,6 +374,18 @@ function makeNetwork(net: NetworkConfig) {
       }
 
       if (current < target) {
+        // `ledgerOg` is the AVAILABLE float we keep, and every new provider permanently
+        // locks at least 1 0G out of it, so total deposits grow as tiers are set up. On
+        // mainnet that is real money, so refuse to deposit past a hard ceiling rather than
+        // top up forever if something is draining the ledger.
+        const total = (await readLedger(broker))?.total ?? 0;
+        if (total >= net.ledgerMaxOg) {
+          console.warn(
+            `[${net.label}] ledger total is ${total} 0G, at or above the ${net.ledgerMaxOg} 0G ceiling; ` +
+              `not depositing (available ${current} 0G). Raise COMPUTE_${net.label.toUpperCase()}_LEDGER_MAX_OG if this is expected.`,
+          );
+          return current;
+        }
         try {
           await walletWrite(() => withTimeout("depositFund", broker.ledger.depositFund(target - current)));
           return target;
@@ -413,18 +453,17 @@ function makeNetwork(net: NetworkConfig) {
         } catch (err) {
           console.warn(`[${net.label}] acknowledgeProviderSigner skipped: ${(err as Error).message}`);
         }
-        try {
-          // parseEther, not BigInt(n) * 1e18: BigInt() throws on a fractional amount, and
-          // that throw lands in the catch below as a mere "skipped" warning, leaving the
-          // provider's sub-account unfunded so every request 402s. On mainnet the sane
-          // amounts are fractions of a real 0G, so this has to accept 0.5.
-          const locked = ethers.parseEther(String(net.perProviderOg));
-          await walletWrite(() =>
-            withTimeout("transferFund", broker.ledger.transferFund(provider, "inference", locked)),
-          );
-        } catch (err) {
-          console.warn(`[${net.label}] transferFund skipped: ${(err as Error).message}`);
-        }
+        // No transferFund here, on purpose.
+        //
+        // The SDK funds a provider's sub-account itself, inside getRequestHeaders:
+        // `topUpAccountIfNeeded` transfers `max(2_000_000 * (inputPrice + outputPrice), 1 0G)`
+        // on the first request to each provider. Our own transferFund was a second on-chain
+        // write that the SDK then overrode upward, so `COMPUTE_*_PROVIDER_OG` never took
+        // effect — asking for 0.1 still locked 1.2. Let the SDK size it, and spend one less
+        // transaction per provider.
+        //
+        // The consequence for capacity planning: EVERY provider costs at least 1 0G of
+        // ledger, and a dear model costs more. Three tiers plus a fallback is 4+ 0G.
         const { endpoint, model } = await withTimeout(
           "getServiceMetadata",
           broker.inference.getServiceMetadata(provider),
@@ -585,6 +624,7 @@ const testnetNetwork = makeNetwork({
   rpcUrl: config.chain.rpcUrl,
   signerKey: config.signerKey,
   ledgerOg: config.compute.ledgerOg,
+  ledgerMaxOg: config.compute.ledgerMaxOg,
   perProviderOg: config.compute.perProviderOg,
   pinnedProvider: config.compute.pinnedProvider,
 });
@@ -598,6 +638,7 @@ const mainnetNetwork: Network | null = mainnetEnabled
       rpcUrl: config.compute.mainnet.rpcUrl,
       signerKey: config.compute.mainnet.signerKey,
       ledgerOg: config.compute.mainnet.ledgerOg,
+      ledgerMaxOg: config.compute.mainnet.ledgerMaxOg,
       perProviderOg: config.compute.mainnet.perProviderOg,
       pinnedProvider: config.compute.mainnet.pinnedProvider,
     })

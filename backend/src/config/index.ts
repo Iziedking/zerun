@@ -33,6 +33,9 @@ export const config = {
   compute: {
     // How much 0G to seed the broker ledger with on first run.
     ledgerOg: Number(optional("COMPUTE_LEDGER_OG", "3")),
+    // Hard ceiling on the ledger TOTAL. Every provider permanently locks >= 1 0G out of the
+    // available float, so the total grows as tiers are set up; this stops it growing forever.
+    ledgerMaxOg: Number(optional("COMPUTE_LEDGER_MAX_OG", "20")),
     // How much 0G to lock to a single provider sub-account.
     perProviderOg: Number(optional("COMPUTE_PROVIDER_OG", "1")),
     // Pin a known-good provider address. Empty means auto-pick the first live one.
@@ -54,6 +57,7 @@ export const config = {
       chainId: Number(optional("COMPUTE_MAINNET_CHAIN_ID", "0")),
       signerKey: process.env.COMPUTE_MAINNET_PRIVATE_KEY ?? process.env.DEPLOYER_PRIVATE_KEY ?? "",
       ledgerOg: Number(optional("COMPUTE_MAINNET_LEDGER_OG", optional("COMPUTE_LEDGER_OG", "3"))),
+      ledgerMaxOg: Number(optional("COMPUTE_MAINNET_LEDGER_MAX_OG", optional("COMPUTE_LEDGER_MAX_OG", "20"))),
       perProviderOg: Number(optional("COMPUTE_MAINNET_PROVIDER_OG", optional("COMPUTE_PROVIDER_OG", "1"))),
       pinnedProvider: process.env.COMPUTE_MAINNET_PROVIDER ?? "",
     },
