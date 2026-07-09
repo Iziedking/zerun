@@ -194,7 +194,13 @@ const POKER_RUN_TIMEOUT_MS = Number(process.env.POKER_RUN_TIMEOUT_MS ?? "600000"
 // early, waits out its lobby window before it can post the root on chain. That whole span
 // runs inside the runner, so its watchdog has to be far longer than a single contest's:
 // the lobby window plus a generous ceiling for the games. Tunable.
-const CHESS_RUN_TIMEOUT_MS = Number(process.env.CHESS_RUN_TIMEOUT_MS ?? String(CHESS_LOBBY_SECONDS * 1000 + 1_800_000));
+// The watchdog must outlast the whole bracket, not one match. Seven matches at the per-match
+// cap, plus the lobby, plus slack. Raising CHESS_MATCH_SECONDS without raising this would have
+// the sweeper cancel a tournament that was still playing.
+const CHESS_MATCH_MS = Number(process.env.CHESS_MATCH_SECONDS ?? "600") * 1000;
+const CHESS_RUN_TIMEOUT_MS = Number(
+  process.env.CHESS_RUN_TIMEOUT_MS ?? String(CHESS_LOBBY_SECONDS * 1000 + 7 * CHESS_MATCH_MS + 900_000),
+);
 function runTimeoutFor(kind: ContestKind): number {
   if (kind === "poker") return POKER_RUN_TIMEOUT_MS;
   if (kind === "chess") return CHESS_RUN_TIMEOUT_MS;

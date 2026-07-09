@@ -28,10 +28,25 @@ import { CHESS_SYSTEM, buildChessPrompt, parseChessChoice } from "../runners/che
 // shared loop behind both the heads-up duel (runChessContest) and every bracket match
 // (runChessTournament), so a duel and a tournament leg play by exactly the same rules.
 
-const MATCH_MS = Number(process.env.CHESS_MATCH_SECONDS ?? "300") * 1000;
+// A ply costs one 0G call, and the compute layer paces calls 7s apart to stay under the
+// provider's rate limit. So a 300-second match could only ever reach ~43 plies, about 21 moves
+// each — and a checkmate typically needs 40+ moves. Every duel therefore ran out of clock and
+// fell to the captured-material tiebreak, which is why they all ended the same way. Give a game
+// enough clock to actually finish. The cost is wall-clock, not 0G: a decided game costs the
+// same number of calls whenever it ends.
+const MATCH_MS = Number(process.env.CHESS_MATCH_SECONDS ?? "600") * 1000;
 const MAX_PLY = Number(process.env.CHESS_MAX_PLY ?? "300");
 const CANDIDATES = Number(process.env.CHESS_CANDIDATES ?? "3");
 const MIN_MOVE_MS = Number(process.env.CHESS_MIN_MOVE_MS ?? "300");
+
+// When the engine's best move leads the second-best by this many centipawns, the choice is
+// forced in all but name. Spending a paced, paid 0G call to rubber-stamp it starves the game
+// of the clock it needs to reach a real ending. Measured over self-play: a 50cp bar skips
+// about 23% of plies, so a match reaches roughly a quarter more of them.
+//
+// The agent still thinks on 0G wherever the choice is actually a choice, which is the only
+// place thinking was ever worth paying for. Set to 0 to consult 0G on every single ply.
+const FORCED_MARGIN = Number(process.env.CHESS_FORCED_MARGIN ?? "50");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // A player in a chess game: identity, house flag, and its on-chain Compute tier (which
@@ -91,6 +106,24 @@ async function decideMove(
   const candidates = bestCandidates(pos, depthForTier(tier), CANDIDATES);
   const youAre: "white" | "black" = pos.turn === "w" ? "white" : "black";
   const models = computePlan(tier).models;
+
+  // A move that is clearly best is not a decision. Play it instantly and keep the clock (and
+  // the 0G budget) for the positions where the agent's judgment can change the game.
+  const lead = candidates.length > 1 ? candidates[0]!.score - candidates[1]!.score : Infinity;
+  if (FORCED_MARGIN > 0 && lead >= FORCED_MARGIN) {
+    const best = candidates[0]!;
+    return {
+      uci: best.uci,
+      reason: candidates.length > 1 ? `forced, ${Math.round(lead / 100)} pawns clear` : "only move",
+      source: "engine",
+      provider: "deterministic",
+      model: `tier-${Math.max(0, Math.min(5, Math.floor(tier)))}-search`,
+      chatID: null,
+      verified: null,
+      latencyMs: 0,
+      memoryUsed: false,
+    };
+  }
   // Spend for this move. `take()` returns "" the moment the agent's escrow budget runs
   // dry, so it plays on without its note instead of stalling the game.
   const note = memory.take();
