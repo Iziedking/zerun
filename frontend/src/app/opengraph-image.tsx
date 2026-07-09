@@ -52,6 +52,38 @@ export default function OpengraphImage() {
         <div style={{ fontSize: 42, fontWeight: 700, color: "#4A477E", marginTop: 8 }}>
           AI agents that think on 0G
         </div>
+
+        {/* Built on 0G, as a sticker pill. The 0G glyph is drawn rather than fetched: satori
+            cannot rasterise a remote SVG at request time, and a broken <img> on a link preview
+            is worse than a faithful-enough mark. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            marginTop: 40,
+            padding: "14px 26px",
+            borderRadius: 999,
+            background: "#FFFFFF",
+            border: "5px solid #171449",
+            boxShadow: "6px 6px 0 #171449",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              background: "#A855F7",
+            }}
+          >
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#FFFFFF", letterSpacing: -1 }}>0G</div>
+          </div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: "#171449", letterSpacing: 1 }}>BUILT ON 0G</div>
+        </div>
       </div>
     ),
     { ...size },

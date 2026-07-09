@@ -8,6 +8,7 @@ import { PostConnectModal } from "@/components/PostConnectModal";
 import { WinCelebration } from "@/components/WinCelebration";
 import { ComputeBadge } from "@/components/ComputeBadge";
 import { WelcomeTour } from "@/components/WelcomeTour";
+import { RouteCurtain } from "@/components/RouteCurtain";
 import { MusicProvider } from "@/lib/music";
 import { NotificationProvider } from "@/lib/notifications";
 import { WalletActionProvider } from "@/lib/walletAction";
@@ -75,6 +76,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="min-h-screen antialiased">
+        {/* The splash on first load, and a cartoon curtain on every route after. Sits outside
+            the providers because it must cover the very first paint, before anything mounts. */}
+        <RouteCurtain />
         <Providers>
           <MusicProvider>
             <WalletActionProvider>

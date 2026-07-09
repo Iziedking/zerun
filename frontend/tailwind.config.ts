@@ -76,6 +76,25 @@ const config: Config = {
           "25%": { transform: "rotate(-5deg)" },
           "75%": { transform: "rotate(5deg)" },
         },
+        // The loading curtain: the Z tile drops, squashes on landing, and springs back —
+        // and its shadow widens as it nears the floor, which is what sells the weight.
+        "loader-bounce": {
+          "0%, 100%": { transform: "translateY(-16px) scaleY(1.02) scaleX(0.98)" },
+          "45%": { transform: "translateY(0) scaleY(0.92) scaleX(1.08)" },
+          "60%": { transform: "translateY(-4px) scaleY(1.02) scaleX(0.98)" },
+        },
+        "loader-shadow": {
+          "0%, 100%": { transform: "scaleX(0.62)", opacity: "0.18" },
+          "45%": { transform: "scaleX(1)", opacity: "0.34" },
+        },
+        "loader-fill": {
+          "0%": { transform: "scaleX(0.04)" },
+          "100%": { transform: "scaleX(1)" },
+        },
+        "curtain-out": {
+          "0%": { opacity: "1" },
+          "100%": { opacity: "0", visibility: "hidden" },
+        },
       },
       animation: {
         "pop-in": "pop-in 0.30s cubic-bezier(0.34,1.56,0.64,1) both",
@@ -83,6 +102,10 @@ const config: Config = {
         bob: "bob 3s ease-in-out infinite",
         hop: "hop 0.9s cubic-bezier(0.34,1.56,0.64,1)",
         wiggle: "wiggle 0.4s ease-in-out",
+        "loader-bounce": "loader-bounce 760ms cubic-bezier(0.34,1.56,0.64,1) infinite",
+        "loader-shadow": "loader-shadow 760ms cubic-bezier(0.34,1.56,0.64,1) infinite",
+        "loader-fill": "loader-fill 2.6s cubic-bezier(0.4,0,0.2,1) forwards",
+        "curtain-out": "curtain-out 260ms ease-out forwards",
       },
     },
   },
