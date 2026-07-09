@@ -14,7 +14,13 @@ const { createZGComputeNetworkBroker } =
 // Compute Network. The on-chain ledger payment and the TEE verdict are what we
 // surface to the UI as proof that the agent actually thought on 0G.
 //
-// Lifecycle, matching the 0G serving-broker SDK (0.6.2):
+// Two NETWORKS, tried in order per call: MAINNET first (real 0G, the real model
+// catalog) when it is configured, then the TESTNET compute wallet as an automatic
+// fallback so a mainnet outage never stalls a contest. Each network runs its own
+// broker, ledger, and provider handles; the arena's smart contracts are unaffected
+// (they live on the testnet chain in config.chain — inference is decoupled from them).
+//
+// Lifecycle per network, matching the 0G serving-broker SDK (0.6.2):
 //   1. createZGComputeNetworkBroker(wallet)
 //   2. ledger.addLedger(n) once, or ledger.depositFund(n) to top up
 //   3. inference.listService() -> pick a provider
@@ -41,37 +47,27 @@ export interface ComputeAnswer {
   model: string;
   endpoint: string;
   latencyMs: number;
+  // Which 0G network actually answered ("mainnet" | "testnet"), for the logs/feed.
+  network?: string;
 }
 
-let brokerPromise: Promise<Broker> | null = null;
-let handle: ProviderHandle | null = null;
-let readyPromise: Promise<ProviderHandle> | null = null;
+// ---------------------------------------------------------------------------
+// Shared, network-agnostic helpers (rate limiting, timeouts, the raw HTTP call).
+// ---------------------------------------------------------------------------
 
-// Set up (acknowledge + fund + fetch metadata) is done once per provider and the
-// handle cached, so tier-based routing can hold several providers ready at once
-// without re-acknowledging on every call.
-const handles = new Map<string, ProviderHandle>();
-const setupPromises = new Map<string, Promise<ProviderHandle>>();
-
-// The broker signs single-use headers per request, and those nonces collide if
-// two requests overlap. Run the per-request work one at a time so concurrent
-// agents queue instead of stepping on each other.
-//
-// Crucially, also pace the queue: the 0G provider rate-limits at 10 requests a
-// minute, and a contest fires many calls, so without a minimum gap the later
-// calls get a 429 and fall back to an unfair error verdict. Holding ~6.5s between
-// call starts keeps the whole field under the limit, so every agent gets a real
-// answer. Tunable with COMPUTE_MIN_INTERVAL_MS.
+// The broker signs single-use headers per request, and those nonces collide if two
+// requests overlap. Run the per-request work one at a time so concurrent agents queue
+// instead of stepping on each other. This queue is GLOBAL across both networks: it is
+// deliberately conservative (a per-call mainnet->testnet fallback then queues once more),
+// which is safe, and it keeps the 0G provider rate limit honoured. ~6.5s between call
+// starts keeps a full field under the ~10 req/min cap. Tunable via COMPUTE_MIN_INTERVAL_MS.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const MIN_CALL_INTERVAL_MS = Number(process.env.COMPUTE_MIN_INTERVAL_MS ?? "7000");
 
-// Cap every 0G broker SDK call (broker creation, ledger funding, provider setup,
-// header signing, TEE verification). Those calls hit the 0G chain/RPC and have no
-// timeout of their own, so a stalled RPC would hang the whole contest run until the
-// 20-minute settlement watchdog fired. This makes a stall fail fast — generous enough
-// for an on-chain tx to mine, far below the watchdog. Tunable via env. A timed-out
-// funding tx that later mines is harmless: the next call reads the funded ledger and
-// proceeds; only the JS wait is abandoned, not the transaction.
+// Cap every 0G broker SDK call (broker creation, ledger funding, provider setup, header
+// signing, TEE verification). Those calls hit the 0G chain/RPC and have no timeout of
+// their own, so a stalled RPC would hang the whole contest run until the settlement
+// watchdog fired. This makes a stall fail fast. Tunable via env.
 const BROKER_TIMEOUT_MS = Number(process.env.COMPUTE_BROKER_TIMEOUT_MS ?? "45000");
 function withTimeout<T>(label: string, p: Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -91,6 +87,7 @@ function withTimeout<T>(label: string, p: Promise<T>): Promise<T> {
     );
   });
 }
+
 let inflight: Promise<unknown> = Promise.resolve();
 let lastCallStart = 0;
 function serialize<T>(fn: () => Promise<T>): Promise<T> {
@@ -106,58 +103,6 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
     () => undefined,
   );
   return run;
-}
-
-function getWallet(): ethers.Wallet {
-  if (!config.signerKey) {
-    throw new Error("DEPLOYER_PRIVATE_KEY is not set; the 0G Compute broker needs a funded wallet");
-  }
-  const provider = new ethers.JsonRpcProvider(config.chain.rpcUrl);
-  return new ethers.Wallet(config.signerKey, provider);
-}
-
-async function getBroker(): Promise<Broker> {
-  if (!brokerPromise) {
-    // Reset the cached promise if creation fails or times out, so the next call
-    // rebuilds a fresh broker instead of forever returning the same rejected promise.
-    brokerPromise = withTimeout("createBroker", createZGComputeNetworkBroker(getWallet())).catch((e) => {
-      brokerPromise = null;
-      throw e;
-    });
-  }
-  return brokerPromise;
-}
-
-// Read the current ledger balance in 0G, or null if no ledger exists yet.
-async function ledgerBalanceOg(broker: Broker): Promise<number | null> {
-  try {
-    const ledger = await withTimeout("getLedger", broker.ledger.getLedger());
-    // The ledger stores balances at 1e18. Be tolerant of the exact field name
-    // across SDK minor versions.
-    const raw =
-      (ledger as { balance?: bigint; totalBalance?: bigint }).balance ??
-      (ledger as { totalBalance?: bigint }).totalBalance ??
-      0n;
-    return Number(ethers.formatEther(raw));
-  } catch {
-    return null;
-  }
-}
-
-// Make sure the broker ledger holds at least the configured amount of 0G.
-export async function ensureLedger(): Promise<number> {
-  const broker = await getBroker();
-  const target = config.compute.ledgerOg;
-  const current = await ledgerBalanceOg(broker);
-  if (current === null) {
-    await withTimeout("addLedger", broker.ledger.addLedger(target));
-    return target;
-  }
-  if (current < target) {
-    await withTimeout("depositFund", broker.ledger.depositFund(target - current));
-    return target;
-  }
-  return current;
 }
 
 // The serving struct is an ethers tuple; read the fields we care about by index.
@@ -180,193 +125,12 @@ function readService(s: unknown) {
   };
 }
 
-// Pick the best chatbot provider. A higher score is a stronger proof story: a
-// healthy provider whose responses carry a real TEE attestation verifies on
-// chain, so the "Verified on 0G" badge lights up. When none is available we
-// still fall back to a working provider so the agents keep thinking on 0G.
-async function pickProvider(broker: Broker): Promise<string> {
-  if (config.compute.pinnedProvider) return config.compute.pinnedProvider;
-
-  const services = (await withTimeout("listService", broker.inference.listService())).map(readService);
-  if (!services.length) throw new Error("0G Compute returned no live providers");
-
-  const chat = services.filter((s) => s.serviceType === "chatbot");
-  const pool = chat.length ? chat : services;
-
-  const score = (s: ReturnType<typeof readService>) =>
-    (s.verifiability === "TeeML" ? 2 : 0) + (s.healthy ? 1 : 0) + (s.teeTarget ? 1 : 0);
-
-  pool.sort((a, b) => score(b) - score(a));
-  return pool[0]!.provider;
-}
-
-// Every live 0G Compute provider with its model, verifiability, health, and TEE
-// target. Use it to see which providers can attest (TeeML + a teeTarget) so you can
-// pin one with COMPUTE_PINNED_PROVIDER.
-export async function listProviders(): Promise<
-  { provider: string; model: string; serviceType: string; verifiability: string; healthy: boolean; teeTarget: string }[]
-> {
-  const broker = await getBroker();
-  return (await withTimeout("listService", broker.inference.listService())).map(readService);
-}
-
-// Bring one provider to a ready state (acknowledge signer, fund its sub-account,
-// cache its metadata) and return its handle. Single-flight per provider, so
-// concurrent calls that want the same provider share one setup.
-async function getHandleFor(broker: Broker, provider: string): Promise<ProviderHandle> {
-  const cached = handles.get(provider);
-  if (cached) return cached;
-
-  let p = setupPromises.get(provider);
-  if (!p) {
-    p = (async () => {
-      // Accept the provider's TEE signer so its responses can be verified. This
-      // is best effort: if it is already acknowledged, or the provider does not
-      // require it, the inference still works, so a failure here must not stop us.
-      try {
-        await withTimeout("acknowledgeProviderSigner", broker.inference.acknowledgeProviderSigner(provider));
-      } catch (err) {
-        console.warn(`acknowledgeProviderSigner skipped: ${(err as Error).message}`);
-      }
-
-      // Lock a small amount to the provider sub-account. Also best effort: the
-      // broker funds the sub-account on demand during a request, so an explicit
-      // transfer reverting here does not block inference.
-      try {
-        const locked = BigInt(config.compute.perProviderOg) * 10n ** 18n;
-        await withTimeout("transferFund", broker.ledger.transferFund(provider, "inference", locked));
-      } catch (err) {
-        console.warn(`transferFund skipped: ${(err as Error).message}`);
-      }
-
-      const { endpoint, model } = await withTimeout(
-        "getServiceMetadata",
-        broker.inference.getServiceMetadata(provider),
-      );
-      const h: ProviderHandle = { provider, endpoint, model };
-      handles.set(provider, h);
-      return h;
-    })();
-    setupPromises.set(provider, p);
-  }
-
-  try {
-    return await p;
-  } catch (err) {
-    setupPromises.delete(provider);
-    throw err;
-  }
-}
-
-// Bring the broker to a ready state on the best available provider: ledger
-// funded, a provider chosen and acknowledged, its sub-account funded, metadata
-// cached. Idempotent and single-flight so concurrent agent calls share one setup.
-export async function ensureReady(): Promise<ProviderHandle> {
-  if (handle) return handle;
-  if (readyPromise) return readyPromise;
-
-  readyPromise = (async () => {
-    const broker = await getBroker();
-    await ensureLedger();
-    const provider = await pickProvider(broker);
-    handle = await getHandleFor(broker, provider);
-    return handle;
-  })();
-
-  try {
-    return await readyPromise;
-  } catch (err) {
-    readyPromise = null;
-    throw err;
-  }
-}
-
-// Resolve a handle for a tier's preferred models. Walks the preference list in
-// order and takes the first model that a HEALTHY provider is currently serving,
-// so a higher tier reaches its stronger (TEE-capable) model. If none of the
-// preferred models has a healthy provider right now, it falls back to the default
-// best provider, so routing can never stall an agent: the worst case is exactly
-// today's behaviour.
-export async function ensureReadyFor(preferredModels?: string[]): Promise<ProviderHandle> {
-  const [first] = await resolveCandidates(preferredModels);
-  return first ?? ensureReady();
-}
-
-// Build the ORDERED list of provider handles to try for a tier. The providers serving
-// the tier's preferred models come first (a healthy + TEE + attesting provider ranks
-// highest), then the default best provider as a guaranteed tail. Crucially this now
-// INCLUDES providers the broker flags unhealthy: on the 0G testnet the only TEE-capable
-// chat providers (gpt-oss, gemma) are usually flagged unhealthy yet still serve, and
-// the single healthy provider (qwen) carries no TEE — so hard-gating on `healthy`
-// silently collapsed every tier to qwen AND killed the "Verified on 0G" badge.
-// computeChat tries these in order and keeps the first that actually answers, so a real
-// premium/TEE call is attempted before falling back, and an unhealthy-and-truly-down
-// provider just costs one bounded attempt before the healthy fallback.
-async function resolveCandidates(preferredModels?: string[]): Promise<ProviderHandle[]> {
-  const broker = await getBroker();
-  await ensureLedger();
-
-  const out: ProviderHandle[] = [];
-  const seen = new Set<string>();
-  const push = async (provider: string) => {
-    if (seen.has(provider)) return;
-    seen.add(provider);
-    try {
-      out.push(await getHandleFor(broker, provider));
-    } catch (err) {
-      console.warn(`provider ${provider} setup skipped: ${(err as Error).message}`);
-    }
-  };
-
-  if (preferredModels && preferredModels.length > 0) {
-    const services = (await withTimeout("listService", broker.inference.listService())).map(readService);
-    const chat = services.filter((s) => s.serviceType === "chatbot");
-    // Health is a strong PREFERENCE, not a gate: healthy first, then TEE-capable and
-    // attesting, so a working provider is tried before a flapping one, but a flagged
-    // provider is still reachable. Matching is tolerant (normalized/family) so a
-    // provider that spells the model differently still counts.
-    const score = (s: ReturnType<typeof readService>) =>
-      (s.healthy ? 4 : 0) + (s.verifiability === "TeeML" ? 2 : 0) + (s.teeTarget ? 1 : 0);
-    for (const want of preferredModels) {
-      const matches = chat.filter((s) => modelsMatch(want, s.model)).sort((a, b) => score(b) - score(a));
-      for (const m of matches) await push(m.provider);
-    }
-  }
-
-  // Guaranteed tail: the default best (healthy) provider, so a tier can never stall.
-  try {
-    await push((await ensureReady()).provider);
-  } catch (err) {
-    console.warn(`default provider unavailable: ${(err as Error).message}`);
-  }
-  return out;
-}
-
-// Log which model each compute tier actually resolves to right now, from the live
-// provider list. Printed once at startup so the "does multi-model really work on
-// testnet, or does everything fall back to qwen?" question is answerable from the logs
-// instead of invisible. Best effort; never throws.
-export async function logTierRouting(tierModels: string[][]): Promise<void> {
-  try {
-    const providers = await listProviders();
-    const healthy = providers.filter((p) => p.serviceType === "chatbot" && p.healthy);
-    console.log(`0G models live (healthy chatbot): ${healthy.map((p) => p.model || "?").join(", ") || "(none)"}`);
-    tierModels.forEach((models, lvl) => {
-      const hit = models.find((want) => healthy.some((p) => modelsMatch(want, p.model)));
-      const resolved = hit
-        ? healthy.find((p) => modelsMatch(hit, p.model))!.model
-        : "(default best / qwen fallback)";
-      console.log(`  tier ${lvl}: prefers [${models.join(" > ") || "default"}]  ->  ${resolved}`);
-    });
-  } catch (err) {
-    console.warn(`logTierRouting skipped: ${(err as Error).message}`);
-  }
-}
+// Bound each non-final (premium) attempt so a flagged-unhealthy provider that is truly
+// down fails fast and the healthy fallback still runs within the contest's budget.
+const PREMIUM_ATTEMPT_TIMEOUT_MS = Number(process.env.COMPUTE_PREMIUM_ATTEMPT_MS ?? "30000");
 
 // One request to a single provider. Throws on any failure (HTTP error, timeout, or an
-// empty answer) so computeChat can fall back to the next candidate. Non-final attempts
-// get a shorter timeout so a truly-down premium provider fails fast instead of eating
-// the full call budget before the healthy fallback runs.
+// empty answer) so the caller can fall back to the next candidate.
 async function attemptProvider(
   broker: Broker,
   h: ProviderHandle,
@@ -421,53 +185,447 @@ async function attemptProvider(
   return { text, chatID, verified, provider: h.provider, model: h.model, endpoint: h.endpoint, latencyMs };
 }
 
-// Bound each non-final (premium) attempt so a flagged-unhealthy provider that is truly
-// down fails fast and the healthy fallback still runs within the contest's budget.
-const PREMIUM_ATTEMPT_TIMEOUT_MS = Number(process.env.COMPUTE_PREMIUM_ATTEMPT_MS ?? "30000");
+// ---------------------------------------------------------------------------
+// One 0G network (its own wallet, broker, ledger, and provider handles).
+// ---------------------------------------------------------------------------
 
-// One paid, verifiable inference call on 0G Compute. Tries the tier's preferred models
-// in order (their providers first, then the default best), keeping the first that
-// actually answers. This is what makes multi-model real: a tier-5 agent genuinely
-// reaches gpt-oss (and its TEE attestation) when it serves, and only drops to the
-// healthy base model when the premium provider truly fails.
+export interface NetworkConfig {
+  label: string; // "mainnet" | "testnet"
+  rpcUrl: string;
+  signerKey: string;
+  ledgerOg: number;
+  perProviderOg: number;
+  pinnedProvider: string;
+}
+
+// How long a successful ledger check stays trusted. Without this every inference call
+// re-reads the ledger over RPC, which is both slow and a needless failure surface.
+const LEDGER_RECHECK_MS = Number(process.env.COMPUTE_LEDGER_RECHECK_MS ?? "60000");
+
+function makeNetwork(net: NetworkConfig) {
+  let brokerPromise: Promise<Broker> | null = null;
+  let handle: ProviderHandle | null = null;
+  let readyPromise: Promise<ProviderHandle> | null = null;
+  const handles = new Map<string, ProviderHandle>();
+  const setupPromises = new Map<string, Promise<ProviderHandle>>();
+
+  // Every wallet-writing broker call (addLedger, depositFund, acknowledgeProviderSigner,
+  // transferFund) is a transaction signed by ONE key. Concurrent agents would otherwise
+  // build several transactions on the same nonce and all but one would revert, killing a
+  // whole contest's inference before a single request is even sent. Serialize them.
+  let walletChain: Promise<unknown> = Promise.resolve();
+  function walletWrite<T>(fn: () => Promise<T>): Promise<T> {
+    const run = walletChain.then(fn, fn);
+    walletChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  function getWallet(): ethers.Wallet {
+    if (!net.signerKey) {
+      throw new Error(`${net.label} 0G Compute needs a funded wallet key`);
+    }
+    const provider = new ethers.JsonRpcProvider(net.rpcUrl);
+    return new ethers.Wallet(net.signerKey, provider);
+  }
+
+  async function getBroker(): Promise<Broker> {
+    if (!brokerPromise) {
+      // Reset the cached promise if creation fails or times out, so the next call rebuilds
+      // a fresh broker instead of forever returning the same rejected promise.
+      brokerPromise = withTimeout("createBroker", createZGComputeNetworkBroker(getWallet())).catch((e) => {
+        brokerPromise = null;
+        throw e;
+      });
+    }
+    return brokerPromise;
+  }
+
+  async function ledgerBalanceOg(broker: Broker): Promise<number | null> {
+    try {
+      const ledger = await withTimeout("getLedger", broker.ledger.getLedger());
+      const raw =
+        (ledger as { balance?: bigint; totalBalance?: bigint }).balance ??
+        (ledger as { totalBalance?: bigint }).totalBalance ??
+        0n;
+      return Number(ethers.formatEther(raw));
+    } catch {
+      return null;
+    }
+  }
+
+  // Single-flight and cached: every inference call funnels through here, and three agents
+  // run concurrently. A funding hiccup must not kill a call the existing balance can pay
+  // for, so a failed top-up falls through to whatever the ledger already holds.
+  let ledgerInflight: Promise<number> | null = null;
+  let ledgerBalance = 0;
+  let ledgerFreshUntil = 0;
+
+  async function ensureLedger(force = false): Promise<number> {
+    if (!force && Date.now() < ledgerFreshUntil) return ledgerBalance;
+    if (ledgerInflight) return ledgerInflight;
+
+    ledgerInflight = (async () => {
+      const broker = await getBroker();
+      const target = net.ledgerOg;
+      const current = await ledgerBalanceOg(broker);
+
+      if (current === null) {
+        try {
+          await walletWrite(() => withTimeout("addLedger", broker.ledger.addLedger(target)));
+          return target;
+        } catch (err) {
+          // The read may simply have failed on a flaky RPC while the ledger exists. Re-read
+          // before giving up, so a stale read cannot bring the whole contest down.
+          console.warn(`[${net.label}] addLedger failed: ${(err as Error).message}`);
+          const retry = await ledgerBalanceOg(broker);
+          if (retry === null) throw err;
+          return retry;
+        }
+      }
+
+      if (current < target) {
+        try {
+          await walletWrite(() => withTimeout("depositFund", broker.ledger.depositFund(target - current)));
+          return target;
+        } catch (err) {
+          console.warn(
+            `[${net.label}] depositFund failed, continuing on the existing ${current} OG: ${(err as Error).message}`,
+          );
+          return current;
+        }
+      }
+      return current;
+    })()
+      .then((bal) => {
+        ledgerBalance = bal;
+        ledgerFreshUntil = Date.now() + LEDGER_RECHECK_MS;
+        return bal;
+      })
+      .finally(() => {
+        ledgerInflight = null;
+      });
+
+    return ledgerInflight;
+  }
+
+  // Pick the best chatbot provider (healthy + real TEE attestation ranks highest), or the
+  // pinned one. Falls back to any working provider so agents keep thinking on 0G.
+  async function pickProvider(broker: Broker): Promise<string> {
+    if (net.pinnedProvider) return net.pinnedProvider;
+
+    const services = (await withTimeout("listService", broker.inference.listService())).map(readService);
+    if (!services.length) throw new Error(`0G Compute (${net.label}) returned no live providers`);
+
+    const chat = services.filter((s) => s.serviceType === "chatbot");
+    const pool = chat.length ? chat : services;
+    const score = (s: ReturnType<typeof readService>) =>
+      (s.verifiability === "TeeML" ? 2 : 0) + (s.healthy ? 1 : 0) + (s.teeTarget ? 1 : 0);
+    pool.sort((a, b) => score(b) - score(a));
+    return pool[0]!.provider;
+  }
+
+  async function listProviders(): Promise<
+    { provider: string; model: string; serviceType: string; verifiability: string; healthy: boolean; teeTarget: string }[]
+  > {
+    const broker = await getBroker();
+    return (await withTimeout("listService", broker.inference.listService())).map(readService);
+  }
+
+  // Bring one provider to a ready state (acknowledge signer, fund its sub-account, cache
+  // its metadata). Single-flight per provider.
+  async function getHandleFor(broker: Broker, provider: string): Promise<ProviderHandle> {
+    const cached = handles.get(provider);
+    if (cached) return cached;
+
+    let p = setupPromises.get(provider);
+    if (!p) {
+      p = (async () => {
+        try {
+          await walletWrite(() =>
+            withTimeout("acknowledgeProviderSigner", broker.inference.acknowledgeProviderSigner(provider)),
+          );
+        } catch (err) {
+          console.warn(`[${net.label}] acknowledgeProviderSigner skipped: ${(err as Error).message}`);
+        }
+        try {
+          const locked = BigInt(net.perProviderOg) * 10n ** 18n;
+          await walletWrite(() =>
+            withTimeout("transferFund", broker.ledger.transferFund(provider, "inference", locked)),
+          );
+        } catch (err) {
+          console.warn(`[${net.label}] transferFund skipped: ${(err as Error).message}`);
+        }
+        const { endpoint, model } = await withTimeout(
+          "getServiceMetadata",
+          broker.inference.getServiceMetadata(provider),
+        );
+        const h: ProviderHandle = { provider, endpoint, model };
+        handles.set(provider, h);
+        return h;
+      })();
+      setupPromises.set(provider, p);
+    }
+
+    try {
+      return await p;
+    } catch (err) {
+      setupPromises.delete(provider);
+      throw err;
+    }
+  }
+
+  async function ensureReady(): Promise<ProviderHandle> {
+    if (handle) return handle;
+    if (readyPromise) return readyPromise;
+
+    readyPromise = (async () => {
+      const broker = await getBroker();
+      await ensureLedger();
+      const provider = await pickProvider(broker);
+      handle = await getHandleFor(broker, provider);
+      return handle;
+    })();
+
+    try {
+      return await readyPromise;
+    } catch (err) {
+      readyPromise = null;
+      throw err;
+    }
+  }
+
+  // The ORDERED list of provider handles to try for a tier: providers serving the tier's
+  // preferred models first (healthy + TEE + attesting ranks highest), then the default
+  // best as a guaranteed tail. Includes providers the broker flags unhealthy, because on
+  // 0G the TEE-capable chat providers are often flagged unhealthy yet still serve.
+  async function resolveCandidates(preferredModels?: string[]): Promise<ProviderHandle[]> {
+    const broker = await getBroker();
+    await ensureLedger();
+
+    const out: ProviderHandle[] = [];
+    const seen = new Set<string>();
+    const push = async (provider: string) => {
+      if (seen.has(provider)) return;
+      seen.add(provider);
+      try {
+        out.push(await getHandleFor(broker, provider));
+      } catch (err) {
+        console.warn(`[${net.label}] provider ${provider} setup skipped: ${(err as Error).message}`);
+      }
+    };
+
+    if (preferredModels && preferredModels.length > 0) {
+      const services = (await withTimeout("listService", broker.inference.listService())).map(readService);
+      const chat = services.filter((s) => s.serviceType === "chatbot");
+      const score = (s: ReturnType<typeof readService>) =>
+        (s.healthy ? 4 : 0) + (s.verifiability === "TeeML" ? 2 : 0) + (s.teeTarget ? 1 : 0);
+      for (const want of preferredModels) {
+        const matches = chat.filter((s) => modelsMatch(want, s.model)).sort((a, b) => score(b) - score(a));
+        for (const m of matches) await push(m.provider);
+      }
+    }
+
+    // Guaranteed tail: the default best provider, so a tier can never stall.
+    try {
+      await push((await ensureReady()).provider);
+    } catch (err) {
+      console.warn(`[${net.label}] default provider unavailable: ${(err as Error).message}`);
+    }
+    return out;
+  }
+
+  // One paid, verifiable inference call on THIS network. Tries the tier's preferred models
+  // in order (their providers first, then the default best), keeping the first that
+  // actually answers. Throws if no provider on this network answers, so the caller can try
+  // the next network.
+  async function computeChat(params: {
+    systemPrompt: string;
+    userPrompt: string;
+    maxTokens: number;
+    temperature: number;
+    models?: string[];
+  }): Promise<ComputeAnswer> {
+    const broker = await getBroker();
+    const candidates = await resolveCandidates(params.models);
+    if (candidates.length === 0) candidates.push(await ensureReady());
+
+    return serialize(async () => {
+      let lastErr: unknown;
+      for (let i = 0; i < candidates.length; i++) {
+        const isLast = i === candidates.length - 1;
+        const timeoutMs = isLast
+          ? config.compute.callTimeoutMs
+          : Math.min(config.compute.callTimeoutMs, PREMIUM_ATTEMPT_TIMEOUT_MS);
+        try {
+          const ans = await attemptProvider(broker, candidates[i]!, params, timeoutMs);
+          return { ...ans, network: net.label };
+        } catch (err) {
+          lastErr = err;
+          // Log the LAST candidate too. Without this a fully failed call is silent, and the
+          // agent shows a bare "error" in the feed with no way to learn why.
+          console.warn(
+            `[${net.label}] 0G ${candidates[i]!.model} failed${isLast ? "" : ", falling back"}: ${(err as Error).message}`,
+          );
+        }
+      }
+      throw (lastErr as Error) ?? new Error(`no 0G provider answered on ${net.label}`);
+    });
+  }
+
+  async function logTierRouting(tierModels: string[][]): Promise<void> {
+    try {
+      const providers = await listProviders();
+      const healthy = providers.filter((p) => p.serviceType === "chatbot" && p.healthy);
+      console.log(`0G models live on ${net.label} (healthy chatbot): ${healthy.map((p) => p.model || "?").join(", ") || "(none)"}`);
+      tierModels.forEach((models, lvl) => {
+        const hit = models.find((want) => healthy.some((p) => modelsMatch(want, p.model)));
+        const resolved = hit
+          ? healthy.find((p) => modelsMatch(hit, p.model))!.model
+          : "(default best / base fallback)";
+        console.log(`  [${net.label}] tier ${lvl}: prefers [${models.join(" > ") || "default"}]  ->  ${resolved}`);
+      });
+    } catch (err) {
+      console.warn(`[${net.label}] logTierRouting skipped: ${(err as Error).message}`);
+    }
+  }
+
+  function configured(): boolean {
+    return Boolean(net.signerKey && net.rpcUrl);
+  }
+
+  return { label: net.label, ensureLedger, ensureReady, listProviders, resolveCandidates, computeChat, logTierRouting, configured };
+}
+
+type Network = ReturnType<typeof makeNetwork>;
+
+// ---------------------------------------------------------------------------
+// The two networks and the mainnet-first / testnet-fallback orchestration.
+// ---------------------------------------------------------------------------
+
+const testnetNetwork = makeNetwork({
+  label: "testnet",
+  rpcUrl: config.chain.rpcUrl,
+  signerKey: config.signerKey,
+  ledgerOg: config.compute.ledgerOg,
+  perProviderOg: config.compute.perProviderOg,
+  pinnedProvider: config.compute.pinnedProvider,
+});
+
+// Mainnet is active only when its RPC + a wallet key are set. It always leads, with the
+// testnet network as the automatic per-call fallback.
+const mainnetEnabled = Boolean(config.compute.mainnet.rpcUrl && config.compute.mainnet.signerKey);
+const mainnetNetwork: Network | null = mainnetEnabled
+  ? makeNetwork({
+      label: "mainnet",
+      rpcUrl: config.compute.mainnet.rpcUrl,
+      signerKey: config.compute.mainnet.signerKey,
+      ledgerOg: config.compute.mainnet.ledgerOg,
+      perProviderOg: config.compute.mainnet.perProviderOg,
+      pinnedProvider: config.compute.mainnet.pinnedProvider,
+    })
+  : null;
+
+// All configured networks (diagnostics/funding use this, ignoring the breaker below).
+function networks(): Network[] {
+  return mainnetNetwork ? [mainnetNetwork, testnetNetwork] : [testnetNetwork];
+}
+
+export function mainnetComputeEnabled(): boolean {
+  return mainnetEnabled;
+}
+
+// Circuit breaker for the mainnet leg. Without it, a SUSTAINED mainnet outage would make
+// every call pay the full mainnet attempt (up to the RPC/ledger timeout) before falling
+// back — defeating the point of a fallback. After a run of consecutive mainnet failures we
+// skip mainnet for a cooldown so calls go straight to testnet, then probe mainnet again.
+const MAINNET_TRIP_THRESHOLD = Number(process.env.COMPUTE_MAINNET_TRIP ?? "2");
+const MAINNET_COOLDOWN_MS = Number(process.env.COMPUTE_MAINNET_COOLDOWN_MS ?? "120000");
+let mainnetFailStreak = 0;
+let mainnetSkipUntil = 0;
+
+// The per-call network order, honouring the breaker: mainnet first unless it is tripped.
+function callOrder(): Network[] {
+  if (!mainnetNetwork) return [testnetNetwork];
+  if (Date.now() < mainnetSkipUntil) return [testnetNetwork];
+  return [mainnetNetwork, testnetNetwork];
+}
+
+// One paid, verifiable inference call. Tries mainnet first (when configured and not
+// tripped); on any failure — provider down, rate-limited, empty answer, RPC stall — it
+// falls through to the testnet compute wallet, so a mainnet outage never stalls a contest.
 export async function computeChat(params: {
   systemPrompt: string;
   userPrompt: string;
   maxTokens: number;
   temperature: number;
-  // Ordered model preference (a tier's ladder). Tried in order; the first provider that
-  // answers is used, otherwise it falls back to the default best provider.
   models?: string[];
 }): Promise<ComputeAnswer> {
-  const broker = await getBroker();
-  const candidates = await resolveCandidates(params.models);
-  if (candidates.length === 0) candidates.push(await ensureReady());
-
-  // One request at a time. Latency is measured around the actual call, not the queue
-  // wait, so the speed tiebreak stays fair. Fallbacks happen inside the same serialized
-  // slot so a retry does not pay the throttle again.
-  return serialize(async () => {
-    let lastErr: unknown;
-    for (let i = 0; i < candidates.length; i++) {
-      const isLast = i === candidates.length - 1;
-      const timeoutMs = isLast
-        ? config.compute.callTimeoutMs
-        : Math.min(config.compute.callTimeoutMs, PREMIUM_ATTEMPT_TIMEOUT_MS);
-      try {
-        return await attemptProvider(broker, candidates[i]!, params, timeoutMs);
-      } catch (err) {
-        lastErr = err;
-        if (!isLast) {
-          console.warn(
-            `0G ${candidates[i]!.model} failed, falling back: ${(err as Error).message}`,
-          );
+  const nets = callOrder();
+  let lastErr: unknown;
+  for (let i = 0; i < nets.length; i++) {
+    const net = nets[i]!;
+    const isMainnet = net === mainnetNetwork;
+    try {
+      const ans = await net.computeChat(params);
+      if (isMainnet) mainnetFailStreak = 0; // mainnet healthy again
+      return ans;
+    } catch (err) {
+      lastErr = err;
+      if (isMainnet) {
+        mainnetFailStreak += 1;
+        if (mainnetFailStreak >= MAINNET_TRIP_THRESHOLD) {
+          mainnetSkipUntil = Date.now() + MAINNET_COOLDOWN_MS;
+          mainnetFailStreak = 0;
+          console.warn(`0G mainnet compute tripped; skipping it for ${MAINNET_COOLDOWN_MS / 1000}s (testnet only)`);
         }
       }
+      const next = nets[i + 1];
+      if (next) {
+        console.warn(`0G ${net.label} compute failed, falling back to ${next.label}: ${(err as Error).message}`);
+      }
     }
-    throw (lastErr as Error) ?? new Error("no 0G provider answered");
-  });
+  }
+  const err = (lastErr as Error) ?? new Error("no 0G network answered");
+  console.error(`0G compute call failed on every network (${nets.map((n) => n.label).join(", ")}): ${err.message}`);
+  throw err;
+}
+
+// Fund every configured network's ledger (so `pnpm ledger:fund` tops up mainnet AND
+// testnet), returning the primary network's balance. Best effort per network.
+export async function ensureLedger(): Promise<number> {
+  const nets = networks();
+  let primary = 0;
+  for (const [i, n] of nets.entries()) {
+    try {
+      // force: the funding script must read the real balance, not a cached one.
+      const bal = await n.ensureLedger(true);
+      if (i === 0) primary = bal;
+    } catch (err) {
+      console.warn(`[${n.label}] ledger funding failed: ${(err as Error).message}`);
+    }
+  }
+  return primary;
+}
+
+// Diagnostics target the PRIMARY network (mainnet when configured, else testnet).
+export async function ensureReady(): Promise<ProviderHandle> {
+  return networks()[0]!.ensureReady();
+}
+
+export async function listProviders(): Promise<
+  { provider: string; model: string; serviceType: string; verifiability: string; healthy: boolean; teeTarget: string }[]
+> {
+  return networks()[0]!.listProviders();
+}
+
+// Log tier -> model routing for every configured network at startup.
+export async function logTierRouting(tierModels: string[][]): Promise<void> {
+  for (const n of networks()) await n.logTierRouting(tierModels);
 }
 
 export function brokerConfigured(): boolean {
-  return Boolean(config.signerKey);
+  return networks().some((n) => n.configured());
 }

@@ -1,4 +1,4 @@
-import { callModel } from "../compute/client.js";
+import { callModel, computeMode } from "../compute/client.js";
 import type { ComputeSource } from "../compute/client.js";
 import { extractProbability } from "./markets.js";
 import type { InferencePlan } from "./traits.js";
@@ -71,6 +71,7 @@ export async function forecastWorldCup(
         break;
       } catch (err) {
         lastErr = (err as Error).message ?? "error";
+        console.warn(`worldcup forecast pass ${i + 1}/${passes} attempt ${attempt + 1} failed: ${lastErr}`);
         if (attempt === 0) await new Promise((r) => setTimeout(r, 350));
       }
     }
@@ -94,11 +95,15 @@ export async function forecastWorldCup(
     };
   }
 
+  if (!last) console.warn(`worldcup forecast gave up after ${passes} passes: ${lastErr || "unknown error"}`);
+
   return {
     probYes: null,
     prediction: last ? "no call" : "error",
     raw: last ? last.text : lastErr || "error",
-    source: last ? last.source : "offline-dev",
+    // Not "offline-dev": the offline stub never ran. The configured compute path was tried
+    // and it errored, and saying otherwise makes a 0G outage read as a local dev fallback.
+    source: last ? last.source : computeMode(),
     provider: last ? last.provider : "error",
     model: last ? last.model : "error",
     chatID: last ? last.chatID : null,

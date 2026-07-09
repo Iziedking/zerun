@@ -1,4 +1,4 @@
-import { callModel } from "../compute/client.js";
+import { callModel, computeMode } from "../compute/client.js";
 import type { ComputeSource } from "../compute/client.js";
 import { extractProbability, brier, type Market } from "./markets.js";
 import { gatherIntel } from "./intel.js";
@@ -103,6 +103,7 @@ export async function predictMarket(market: Market, plan: InferencePlan): Promis
         break;
       } catch (err) {
         lastErr = (err as Error).message ?? "error";
+        console.warn(`analyst pass ${i + 1}/${passes} attempt ${attempt + 1} failed: ${lastErr}`);
         if (attempt === 0) await new Promise((r) => setTimeout(r, 350));
       }
     }
@@ -152,6 +153,7 @@ export async function predictMarket(market: Market, plan: InferencePlan): Promis
     };
   }
 
+  console.warn(`analyst gave up after ${passes} passes: ${lastErr || "unknown error"}`);
   return {
     ...base,
     prediction: "error",
@@ -159,7 +161,8 @@ export async function predictMarket(market: Market, plan: InferencePlan): Promis
     brier: 1,
     verdict: "error",
     raw: lastErr || "error",
-    source: "offline-dev",
+    // The offline stub never ran; the configured compute path was tried and errored.
+    source: computeMode(),
     provider: "error",
     model: "error",
     chatID: null,

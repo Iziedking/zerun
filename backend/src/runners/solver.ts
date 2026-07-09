@@ -1,4 +1,4 @@
-import { callModel } from "../compute/client.js";
+import { callModel, computeMode } from "../compute/client.js";
 import type { ComputeSource } from "../compute/client.js";
 import { extractAnswer, isCorrect, type Puzzle } from "./puzzles.js";
 import type { InferencePlan } from "./traits.js";
@@ -93,6 +93,7 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
     } catch (err) {
       lastErr = (err as Error).message ?? "error";
       errors++;
+      console.warn(`solver puzzle ${puzzle.idx} pass ${pass + 1}/${plan.samples} failed: ${lastErr}`);
       if (errors >= maxErrors && votes.size === 0) break;
     }
   }
@@ -110,6 +111,7 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
     // The model answered but never with a parseable number.
     return outcome(puzzle, anyRes, null, "wrong", latencyMs, plan.samples, 0, usedLiveInsight);
   }
+  console.warn(`solver puzzle ${puzzle.idx} gave up after ${errors} errors: ${lastErr || "unknown error"}`);
   return {
     puzzleIdx: puzzle.idx,
     prompt: puzzle.prompt,
@@ -117,7 +119,8 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
     answer: null,
     verdict: "error",
     raw: lastErr || "error",
-    source: "offline-dev",
+    // The offline stub never ran; the configured compute path was tried and errored.
+    source: computeMode(),
     provider: "error",
     model: "error",
     chatID: null,
