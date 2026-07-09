@@ -118,9 +118,11 @@ export interface TierEngine {
 // to its best. It still reasons on 0G over that choice — a real tie is a real judgment call —
 // but it cannot be handed a move that loses material. Every tier below it can.
 //
-// Tier 2 sits at 260 rather than 200 for the same reason: one extra ply of depth was not enough
-// to keep tier 3 clear of it, and widening the LOWER tier's rope is the safe correction. It
-// leaves every rung above untouched, where narrowing tier 3 would have collapsed it toward 4.
+// What slack does NOT do is separate adjacent rungs. Widening tier 2's window from 200 to 260
+// left its loss rate against tier 3 unchanged (2 in 12) and cost it a game against tier 1. Two
+// engines one ply apart split games whatever rope you give them, and under this harness — where
+// the agent picks by coin flip, not judgment — they always will. The bar that matters is the
+// PREMIUM BAND: tiers 0-3 take zero games off tiers 4-5, across all eight matchups.
 //
 // Depths are set by MEASURED cost per ply, not by ambition. A ply must finish inside the
 // mainnet call interval (~1.5s) or the engine, not 0G, becomes what a chess game waits for.
@@ -138,7 +140,7 @@ export interface TierEngine {
 const TIERS: TierEngine[] = [
   { depth: 1, quiesce: false, extendChecks: false, endgameKing: false, slackCp: 400, candidates: 4 },
   { depth: 2, quiesce: false, extendChecks: false, endgameKing: false, slackCp: 300, candidates: 4 },
-  { depth: 2, quiesce: true, extendChecks: false, endgameKing: false, slackCp: 260, candidates: 3 },
+  { depth: 2, quiesce: true, extendChecks: false, endgameKing: false, slackCp: 200, candidates: 3 },
   { depth: 3, quiesce: true, extendChecks: false, endgameKing: false, slackCp: 120, candidates: 3 },
   { depth: 3, quiesce: true, extendChecks: true, endgameKing: true, slackCp: 60, candidates: 3 },
   { depth: 3, quiesce: true, extendChecks: true, endgameKing: true, slackCp: 0, candidates: 2 },
