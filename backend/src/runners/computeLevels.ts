@@ -41,18 +41,28 @@ const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
 // only matches on the network that serves it, so one list drives both, and the order means
 // mainnet never has to fail through a testnet name to find its model.
 //
-// Chosen from the live catalog (all healthy, all attesting TeeML), by advertised output
-// price per 1k tokens: flash ~0.0012, pro ~0.0150, max ~0.0175. Deliberately avoiding the
-// `glm-*` names: the tolerant matcher does substring matching, so "glm-5" would also match
-// "glm-5.1", "glm-5.2", and "GLM-5-FP8".
-const MODEL_BASE_MAINNET = "deepseek-v4-flash"; // levels 0-3
+// Chosen from the live catalog (all healthy, all attesting TeeML) on advertised price,
+// weighing INPUT as heavily as output. Zerun's prompts are long and its answers are short —
+// a chess move ships ~300 tokens of board and candidates to get back ~48 — so the input
+// price dominates the bill. Picking on output price alone leads you to the wrong model:
+//
+//   model                          in/1k     out/1k    per chess move
+//   qwen/qwen3-vl-30b-a3b-instruct 0.000100  0.000979  0.000077
+//   0GM-1.0-35B-A3B                0.000164  0.000988  0.000096
+//   deepseek-v4-flash              0.000625  0.001240  0.000247   <- 3.2x the first, on the
+//                                                                    strength of input alone
+//
+// Deliberately avoiding the `glm-*` names: the matcher does substring matching, so "glm-5"
+// would also swallow "glm-5.1", "glm-5.2", and "GLM-5-FP8".
+const MODEL_BASE_MAINNET = "qwen/qwen3-vl-30b-a3b-instruct"; // levels 0-3, cheapest healthy
+const MODEL_BASE_MAINNET_ALT = "0GM-1.0-35B-A3B"; // 0G's own model, near-identical price
 const MODEL_PRO_MAINNET = "deepseek-v4-pro"; // level 4
 const MODEL_MAX_MAINNET = "qwen3.7-max"; // level 5
 
 // Higher tiers keep their bigger compute (more self-consistency passes and a
 // bigger token budget) AND route to a stronger model, so the advantages compound:
 // more 0G invested buys both more thinking and a better brain.
-const BASE_MODELS = [MODEL_BASE_MAINNET, MODEL_BASE];
+const BASE_MODELS = [MODEL_BASE_MAINNET, MODEL_BASE_MAINNET_ALT, MODEL_BASE];
 
 const LEVELS: InferencePlan[] = [
   { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "", intel: 0, models: BASE_MODELS },

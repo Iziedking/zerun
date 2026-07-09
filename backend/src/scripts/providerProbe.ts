@@ -45,15 +45,14 @@ async function main() {
   // actually decides what a contest costs.
   const per1k = (wei: unknown) => Number(ethers.formatEther((BigInt(String(wei)) * 1000n).toString()));
 
-  console.log("  model                        out/1k tok (0G)  health     verifiability  teeSigner[9]");
-  for (const s of chat) {
+  console.log("  model                        in/1k        out/1k       health     verifiability");
+  const rows = [...chat].sort((a, b) => Number(BigInt(String(a[4])) - BigInt(String(b[4]))));
+  for (const s of rows) {
     const model = String(s[6] ?? "?");
     const healthy = s[10] === true;
-    const signer = String(s[9] ?? "");
-    const hasSigner = /^0x[0-9a-fA-F]{40}$/.test(signer) && signer !== ethers.ZeroAddress;
     console.log(
-      `  ${model.padEnd(28)} ${per1k(s[4]).toFixed(6).padEnd(16)} ` +
-        `${(healthy ? "healthy" : "UNHEALTHY").padEnd(10)} ${String(s[7]).padEnd(14)} ${hasSigner ? signer.slice(0, 10) + "…" : "(none)"}`,
+      `  ${model.padEnd(28)} ${per1k(s[3]).toFixed(6).padEnd(12)} ${per1k(s[4]).toFixed(6).padEnd(12)} ` +
+        `${(healthy ? "healthy" : "UNHEALTHY").padEnd(10)} ${String(s[7])}`,
     );
   }
 
