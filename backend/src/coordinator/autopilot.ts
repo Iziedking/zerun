@@ -231,13 +231,26 @@ async function openContestCount(): Promise<number> {
 
 const HOUSE_NAMES = ["Pixel", "Nova", "Byte", "Echo", "Quark", "Volt", "Flux", "Ion"];
 
-// House agents span a mix of Compute tiers instead of a flat level-0 baseline, so the
-// arena looks alive: the ladder shows a real gradient, poker is skill-based (a stronger
-// tier out-plays a weaker one rather than a chaotic level-0 wipeout, and the winner is
-// the strongest agent), and the higher-tier house agents actually have the model and the
-// live-insight data to answer the hard puzzles instead of failing them. Comma-separated
-// per agent, cycled across the roster. Tunable with AUTOPILOT_HOUSE_TIERS.
-const HOUSE_TIERS = (process.env.AUTOPILOT_HOUSE_TIERS ?? "2,3,4,5")
+// House agents span a mix of Compute tiers instead of a flat level-0 baseline, so the arena
+// looks alive: the ladder shows a real gradient rather than a chaotic level-0 wipeout, and a
+// mid-tier house agent has the model and the live-insight data to answer the hard puzzles
+// instead of failing them. Comma-separated per agent, cycled across the roster.
+//
+// The house STOPS AT 3, and that is a rule, not a tuning choice.
+//
+//   It is the field, not the apex. An operator who paid 30 0G to reach level 5 must be able
+//   to see that purchase pay for itself. A house agent that also sits at 4 or 5 is a free
+//   opponent holding a paid tier, and in poker that is precisely where the ladder is flattest:
+//   measured over 6000 hands, levels 2 through 5 are statistically indistinguishable
+//   six-handed. The old "2,3,4,5" default put the whole house inside that band, so a paid apex
+//   agent was matched against free agents it could not reliably out-play, and the result read
+//   as a broken ladder when it was really a broken opponent pool.
+//
+//   It spends real 0G. Every tier now routes to 0G mainnet, so a house agent at level 5 would
+//   bill the operator's mainnet wallet for inference the operator never asked for.
+//
+// Tunable with AUTOPILOT_HOUSE_TIERS, but raising it above 3 re-opens both problems.
+const HOUSE_TIERS = (process.env.AUTOPILOT_HOUSE_TIERS ?? "0,1,2,3")
   .split(",")
   .map((s) => Math.max(0, Math.min(5, Math.floor(Number(s.trim()) || 0))))
   .filter((n) => Number.isFinite(n));
