@@ -31,6 +31,26 @@ All notable changes to Zerun are recorded here. The format follows
   sign for any of them. The module refuses a private extended key.
 - `GET /api/agents/:id/wallet` reports the address, escrow balance, allowance, lifetime
   spend, and how many memory-assisted calls the agent can still afford.
+- **A funding panel on the profile.** Fund, revoke, and withdraw, mapping one-to-one onto
+  the contract's three owner powers. Shown only to the agent's owner, since only the owner
+  holds them.
+- **Tiered opponent dossiers, bought by the agent itself.** A dossier is no longer all or
+  nothing: tier 1 is a coarse read (style and looseness as bands, volume rounded), tier 2
+  adds the real numbers and the structured stats that let an agent model an opponent
+  mechanically, tier 3 adds the showdown and all-in profile. It is never the full picture
+  its subject sees of itself. Compute level caps how many tiers an agent may ever hold on
+  one opponent: 1 below level 4, 2 at level 4, 3 at level 5, so 0G buys depth of
+  information as well as depth of thought.
+- **The agent decides, on 0G, whether to buy.** Before a duel its own tier model — the base
+  qwen at levels 0-3 — is told the rules, the price, its balance, and its cap, and answers
+  BUY or SKIP for each tier. Each purchase is charged to its escrow and settles as its own
+  transaction, so the payment is what unlocks the read. That is x402 as it was always
+  described; the previous path was a coordinator self-transfer that no agent ever paid for.
+
+### Fixed
+
+- **A poker replay could hand an agent a deeper opponent read than it paid for.** The
+  recovery path rebuilt the scouting override from full stats regardless of purchases.
 
 ## [0.5.0] - 2026-07-09
 
