@@ -88,15 +88,27 @@ export function HostContestForm({
   const [splitKey, setSplitKey] = useState<(typeof SPLITS)[number]["key"]>("top3");
   const [maxOps, setMaxOps] = useState("");
   const [pokerSeats, setPokerSeats] = useState("2");
+  // Chess seats. 2 is a heads-up duel; 4 and 8 are single-elimination brackets, which is what
+  // the tournament runner plays. The host form used to hardcode 2, so a hosted chess contest
+  // could never be a tournament at all.
+  const [chessSeats, setChessSeats] = useState("8");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
 
   const isPoker = kind === "poker";
   const isChess = kind === "chess";
-  const isGame = isPoker || isChess; // head-to-head games: winner takes the whole pool
+  const chessSeatCount = Math.max(2, Math.min(8, Math.round(Number(chessSeats) || 2)));
+  const isChessBracket = isChess && chessSeatCount > 2;
   const isChallenge = mode === "challenge";
-  // A game (poker/chess) is winner-take-all; other kinds let the host pick a split.
-  const split = isGame ? SPLITS[0]! : SPLITS.find((s) => s.key === splitKey)!;
+
+  // A "game" kind plays a match rather than a set of tasks, so it has no puzzle/market count.
+  const isGame = isPoker || isChess;
+
+  // Winner-take-all only where there is exactly one thing to win: a poker table (chips decide
+  // it outright) and a chess DUEL. A chess bracket finishes everybody by placement, so its pool
+  // can be split down the podium, and the host chooses how far.
+  const winnerTakesAll = isPoker || (isChess && !isChessBracket);
+  const split = winnerTakesAll ? SPLITS[0]! : SPLITS.find((s) => s.key === splitKey)!;
 
   const usdcAddr = deployment?.contracts.testUSDC;
   const engineAddr = deployment?.contracts.contestEngine;
@@ -227,7 +239,7 @@ export function HostContestForm({
       // (2 = heads-up duel, up to 6-max); other flavors use the optional operator cap.
       setPhase("saving");
       const maxOperators = isChess
-        ? 2 // a chess duel is 1v1
+        ? chessSeatCount // 2 = duel, 4 or 8 = single-elimination bracket
         : isPoker
           ? Math.max(2, Math.min(6, Math.round(Number(pokerSeats) || 2)))
           : maxOps.trim()
@@ -384,12 +396,75 @@ export function HostContestForm({
       </p>
 
       {isChess ? (
-        <p className="rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
-          Chess duel: two agents play a full game, winner takes the whole pool. The join
-          window above is the entry period; if no challenger joins it cancels and refunds.
-          Once entries close the game plays out in up to 5 minutes — checkmate wins, or the
-          most material captured if the clock runs out.
-        </p>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Seats">
+              <select
+                value={chessSeats}
+                onChange={(e) => setChessSeats(e.target.value)}
+                disabled={busy}
+                className={inputCx}
+              >
+                {[2, 4, 8].map((n) => (
+                  <option key={n} value={String(n)}>
+                    {n === 2 ? "2 · heads-up duel" : `${n} · knockout bracket`}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            {/* A bracket finishes everyone by placement, so the pool can run down the podium.
+                A duel has one winner and nothing to split. */}
+            {isChessBracket && (
+              <Field label="Winners split">
+                <select
+                  value={splitKey}
+                  onChange={(e) => setSplitKey(e.target.value as (typeof SPLITS)[number]["key"])}
+                  disabled={busy}
+                  className={inputCx}
+                >
+                  {SPLITS.filter((s) => s.topN <= chessSeatCount).map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.label} ({s.pct.join("/")})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+          </div>
+
+          <p className="rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3 font-body text-[13px] font-bold text-ink-2">
+            {isChessBracket ? (
+              <>
+                {chessSeatCount}-agent knockout: seeded by Compute tier, single elimination, and it{" "}
+                <strong className="text-ink">starts the moment every seat fills</strong> rather than
+                waiting out the window. The pool is paid by how far each agent got.{" "}
+                {isChallenge ? (
+                  <>
+                    Because this is an entry-fee challenge, house agents cannot join — they cannot
+                    pay in. At the deadline it plays with whoever turned up: two entrants play a
+                    duel, three or more play a bracket. One entrant cancels and every fee is
+                    refunded.
+                  </>
+                ) : (
+                  <>
+                    If seats are still empty at the deadline, house agents take them and it starts
+                    anyway. A house agent can win the bracket, but the pot always goes to the best
+                    real players.
+                  </>
+                )}{" "}
+                Each match runs up to 5 minutes — checkmate wins, else the most material captured.
+              </>
+            ) : (
+              <>
+                Chess duel: two agents play a full game, winner takes the whole pool. The join
+                window above is the entry period; if no challenger joins it cancels and refunds.
+                House agents never join a duel. Once entries close the game plays out in up to 5
+                minutes — checkmate wins, or the most material captured if the clock runs out.
+              </>
+            )}
+          </p>
+        </>
       ) : isPoker ? (
         <>
           <div className="grid gap-4 sm:grid-cols-2">
