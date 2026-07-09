@@ -71,8 +71,11 @@ const ATTESTATION_CHECK_MS = Number(process.env.COMPUTE_ATTESTATION_CHECK_MS ?? 
 // exactly this can pay no fees at all.
 const PROVIDER_RESERVE_OG = 1;
 // How much spare a sub-account must hold above that reserve before we stop topping it up.
-// A call costs on the order of 0.001-0.007 0G, so this is hundreds of answers.
-const MIN_HEADROOM_OG = Number(process.env.COMPUTE_MIN_HEADROOM_OG ?? "0.2");
+// A call costs on the order of 0.001-0.007 0G, so 0.5 0G is several hundred answers at the
+// base tier. Sized against the worst case we actually run: a chess tournament is ~300 calls
+// in one contest, and a sub-account that runs dry mid-bracket starts returning 400s and the
+// tier silently falls back for the rest of the game.
+const MIN_HEADROOM_OG = Number(process.env.COMPUTE_MIN_HEADROOM_OG ?? "0.5");
 
 // The 0G actually spendable in a provider's sub-account: its balance less anything already
 // requested as a refund (a pending refund is not available to pay fees).
@@ -716,9 +719,23 @@ const MAINNET_COOLDOWN_MS = Number(process.env.COMPUTE_MAINNET_COOLDOWN_MS ?? "1
 let mainnetFailStreak = 0;
 let mainnetSkipUntil = 0;
 
-// The per-call network order, honouring the breaker: mainnet first unless it is tripped.
-function callOrder(): Network[] {
-  if (!mainnetNetwork) return [testnetNetwork];
+// The lowest Compute level allowed to reason on mainnet. The premium tiers are what an
+// operator paid real 0G to reach, so they are what spends real 0G to think; levels below
+// this never leave testnet, which keeps the house field and every free agent off the bill.
+const MAINNET_MIN_TIER = Number(process.env.COMPUTE_MAINNET_MIN_TIER ?? "4");
+
+/** Does a call at this Compute level get to use mainnet at all? */
+export function tierUsesMainnet(tier: number | undefined): boolean {
+  return mainnetEnabled && typeof tier === "number" && tier >= MAINNET_MIN_TIER;
+}
+
+// The per-call network order.
+//
+// A premium tier leads with mainnet and falls back to testnet on any hiccup. Every other
+// tier is testnet-only: it is not a fallback for them, it is the whole story. The circuit
+// breaker can also send a premium call straight to testnet while mainnet is tripped.
+function callOrder(tier: number | undefined): Network[] {
+  if (!mainnetNetwork || !tierUsesMainnet(tier)) return [testnetNetwork];
   if (Date.now() < mainnetSkipUntil) return [testnetNetwork];
   return [mainnetNetwork, testnetNetwork];
 }
@@ -732,8 +749,10 @@ export async function computeChat(params: {
   maxTokens: number;
   temperature: number;
   models?: string[];
+  /** The agent's Compute level. Only the premium tiers reach mainnet. */
+  tier?: number;
 }): Promise<ComputeAnswer> {
-  const nets = callOrder();
+  const nets = callOrder(params.tier);
   let lastErr: unknown;
   for (let i = 0; i < nets.length; i++) {
     const net = nets[i]!;
