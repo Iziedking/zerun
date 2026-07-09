@@ -25,7 +25,8 @@
     "tee:probe": "tsx src/scripts/teeProbe.ts",
     "models:bakeoff": "tsx src/scripts/modelBakeoff.ts",
     "attest:sweep": "tsx src/scripts/attestSweep.ts",
-    "tee:signature": "tsx src/scripts/teeSignatureProbe.ts"
+    "tee:signature": "tsx src/scripts/teeSignatureProbe.ts",
+    "ledger:retrieve": "tsx src/scripts/retrieveFund.ts"
   },
   "dependencies": {
     "@0gfoundation/0g-storage-ts-sdk": "1.2.10",
