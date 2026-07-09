@@ -12,8 +12,10 @@ export const CHESS_SYSTEM = [
   "You are given the position and a short list of strong candidate moves, already legal,",
   "each with the engine's evaluation in pawns from your point of view (higher is better).",
   "Choose the single best move for your side.",
-  "Reply with ONLY the move in UCI notation on the first line (for example e2e4, g1f3, or",
-  "e7e8q for a promotion), then optionally a very short reason on the next line.",
+  "Reply in exactly two lines.",
+  "Line 1: the move in UCI notation and nothing else (for example e2e4, g1f3, or e7e8q for a promotion).",
+  "Line 2: your reason for it, in one short phrase of at most twelve words.",
+  "Always give the reason. It is shown to spectators as the agent's thinking.",
 ].join(" ");
 
 export function buildChessPrompt(p: Position, candidates: Candidate[], youAre: "white" | "black"): string {
@@ -27,7 +29,7 @@ export function buildChessPrompt(p: Position, candidates: Candidate[], youAre: "
     "Candidate moves, best-first by engine evaluation:",
     list,
     "",
-    "Reply with the UCI of your chosen move on the first line.",
+    "Line 1: the UCI of your chosen move. Line 2: why, in one short phrase.",
   ].join("\n");
 }
 

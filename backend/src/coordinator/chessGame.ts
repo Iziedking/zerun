@@ -98,7 +98,10 @@ async function decideMove(
     const res = await callModel({
       systemPrompt: CHESS_SYSTEM + note,
       userPrompt: buildChessPrompt(pos, candidates, youAre),
-      maxTokens: 48,
+      // A UCI move plus a twelve-word reason. 48 was sized for the move alone, and a reason
+      // truncated mid-phrase reads worse than none. Output tokens are the cheap half of a
+      // chess call anyway: the board and candidate list dominate the input.
+      maxTokens: 64,
       temperature: 0.3,
       models,
       tier, // only the premium tiers reason on mainnet
