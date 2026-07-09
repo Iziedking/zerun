@@ -740,10 +740,12 @@ const MAINNET_COOLDOWN_MS = Number(process.env.COMPUTE_MAINNET_COOLDOWN_MS ?? "1
 let mainnetFailStreak = 0;
 let mainnetSkipUntil = 0;
 
-// The lowest Compute level allowed to reason on mainnet. The premium tiers are what an
-// operator paid real 0G to reach, so they are what spends real 0G to think; levels below
-// this never leave testnet, which keeps the house field and every free agent off the bill.
-const MAINNET_MIN_TIER = Number(process.env.COMPUTE_MAINNET_MIN_TIER ?? "4");
+// The lowest Compute level allowed to reason on mainnet. Zero: every tier goes to mainnet.
+// Testnet's one healthy provider caps at 10 requests/min and answers in ~3.8s, and one 0G
+// call is one chess ply — that pacing, not the engine, is why a duel could not reach
+// checkmate. Mainnet takes ~48 req/min at ~1.3s. Raise this to put the cheap tiers back on
+// testnet (4 = premium only, 6 = nobody) if the real-0G bill ever matters more than latency.
+const MAINNET_MIN_TIER = Number(process.env.COMPUTE_MAINNET_MIN_TIER ?? "0");
 
 /** Does a call at this Compute level get to use mainnet at all? */
 export function tierUsesMainnet(tier: number | undefined): boolean {
@@ -752,9 +754,9 @@ export function tierUsesMainnet(tier: number | undefined): boolean {
 
 // The per-call network order.
 //
-// A premium tier leads with mainnet and falls back to testnet on any hiccup. Every other
-// tier is testnet-only: it is not a fallback for them, it is the whole story. The circuit
-// breaker can also send a premium call straight to testnet while mainnet is tripped.
+// A tier at or above MAINNET_MIN_TIER leads with mainnet and falls back to testnet on any
+// hiccup. Below it, testnet is not a fallback, it is the whole story. The circuit breaker
+// can also send a mainnet-eligible call straight to testnet while mainnet is tripped.
 function callOrder(tier: number | undefined): Network[] {
   if (!mainnetNetwork || !tierUsesMainnet(tier)) return [testnetNetwork];
   if (Date.now() < mainnetSkipUntil) return [testnetNetwork];

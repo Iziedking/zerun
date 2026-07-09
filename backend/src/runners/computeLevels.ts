@@ -62,10 +62,15 @@ const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
 //   glm-*              the matcher does substring matching, so "glm-5" also swallows
 //                      "glm-5.1", "glm-5.2", and "GLM-5-FP8".
 //
-// ONLY the premium tiers reach mainnet at all (see `MAINNET_MIN_TIER` in zgCompute): levels
-// 0-3 never leave testnet, so no mainnet model is listed for them and a house agent never
-// spends real 0G. Levels 4-5 lead with a mainnet model and fall back to the testnet catalog
-// on any hiccup, which is why each still lists its testnet models after.
+// EVERY tier now reaches mainnet, so every tier lists a mainnet model first. Testnet's only
+// healthy provider is rate-limited to 10 requests/min and answers in ~3.8s; mainnet took 45
+// back-to-back calls at ~1.3s (src/scripts/rateProbe.ts). One 0G call is one chess ply, so
+// testnet was the reason a duel could not reach checkmate. The testnet names stay listed
+// behind the mainnet ones as the fallback, which is what they are now.
+//
+// The bill: a house agent now spends real 0G to think. At qwen3-vl's mainnet price a chess
+// ply costs a small fraction of a cent, so a full tournament is cents, not dollars — but it
+// is no longer free, and COMPUTE_MAINNET_MIN_TIER is the dial that takes it back.
 //
 // Both obvious premium candidates were MEASURED on mainnet and both failed:
 //
@@ -83,14 +88,31 @@ const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
 // different network from the base tiers — just not the one we wanted. To do better, measure
 // candidates with `models:bakeoff`; each new provider locks 2 0G of ledger (1 0G reserve +
 // 1 0G fee headroom), so explore deliberately. Untried: openai/gpt-5.4-mini, MiniMax-M3, glm-5.2.
+// The workhorse, and — measured, twice — the most RELIABLE model in the mainnet catalog, not
+// merely the cheapest. On the run that finally reached mainnet (the router had been gated off
+// by a missing COMPUTE_MAINNET_RPC_URL, so every earlier "mainnet" measurement was secretly
+// testnet) it passed solver, chess and forecast; `deepseek-v4-flash` returned an EMPTY chess
+// answer and a failed forecast in the same run, both billed before falling back to this.
+//
+// It is verbose — 374 characters to say "252" — which costs latency on the prose tasks (~8s
+// solver, ~7s forecast) but not on chess, where the prompt constrains it to a UCI move and a
+// short reason and it answers in ~1.6s.
+const MODEL_BASE_MAINNET = "qwen/qwen3-vl-30b-a3b-instruct"; // levels 0-5, mainnet
+
+// The premium lead. Kept ahead of the base model at levels 4-5 so the top tiers still route
+// to a different brain, with qwen3-vl right behind it to catch the empty answers. Watch it:
+// if the fallback rate stays high it is costing two calls to do one, and the top tiers should
+// simply lead with qwen3-vl until a premium model is properly baked off. The untried healthy
+// candidates are openai/gpt-5.4-mini, MiniMax-M3, qwen3.6-plus and glm-5.2 — each locks 1-2 0G
+// of ledger for 24h the first time it is called, so evaluate them deliberately.
 const MODEL_PRO_MAINNET = "deepseek-v4-flash"; // level 4  (was deepseek-v4-pro: empty answers)
 const MODEL_MAX_MAINNET = "deepseek-v4-flash"; // level 5  (was qwen3.7-max: too slow for chess)
 
 // Higher tiers keep their bigger compute (more self-consistency passes and a
 // bigger token budget) AND route to a stronger model, so the advantages compound:
 // more 0G invested buys both more thinking and a better brain.
-// Levels 0-3 are testnet-only, so they list testnet models exclusively.
-const BASE_MODELS = [MODEL_BASE];
+// Mainnet first, testnet behind it: a name only matches on the network that serves it.
+const BASE_MODELS = [MODEL_BASE_MAINNET, MODEL_BASE];
 
 // `level` is filled in by computePlan, which is the only way a plan is ever handed out.
 const LEVELS: Omit<InferencePlan, "level">[] = [

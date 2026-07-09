@@ -26,10 +26,16 @@ const MODELS = (process.env.MODELS ?? "qwen/qwen3-vl-30b-a3b-instruct,0GM-1.0-35
 
 // The token budgets the real inference plans use, because a budget that truncates a model
 // mid-thought turns a format question into a truncation artefact. L0 solver = 280,
-// chessGame = 48, worldcupForecast at L1 = 440.
+// chessGame = 64, worldcupForecast at L1 = 440.
 const TOK_SOLVER = 280;
-const TOK_CHESS = 48;
+const TOK_CHESS = 64;
 const TOK_FORECAST = 440;
+
+// Which tier to bill this as, because the tier is what selects the NETWORK. A mainnet model
+// probed at a testnet tier is never reached: the name matches nothing on testnet and the run
+// reports a failure that belongs to the router, not the model. Default to the top tier, which
+// reaches mainnet under any COMPUTE_MAINNET_MIN_TIER setting.
+const TIER = Number(process.env.BAKEOFF_TIER ?? "5");
 
 const SOLVER_SYSTEM = "You are a precise solver. Answer with only the final result, no words.";
 const SOLVER_PROMPT = "Compute: 17 * 23 - 148 + 9";
@@ -72,7 +78,7 @@ async function main() {
 
     rows.push(
       await run(model, "solver", async () => {
-        const a = await computeChat({ systemPrompt: SOLVER_SYSTEM, userPrompt: SOLVER_PROMPT, maxTokens: TOK_SOLVER, temperature: 0.2, models: [model] });
+        const a = await computeChat({ systemPrompt: SOLVER_SYSTEM, userPrompt: SOLVER_PROMPT, maxTokens: TOK_SOLVER, temperature: 0.2, models: [model], tier: TIER });
         const parsed = extractAnswer(a.text);
         const ok = parsed === SOLVER_EXPECTED;
         console.log(`  solver   ${ok ? "PASS" : "FAIL"}  ${String(a.latencyMs).padStart(5)}ms  ${String(a.text.length).padStart(4)} chars  parsed=${parsed ?? "(none)"}`);
@@ -82,7 +88,7 @@ async function main() {
 
     rows.push(
       await run(model, "chess", async () => {
-        const a = await computeChat({ systemPrompt: CHESS_SYSTEM, userPrompt: chessPrompt, maxTokens: TOK_CHESS, temperature: 0.3, models: [model] });
+        const a = await computeChat({ systemPrompt: CHESS_SYSTEM, userPrompt: chessPrompt, maxTokens: TOK_CHESS, temperature: 0.3, models: [model], tier: TIER });
         const { pick, matched } = parseChessChoice(a.text, candidates);
         console.log(`  chess    ${matched ? "PASS" : "FAIL"}  ${String(a.latencyMs).padStart(5)}ms  ${String(a.text.length).padStart(4)} chars  pick=${pick.uci}`);
         return { model, task: "chess", ok: matched, detail: pick.uci, latencyMs: a.latencyMs, servedBy: a.model, verified: a.verified };
@@ -91,7 +97,7 @@ async function main() {
 
     rows.push(
       await run(model, "forecast", async () => {
-        const a = await computeChat({ systemPrompt: FORECAST_SYSTEM, userPrompt: FORECAST_PROMPT, maxTokens: TOK_FORECAST, temperature: 0.4, models: [model] });
+        const a = await computeChat({ systemPrompt: FORECAST_SYSTEM, userPrompt: FORECAST_PROMPT, maxTokens: TOK_FORECAST, temperature: 0.4, models: [model], tier: TIER });
         const p = extractProbability(a.text);
         const ok = p !== null;
         console.log(`  forecast ${ok ? "PASS" : "FAIL"}  ${String(a.latencyMs).padStart(5)}ms  ${String(a.text.length).padStart(4)} chars  prob=${p ?? "(none)"}`);
