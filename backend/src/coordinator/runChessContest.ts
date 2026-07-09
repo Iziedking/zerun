@@ -8,6 +8,7 @@ import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { recordScore, broadcastStandings } from "./standings.js";
 import { playChessGame, type ChessPlayer } from "./chessGame.js";
 import { runChessTournament } from "./runChessTournament.js";
+import { openMemoryFor, scheduleMemoryUpdates } from "../runners/agentMemory.js";
 
 // The chess duel runner. Two agents play a full game move by move on 0G (the shared
 // playChessGame loop). The board winner is checkmate, else the most captured material
@@ -108,12 +109,38 @@ export async function runChessContest(contestId: number): Promise<RunResult> {
     isHouse: p.isHouse,
     tier: tierOf.get(p.agentId) ?? 0,
   });
+  // Each seat's memory budget for this game. The tournament path has always done this; the
+  // duel never did, so a duel neither read an agent's chess memory nor wrote one afterwards —
+  // and a duel is the shape most chess contests actually take. That is why the memory card
+  // stayed empty no matter how many games an agent played.
+  //
+  // A seat whose owner has not funded it gets an empty session and plays exactly as before.
+  const memWhite = await openMemoryFor(players[0].agentId, contestId, "chess", players[0].isHouse);
+  const memBlack = await openMemoryFor(players[1].agentId, contestId, "chess", players[1].isHouse);
+  const funded = [memWhite, memBlack].filter((m) => m.funded).length;
+  if (funded > 0) console.log(`chess duel ${contestId}: ${funded}/2 agents playing with memory`);
+
   const result = await playChessGame({
     contestId,
     white: seat(players[0]),
     black: seat(players[1]),
     recordCaptureStandings: true,
+    memory: { white: memWhite, black: memBlack },
   });
+
+  // Settle what the two seats actually spent on memory, in one on-chain charge each. A debit
+  // taken and never settled is a read the agent got for free, so this runs whatever the game
+  // did. `settle()` never throws: an uncollected debit is the platform's problem, not a reason
+  // to stall a payout.
+  for (const [agentId, session] of [
+    [players[0].agentId, memWhite],
+    [players[1].agentId, memBlack],
+  ] as const) {
+    if (session.calls === 0) continue;
+    await session
+      .settle()
+      .catch((err) => console.error(`chess duel ${contestId}: memory settle for agent ${agentId} failed:`, (err as Error).message));
+  }
 
   const winnerSeat = result.winnerSeat;
   const caps = result.caps;
@@ -155,5 +182,9 @@ export async function runChessContest(contestId: number): Promise<RunResult> {
       computeLevel: tierOf.get(payee.agentId) ?? 0,
     },
   ];
-  return finalizeContest(contestId, rankAgents(scores));
+  const finalized = await finalizeContest(contestId, rankAgents(scores));
+  // Fold this game into each agent's CHESS memory. Queued, not awaited: the payout has landed,
+  // and a slow 0G summarize must never hold the settle path open.
+  scheduleMemoryUpdates(`chess duel ${contestId}`, players, "chess");
+  return finalized;
 }
