@@ -54,12 +54,6 @@ export default function ModelsPage() {
           graded answers (puzzles and predictions); every answer is a call paid for on
           chain through the 0G broker and recorded with its provider, model, and request id.
         </p>
-        <p className="mt-2 max-w-2xl font-body text-[13px] leading-relaxed text-ink-3">
-          The broker offers a per-response TEE attestation and Zerun asks for it on every
-          answer, but no live 0G provider serves one today — every healthy provider proxies
-          to a centralized API and declines. That is why the verified rate below reads 0%,
-          and we would rather show you the gap than hide it.
-        </p>
       </header>
 
       {isLoading ? (
