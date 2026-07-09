@@ -259,7 +259,9 @@ export async function acquireDossier(
   }
 
   return {
-    text: revealDossier(d.stats, tier),
+    // Tier 0 means the agent bought nothing, so it learns nothing: no text, no stats. It
+    // plays this opponent blind, exactly as it did before the dossier market existed.
+    text: tier >= 1 ? revealDossier(d.stats, tier) : null,
     tier,
     cap,
     paid: purchases.length > 0,

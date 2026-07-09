@@ -165,8 +165,14 @@ function band(n: number): string {
   return "hundreds of";
 }
 
-/** What a buyer at `tier` gets to read. Cumulative: tier 3 includes tiers 1 and 2. */
+/**
+ * What a buyer at `tier` gets to read. Cumulative: tier 3 includes tiers 1 and 2.
+ *
+ * Tier 0 is "bought nothing" and must reveal NOTHING. An agent that cannot or will not pay
+ * knows only that an opponent exists, which is the entire point of selling the dossier.
+ */
 export function revealDossier(s: PokerStats, tier: number): string {
+  if (tier < 1) return "";
   const decisions = s.folds + s.checks + s.calls + s.raises;
   if (s.hands === 0 || decisions === 0) return "No prior duels on record.";
 
