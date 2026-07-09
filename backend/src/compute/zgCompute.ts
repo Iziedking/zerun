@@ -351,7 +351,11 @@ function makeNetwork(net: NetworkConfig) {
           console.warn(`[${net.label}] acknowledgeProviderSigner skipped: ${(err as Error).message}`);
         }
         try {
-          const locked = BigInt(net.perProviderOg) * 10n ** 18n;
+          // parseEther, not BigInt(n) * 1e18: BigInt() throws on a fractional amount, and
+          // that throw lands in the catch below as a mere "skipped" warning, leaving the
+          // provider's sub-account unfunded so every request 402s. On mainnet the sane
+          // amounts are fractions of a real 0G, so this has to accept 0.5.
+          const locked = ethers.parseEther(String(net.perProviderOg));
           await walletWrite(() =>
             withTimeout("transferFund", broker.ledger.transferFund(provider, "inference", locked)),
           );
