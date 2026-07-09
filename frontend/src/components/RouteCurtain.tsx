@@ -15,12 +15,14 @@ import { ZerunLoader } from "./ZerunLoader";
 // It is skipped entirely for `prefers-reduced-motion`, and on back/forward navigation, where
 // a person expects the page they just left to come straight back rather than a loading screen.
 
-export const SPLASH_MS = 3000;
+// The first load is the brand moment: the mark bounces, the bar fills, and "Built on 0G"
+// sits under it long enough to be read rather than glimpsed.
+export const SPLASH_MS = 7000;
 
-// A deliberate pause on every route. Arena and Leaderboard already fetch in well under this,
-// so the user is waiting on the animation and nothing else. Three seconds is what makes it
-// feel like a level loading rather than a page swapping; it is also long enough that a
-// regular visitor will feel it on the thirtieth click. Lower it here if that trade sours.
+// A deliberate pause on every route after the first. Arena and Leaderboard already fetch in
+// well under this, so the user is waiting on the animation and nothing else. Three seconds
+// makes a click feel like a level loading rather than a page swapping; it is also long enough
+// that a regular visitor will feel it on the thirtieth click. Lower it here if that trade sours.
 export const ROUTE_MS = 3000;
 
 function prefersReducedMotion(): boolean {
@@ -75,5 +77,6 @@ export function RouteCurtain() {
   }, [pathname]);
 
   if (phase === "idle") return null;
-  return <ZerunLoader built={phase === "splash"} />;
+  const splash = phase === "splash";
+  return <ZerunLoader built={splash} durationMs={splash ? SPLASH_MS : ROUTE_MS} />;
 }

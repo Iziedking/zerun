@@ -8,31 +8,48 @@ import { cx } from "./zerun/cx";
 // "Built on 0G"; a route change does not, because repeating the credit every time you click
 // Ladder turns a statement into wallpaper.
 
-/** The 0G mark, when the asset is present. Falls back to nothing rather than a broken image. */
-function ZeroGMark({ size = 18 }: { size?: number }) {
+/**
+ * The 0G mark.
+ *
+ * Prefers the real asset at `/0g-mark.svg` — drop 0G's own SVG there and it is used verbatim.
+ * Until then it falls back to a drawn tile rather than to nothing: an absent logo beside the
+ * words "Built on 0G" reads as a broken image, which is worse than a plain, honest mark.
+ */
+function ZeroGMark({ size = 20 }: { size?: number }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return null;
+
+  if (failed) {
+    return (
+      <span
+        aria-hidden
+        style={{ width: size, height: size }}
+        className="grid shrink-0 place-items-center rounded-[6px] bg-[#A855F7] font-display text-[10px] font-extrabold leading-none text-white"
+      >
+        0G
+      </span>
+    );
+  }
+
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src="/0g-mark.svg"
-      alt=""
-      width={size}
-      height={size}
-      onError={() => setFailed(true)}
-      className="opacity-70"
-    />
+    <img src="/0g-mark.svg" alt="" width={size} height={size} onError={() => setFailed(true)} className="shrink-0" />
   );
 }
 
 export function ZerunLoader({
   built = false,
+  durationMs = 3000,
   className = "",
 }: {
   /** Show the "Built on 0G" credit. First load only. */
   built?: boolean;
+  /** How long the curtain is held, so the progress line fills over exactly that. */
+  durationMs?: number;
   className?: string;
 }) {
+  // Finish the fill a beat before the curtain lifts: a bar that is still climbing when the
+  // page appears reads as an interruption, one that completes reads as a cue.
+  const fillMs = Math.max(400, durationMs - 250);
   return (
     <div
       className={cx(
@@ -68,7 +85,10 @@ export function ZerunLoader({
         aria-hidden
         className="relative mt-5 h-2.5 w-40 overflow-hidden rounded-pill border-line border-ink bg-cloud shadow-pop-press"
       >
-        <span className="absolute inset-y-0 left-0 w-full origin-left rounded-pill bg-violet motion-safe:animate-loader-fill motion-reduce:scale-x-100" />
+        <span
+          style={{ animationDuration: `${fillMs}ms` }}
+          className="absolute inset-y-0 left-0 w-full origin-left rounded-pill bg-violet motion-safe:animate-loader-fill motion-reduce:scale-x-100"
+        />
       </span>
 
       {built && (
