@@ -1,4 +1,5 @@
 import { callModel } from "../../compute/client.js";
+import { emptySession, type MemorySession } from "../memoryMarket.js";
 import { storageConfigured, uploadJson } from "../../storage/zgStorage.js";
 import { query } from "../../db/pool.js";
 import { computePlan } from "../computeLevels.js";
@@ -76,19 +77,26 @@ export async function author0gPolicy(
   agentId: number,
   tier: number,
   opp: PokerStats | null,
+  memory: MemorySession = emptySession,
 ): Promise<AuthoredPolicy | null> {
   const plan = computePlan(tier);
   const oppSummary = summarizeOpponent(opp);
+  // Poker's memory is the strategy note the agent wrote about its own leaks. It goes into
+  // the one 0G call that authors this contest's tuning, which is where it can actually
+  // change how the agent plays every hand. `take()` charges for it; "" means the agent
+  // could not pay, and it tunes from the opponent read alone, exactly as before.
+  const note = memory.take();
   let res: Awaited<ReturnType<typeof callModel>>;
   try {
     res = await callModel({
-      systemPrompt: SYSTEM,
+      systemPrompt: SYSTEM + note,
       userPrompt: `${oppSummary}\nTune your play to exploit this. Reply with the JSON only.`,
       maxTokens: 120,
       temperature: 0.3,
       models: plan.models,
     });
   } catch {
+    memory.refund(); // paid for a call that never landed
     return null;
   }
   const adjust = parseAdjust(res.text);

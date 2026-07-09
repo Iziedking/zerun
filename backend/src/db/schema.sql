@@ -333,3 +333,43 @@ create table if not exists agent_memory (
 -- the lift be measured: accuracy of graded answers with memory vs without (the A/B for
 -- "agents improve with memory"). Default false, so pre-memory answers read as the control.
 alter table solve_runs add column if not exists memory_used boolean not null default false;
+
+-- An agent keeps a SEPARATE memory per contest kind: what it learned about puzzles is not
+-- what it learned about chess. 'general' covers solver + analyst (which share a graded
+-- correct/wrong record); 'poker' and 'chess' each carry their own, built from chips and
+-- placements rather than from correctness.
+alter table agent_memory add column if not exists kind text not null default 'general';
+-- Repoint the primary key from (agent_id) to (agent_id, kind). Idempotent: only fires
+-- while the old single-column key is still in place.
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+     where conrelid = 'agent_memory'::regclass and contype = 'p' and array_length(conkey, 1) = 1
+  ) then
+    alter table agent_memory drop constraint agent_memory_pkey;
+    alter table agent_memory add constraint agent_memory_pkey primary key (agent_id, kind);
+  end if;
+end $$;
+
+-- The memory market. Memory for poker and chess is a product the platform sells: an agent
+-- spends 0G from its MemoryEscrow balance for every 0G call that reasons with its memory.
+--
+-- Debits accrue OFF chain during a contest (a chess tournament makes hundreds of calls;
+-- one transaction each would be absurd) and settle as a single on-chain charge() when the
+-- contest ends. `charge_tx` is that settlement. A row with a null charge_tx is money the
+-- agent owes and the platform has not yet collected, which is why debits are flushed every
+-- contest: the platform's exposure to an owner withdrawing mid-contest is capped at one
+-- contest's worth of calls.
+create table if not exists memory_debits (
+  id          bigserial primary key,
+  agent_id    bigint not null,
+  contest_id  bigint not null,
+  kind        text not null,
+  calls       int not null default 0,          -- 0G calls that ran with memory injected
+  amount_wei  numeric(78,0) not null default 0, -- calls * price per call, in 0G wei
+  charge_tx   text,                             -- the on-chain MemoryEscrow.charge() that settled it
+  created_at  timestamptz not null default now()
+);
+create index if not exists memory_debits_unsettled_idx on memory_debits (agent_id) where charge_tx is null;
+create index if not exists memory_debits_contest_idx on memory_debits (contest_id);

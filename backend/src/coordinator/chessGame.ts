@@ -3,6 +3,7 @@ import { broadcast, type ChessMatchInfo } from "./ws.js";
 import { recordScore, broadcastStandings } from "./standings.js";
 import { computePlan } from "../runners/computeLevels.js";
 import { callModel } from "../compute/client.js";
+import { emptySession, type MemorySession } from "../runners/memoryMarket.js";
 import {
   parseFEN,
   toFEN,
@@ -59,6 +60,11 @@ export interface PlayChessGameOptions {
   recordCaptureStandings?: boolean;
   // Optional external log to append each move to (for an audit/replay upload).
   moveLog?: unknown[];
+  // Each seat's memory budget for this contest. A move that can pay reasons with the
+  // agent's positional note; one that cannot plays exactly as it did before memory
+  // existed. A tournament opens these once and shares them across every match, so the
+  // budget spans the whole bracket rather than resetting each round.
+  memory?: { white: MemorySession; black: MemorySession };
 }
 
 // The outcome of one game: which seat won on the board and why, the final captured
@@ -80,13 +86,17 @@ export interface ChessGameResult {
 async function decideMove(
   pos: Position,
   tier: number,
-): Promise<{ uci: string; reason: string; source: string; provider: string; model: string; chatID: string | null; verified: boolean | null; latencyMs: number }> {
+  memory: MemorySession,
+): Promise<{ uci: string; reason: string; source: string; provider: string; model: string; chatID: string | null; verified: boolean | null; latencyMs: number; memoryUsed: boolean }> {
   const candidates = bestCandidates(pos, depthForTier(tier), CANDIDATES);
   const youAre: "white" | "black" = pos.turn === "w" ? "white" : "black";
   const models = computePlan(tier).models;
+  // Spend for this move. `take()` returns "" the moment the agent's escrow budget runs
+  // dry, so it plays on without its note instead of stalling the game.
+  const note = memory.take();
   try {
     const res = await callModel({
-      systemPrompt: CHESS_SYSTEM,
+      systemPrompt: CHESS_SYSTEM + note,
       userPrompt: buildChessPrompt(pos, candidates, youAre),
       maxTokens: 48,
       temperature: 0.3,
@@ -103,9 +113,12 @@ async function decideMove(
       chatID: res.chatID,
       verified: res.verified,
       latencyMs: res.latencyMs,
+      memoryUsed: note !== "",
     };
   } catch {
-    // 0G unavailable this move: play the engine's best so the game always progresses.
+    // 0G unavailable this move: play the engine's best so the game always progresses. The
+    // agent paid for a memory-assisted call it never received, so give the charge back.
+    memory.refund();
     const best = candidates[0]!;
     return {
       uci: best.uci,
@@ -116,6 +129,7 @@ async function decideMove(
       chatID: null,
       verified: null,
       latencyMs: 0,
+      memoryUsed: false,
     };
   }
 }
@@ -133,6 +147,10 @@ export async function playChessGame(opts: PlayChessGameOptions): Promise<ChessGa
   const { contestId, white, black } = opts;
   const players: [ChessPlayer, ChessPlayer] = [white, black];
   const base = opts.moveIndexBase ?? 0;
+  // No budget passed (a plain duel, or an unfunded seat) means no memory: the game plays
+  // exactly as it did before memory existed.
+  const memWhite = opts.memory?.white ?? emptySession;
+  const memBlack = opts.memory?.black ?? emptySession;
   const match = opts.match ?? null;
 
   let pos = parseFEN(START_FEN);
@@ -155,7 +173,7 @@ export async function playChessGame(opts: PlayChessGameOptions): Promise<ChessGa
       const seat = color === "w" ? 0 : 1;
       const mover = players[seat];
 
-      const decided = await decideMove(pos, mover.tier);
+      const decided = await decideMove(pos, mover.tier, seat === 0 ? memWhite : memBlack);
       const move = moveByUci(pos, decided.uci) ?? legalMoves(pos)[0]!;
       const captured = pos.board[move.to] !== "";
       pos = applyMove(pos, move);
@@ -189,10 +207,10 @@ export async function playChessGame(opts: PlayChessGameOptions): Promise<ChessGa
         });
         await query(
           `insert into solve_runs
-             (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, sources)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+             (contest_id, agent_id, operator, puzzle_idx, prompt, expected, answer, verdict, source, provider, model, chat_id, verified, latency_ms, samples, sources, memory_used)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
            on conflict (contest_id, agent_id, puzzle_idx) do update set answer = excluded.answer`,
-          [contestId, mover.agentId, mover.operator, base + ply, "chess move", null, decided.uci, "move", decided.source, decided.provider, decided.model, decided.chatID, decided.verified, decided.latencyMs, 1, 0],
+          [contestId, mover.agentId, mover.operator, base + ply, "chess move", null, decided.uci, "move", decided.source, decided.provider, decided.model, decided.chatID, decided.verified, decided.latencyMs, 1, 0, decided.memoryUsed],
         );
         if (opts.recordCaptureStandings) {
           // Live captured-material standings each move (the duel view).

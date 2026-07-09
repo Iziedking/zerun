@@ -1,6 +1,17 @@
 import { query } from "../db/pool.js";
 import { callModel } from "../compute/client.js";
 import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
+import {
+  emptySession,
+  freeSession,
+  isPaidMemoryKind,
+  memoryKindFor,
+  openPaidSession,
+  type MemoryKind,
+  type MemorySession,
+} from "./memoryMarket.js";
+
+export type { MemoryKind, MemorySession };
 
 // Agent memory: retrieved-context evolution. After a contest settles, an agent's own
 // recent play is summarized by a 0G Compute call into a compact self-profile and stored
@@ -63,17 +74,34 @@ export interface AgentMemory {
   updatedAt: string | null;
 }
 
+// An agent keeps a separate memory per kind, because what it learned about arithmetic is
+// not what it learned about the Sicilian. Each kind's record is built from that kind's own
+// signal: correctness for the graded kinds, chips and ratings for poker, placements and
+// material for chess.
 export interface MemoryTendencies {
-  graded: number; // graded answers folded in
+  // "general" (solver + analyst): a graded correct/wrong record.
+  graded: number;
   correct: number;
   wrong: number;
-  accuracy: number | null; // over graded (correct + wrong)
+  accuracy: number | null;
   byKind: Record<string, { correct: number; wrong: number }>;
-  recentForm: string; // e.g. "WWLWL" newest first, a quick read of momentum
+  recentForm: string; // "WWLWL", newest first
+  // "poker" and "chess": the kind's own outcomes. `plays` is the sample size for both,
+  // so the shared freshness guard (has anything new happened?) works across every kind.
+  plays?: number;
+  wins?: number;
+  rating?: number | null; // poker: conservative TrueSkill (mu - 3*sigma)
+  avgPlace?: number | null; // chess: mean bracket finish, 1 is the championship
+  best?: number | null; // chess: best finish so far
 }
 
-// Read an agent's stored memory (or null). Cheap; safe to call at decision time.
-export async function getAgentMemory(agentId: number): Promise<AgentMemory | null> {
+/** The sample size for a kind, used to decide whether anything new has happened. */
+function sampleSize(t: MemoryTendencies): number {
+  return t.graded > 0 ? t.graded : (t.plays ?? 0);
+}
+
+// Read an agent's stored memory for one kind (or null). Cheap; safe at decision time.
+export async function getAgentMemory(agentId: number, kind: MemoryKind = "general"): Promise<AgentMemory | null> {
   const { rows } = await query<{
     summary: string;
     tendencies: MemoryTendencies;
@@ -83,8 +111,8 @@ export async function getAgentMemory(agentId: number): Promise<AgentMemory | nul
     storage_root: string | null;
     updated_at: string | null;
   }>(
-    "select summary, tendencies, contests, model, chat_id, storage_root, updated_at from agent_memory where agent_id = $1",
-    [agentId],
+    "select summary, tendencies, contests, model, chat_id, storage_root, updated_at from agent_memory where agent_id = $1 and kind = $2",
+    [agentId, kind],
   );
   const r = rows[0];
   if (!r) return null;
@@ -101,10 +129,14 @@ export async function getAgentMemory(agentId: number): Promise<AgentMemory | nul
 
 // A short prompt block to append to an agent's system prompt, or "" when disabled or the
 // agent has no memory yet. Kept compact so it never crowds out the task.
-export async function memoryHintFor(agentId: number): Promise<string> {
+//
+// This returns the NOTE only. Whether the agent may actually use it is a separate
+// question, answered by the memory market: poker and chess memory is paid for per call.
+// See `openMemoryFor`.
+export async function memoryHintFor(agentId: number, kind: MemoryKind = "general"): Promise<string> {
   if (!memoryEnabled()) return "";
   try {
-    const m = await getAgentMemory(agentId);
+    const m = await getAgentMemory(agentId, kind);
     if (!m || !m.summary) return "";
     const note = m.summary.slice(0, HINT_MAX_CHARS);
     return `\n\nYour memory from past contests (apply it; do not repeat past mistakes): ${note}`;
@@ -114,6 +146,104 @@ export async function memoryHintFor(agentId: number): Promise<string> {
     console.warn(`agent memory ${agentId}: hint read failed, playing without it:`, (err as Error).message);
     return "";
   }
+}
+
+/**
+ * Open one agent's memory for one contest: the note, plus the budget that pays for it.
+ *
+ * Solver and Analyst memory is free, so they get a session that never runs out. Poker and
+ * chess memory is a product the platform sells, so their session is funded from the
+ * agent's MemoryEscrow balance and hands out the note one paid call at a time. An agent
+ * whose owner has not funded it, or has revoked its allowance, simply plays memoryless.
+ *
+ * House agents have no owner, no escrow, and no memory. They get nothing.
+ */
+export async function openMemoryFor(
+  agentId: number,
+  contestId: number,
+  contestKind: string,
+  isHouse: boolean,
+): Promise<MemorySession> {
+  if (isHouse || !memoryEnabled()) return emptySession;
+  const kind = memoryKindFor(contestKind);
+  const hint = await memoryHintFor(agentId, kind);
+  if (!hint) return emptySession;
+  if (!isPaidMemoryKind(kind)) return freeSession(hint);
+  return openPaidSession(agentId, contestId, kind, hint);
+}
+
+const EMPTY: MemoryTendencies = {
+  graded: 0,
+  correct: 0,
+  wrong: 0,
+  accuracy: null,
+  byKind: {},
+  recentForm: "",
+};
+
+// Poker leaves no correct/wrong record: every decision is an "action". Its signal is the
+// only thing that actually settles a poker contest — chips — plus the season rating, which
+// is the arena's own verdict on whether the agent is any good.
+async function gatherPokerTendencies(agentId: number): Promise<MemoryTendencies> {
+  const scores = await query<{ score: number }>(
+    `select cs.score
+       from contest_scores cs
+       join contests_meta cm on cm.contest_id = cs.contest_id
+      where cs.agent_id = $1 and cm.kind = 'poker'
+      order by cs.updated_at desc
+      limit 40`,
+    [agentId],
+  );
+  const rating = await query<{ mu: number; sigma: number; games: number; wins: number }>(
+    "select mu, sigma, games, wins from poker_ratings where agent_id = $1 order by updated_at desc limit 1",
+    [agentId],
+  );
+
+  const chips = scores.rows.map((r) => Number(r.score));
+  const r = rating.rows[0];
+  // A poker contest is won on chips, so "did I finish up" is the honest win test here.
+  const wins = chips.filter((c) => c > 0).length;
+  return {
+    ...EMPTY,
+    plays: chips.length,
+    wins: r ? r.wins : wins,
+    rating: r ? r.mu - 3 * r.sigma : null,
+    recentForm: chips.slice(0, 12).map((c) => (c > 0 ? "W" : "L")).join(""),
+  };
+}
+
+// Chess settles on bracket placement: contest_scores holds `size + 1 - place`, so the
+// place is recoverable, and the field size is the number of agents scored in that contest.
+async function gatherChessTendencies(agentId: number): Promise<MemoryTendencies> {
+  const { rows } = await query<{ contest_id: string; score: number; field: string }>(
+    `select cs.contest_id::text,
+            cs.score,
+            (select count(*) from contest_scores x where x.contest_id = cs.contest_id)::text as field
+       from contest_scores cs
+       join contests_meta cm on cm.contest_id = cs.contest_id
+      where cs.agent_id = $1 and cm.kind = 'chess'
+      order by cs.updated_at desc
+      limit 40`,
+    [agentId],
+  );
+
+  const places: number[] = [];
+  for (const r of rows) {
+    const field = Number(r.field);
+    const place = field + 1 - Number(r.score);
+    if (Number.isFinite(place) && place >= 1) places.push(place);
+  }
+  if (places.length === 0) return { ...EMPTY, plays: 0, wins: 0, avgPlace: null, best: null };
+
+  const wins = places.filter((p) => p === 1).length;
+  return {
+    ...EMPTY,
+    plays: places.length,
+    wins,
+    avgPlace: places.reduce((a, b) => a + b, 0) / places.length,
+    best: Math.min(...places),
+    recentForm: places.slice(0, 12).map((p) => (p === 1 ? "W" : "L")).join(""),
+  };
 }
 
 // Aggregate an agent's recent graded record (Solver + Analyst only; poker "action" and
@@ -159,8 +289,31 @@ async function gatherTendencies(agentId: number): Promise<MemoryTendencies> {
   };
 }
 
-// Turn the raw tendencies into a plain-language brief the model reflects on.
-function tendenciesBrief(t: MemoryTendencies): string {
+// Turn the raw tendencies into a plain-language brief the model reflects on. Each kind
+// reads the agent its OWN scoreboard, because "you were 62% correct" means nothing to a
+// chess player and "you averaged 3rd of 8" means nothing to a solver.
+function tendenciesBrief(t: MemoryTendencies, kind: MemoryKind): string {
+  if (kind === "poker") {
+    if (!t.plays) return "No poker contests yet.";
+    const rating = t.rating != null ? t.rating.toFixed(1) : "unrated";
+    const up = t.recentForm ? t.recentForm.split("").filter((c) => c === "W").length : 0;
+    return (
+      `Over your last ${t.plays} poker contests you finished up in ${up} of them, ` +
+      `and your season rating is ${rating} across ${t.wins ?? 0} wins. ` +
+      `Recent form (newest first, W = finished up): ${t.recentForm || "n/a"}.`
+    );
+  }
+
+  if (kind === "chess") {
+    if (!t.plays) return "No chess tournaments yet.";
+    const avg = t.avgPlace != null ? t.avgPlace.toFixed(1) : "n/a";
+    return (
+      `Over your last ${t.plays} chess tournaments you averaged ${avg} place, ` +
+      `your best finish was ${t.best ?? "n/a"}, and you won ${t.wins ?? 0}. ` +
+      `Recent form (newest first, W = won the bracket): ${t.recentForm || "n/a"}.`
+    );
+  }
+
   if (t.graded === 0) return "No graded answers yet.";
   const acc = t.accuracy != null ? `${Math.round(t.accuracy * 100)}%` : "n/a";
   const kinds = Object.entries(t.byKind)
@@ -173,25 +326,49 @@ function tendenciesBrief(t: MemoryTendencies): string {
   return `Over your last ${t.graded} graded answers you were ${t.correct} correct and ${t.wrong} wrong (${acc}). By kind: ${kinds}. Recent form (newest first): ${t.recentForm || "n/a"}.`;
 }
 
-const SUMMARIZER_SYSTEM =
-  "You are an AI agent reflecting on your own contest record to play better next time. " +
-  "Given your recent results, write a SHORT memory note (2 to 3 sentences, under 60 words): " +
-  "your genuine strengths, the recurring mistakes to avoid, and one concrete rule to apply next time. " +
-  "Be specific and honest, write in the first person, and output only the note.";
+// The reflection each kind asks for. Chess and poker want a positional/strategic note the
+// agent can actually apply mid-game, not a report card.
+const SUMMARIZER_SYSTEM: Record<MemoryKind, string> = {
+  general:
+    "You are an AI agent reflecting on your own contest record to play better next time. " +
+    "Given your recent results, write a SHORT memory note (2 to 3 sentences, under 60 words): " +
+    "your genuine strengths, the recurring mistakes to avoid, and one concrete rule to apply next time. " +
+    "Be specific and honest, write in the first person, and output only the note.",
+  poker:
+    "You are an AI poker agent reflecting on your own results to play better. Given your recent " +
+    "record, write a SHORT strategy note (2 to 3 sentences, under 60 words) you will read before every " +
+    "betting decision: the leak your results suggest (too loose, too passive, paying off value bets), " +
+    "and one concrete adjustment. Be specific about streets and bet sizing, write in the first person, " +
+    "and output only the note.",
+  chess:
+    "You are an AI chess agent reflecting on your own tournament results to play better. Given your " +
+    "record, write a SHORT positional note (2 to 3 sentences, under 60 words) you will read before " +
+    "choosing every move: the pattern your results suggest (trading down when behind, missing tactics " +
+    "in sharp positions, drifting in quiet ones), and one concrete rule for picking between candidate " +
+    "moves. Write in the first person, and output only the note.",
+};
+
+// Fetch the right signal for a kind.
+async function gatherFor(agentId: number, kind: MemoryKind): Promise<MemoryTendencies> {
+  if (kind === "poker") return gatherPokerTendencies(agentId);
+  if (kind === "chess") return gatherChessTendencies(agentId);
+  return gatherTendencies(agentId);
+}
 
 // Should we spend a 0G call summarizing this agent right now? Cheap, DB-only checks that
 // run before anything is paid for.
-async function shouldSummarize(agentId: number, tendencies: MemoryTendencies): Promise<boolean> {
-  if (tendencies.graded < MIN_GRADED) return false; // too little signal to summarize yet
+async function shouldSummarize(agentId: number, kind: MemoryKind, tendencies: MemoryTendencies): Promise<boolean> {
+  const now = sampleSize(tendencies);
+  if (now < MIN_GRADED) return false; // too little signal to summarize yet
 
-  const prev = await getAgentMemory(agentId);
+  const prev = await getAgentMemory(agentId, kind);
   if (!prev) return true;
 
-  // Nothing new was graded since the last memory, so there is nothing new to learn. A
+  // Nothing new happened since the last memory, so there is nothing new to learn. A
   // re-summarize here would pay for a 0G call and a 0G Storage write to restate the note
   // the agent already has.
-  const prevGraded = prev.tendencies?.graded ?? 0;
-  if (tendencies.graded - prevGraded < MIN_NEW_GRADED) return false;
+  const before = prev.tendencies ? sampleSize(prev.tendencies) : 0;
+  if (now - before < MIN_NEW_GRADED) return false;
 
   if (COOLDOWN_MS > 0 && prev.updatedAt) {
     const age = Date.now() - new Date(prev.updatedAt).getTime();
@@ -202,17 +379,17 @@ async function shouldSummarize(agentId: number, tendencies: MemoryTendencies): P
 
 // Summarize one agent's own recent play into a fresh memory, authored on 0G Compute and
 // anchored on 0G Storage. Any failure leaves the previous memory in place, untouched.
-export async function updateAgentMemory(agentId: number): Promise<void> {
-  const tendencies = await gatherTendencies(agentId);
-  if (!(await shouldSummarize(agentId, tendencies))) return;
+export async function updateAgentMemory(agentId: number, kind: MemoryKind = "general"): Promise<void> {
+  const tendencies = await gatherFor(agentId, kind);
+  if (!(await shouldSummarize(agentId, kind, tendencies))) return;
 
   let summary = "";
   let model: string | null = null;
   let chatId: string | null = null;
   try {
     const res = await callModel({
-      systemPrompt: SUMMARIZER_SYSTEM,
-      userPrompt: tendenciesBrief(tendencies),
+      systemPrompt: SUMMARIZER_SYSTEM[kind],
+      userPrompt: tendenciesBrief(tendencies, kind),
       maxTokens: 160,
       temperature: 0.4,
     });
@@ -233,11 +410,11 @@ export async function updateAgentMemory(agentId: number): Promise<void> {
   let storageRoot: string | null = null;
   if (storageConfigured()) {
     try {
-      const up = await uploadJson({ kind: "agent-memory", agentId, summary, tendencies });
+      const up = await uploadJson({ kind: "agent-memory", memoryKind: kind, agentId, summary, tendencies });
       storageRoot = up.rootHash;
     } catch (err) {
       console.error(
-        `agent memory ${agentId}: 0G storage anchor failed, keeping the previous anchored memory:`,
+        `agent memory ${agentId} (${kind}): 0G storage anchor failed, keeping the previous anchored memory:`,
         (err as Error).message,
       );
       return;
@@ -245,9 +422,9 @@ export async function updateAgentMemory(agentId: number): Promise<void> {
   }
 
   await query(
-    `insert into agent_memory (agent_id, summary, tendencies, contests, model, chat_id, storage_root, updated_at)
-       values ($1, $2, $3, 1, $4, $5, $6, now())
-     on conflict (agent_id) do update set
+    `insert into agent_memory (agent_id, kind, summary, tendencies, contests, model, chat_id, storage_root, updated_at)
+       values ($1, $2, $3, $4, 1, $5, $6, $7, now())
+     on conflict (agent_id, kind) do update set
        summary = excluded.summary,
        tendencies = excluded.tendencies,
        contests = agent_memory.contests + 1,
@@ -255,10 +432,10 @@ export async function updateAgentMemory(agentId: number): Promise<void> {
        chat_id = excluded.chat_id,
        storage_root = excluded.storage_root,
        updated_at = now()`,
-    [agentId, summary, JSON.stringify(tendencies), model, chatId, storageRoot],
+    [agentId, kind, summary, JSON.stringify(tendencies), model, chatId, storageRoot],
   );
   console.log(
-    `agent memory ${agentId}: refreshed on ${model ?? "0G"} over ${tendencies.graded} graded answers` +
+    `agent memory ${agentId} (${kind}): refreshed on ${model ?? "0G"} over ${sampleSize(tendencies)} results` +
       (storageRoot ? `, anchored at ${storageRoot.slice(0, 10)}…` : " (storage off)"),
   );
 }
@@ -303,10 +480,10 @@ export async function memoryLift(): Promise<MemoryLift> {
   return { withMemory, withoutMemory, lift };
 }
 
-// One update per agent at a time. Two contests settling close together must not summarize
-// the same agent twice in parallel: they would race the write and pay for two 0G calls to
-// produce one memory.
-const inFlight = new Map<number, Promise<void>>();
+// One update per agent AND kind at a time. Two contests settling close together must not
+// summarize the same agent's chess memory twice in parallel: they would race the write and
+// pay for two 0G calls to produce one memory. Different kinds are independent.
+const inFlight = new Map<string, Promise<void>>();
 
 // Memory work is queued and drained one agent at a time. Every 0G call already passes
 // through the compute layer's global throttle, so parallelism here would buy nothing and
@@ -314,20 +491,21 @@ const inFlight = new Map<number, Promise<void>>();
 let queue: Promise<void> = Promise.resolve();
 let queued = 0;
 
-async function runOne(agentId: number): Promise<void> {
-  const existing = inFlight.get(agentId);
+async function runOne(agentId: number, kind: MemoryKind): Promise<void> {
+  const key = `${agentId}:${kind}`;
+  const existing = inFlight.get(key);
   if (existing) return existing;
 
-  const p = withTimeout(updateAgentMemory(agentId), UPDATE_TIMEOUT_MS, `agent memory ${agentId}`)
+  const p = withTimeout(updateAgentMemory(agentId, kind), UPDATE_TIMEOUT_MS, `agent memory ${key}`)
     .catch((err) => {
       // A memory that fails to refresh simply stays as it was. Never escalate.
-      console.error(`agent memory ${agentId}: update failed:`, (err as Error).message);
+      console.error(`agent memory ${key}: update failed:`, (err as Error).message);
     })
     .finally(() => {
-      inFlight.delete(agentId);
+      inFlight.delete(key);
     });
 
-  inFlight.set(agentId, p);
+  inFlight.set(key, p);
   return p;
 }
 
@@ -341,9 +519,14 @@ async function runOne(agentId: number): Promise<void> {
 export function scheduleMemoryUpdates(
   contestLabel: string,
   entries: { agentId: number; isHouse: boolean }[],
+  contestKind = "solver",
 ): void {
   if (!memoryEnabled()) return;
 
+  // A contest only refreshes the memory for ITS OWN kind. A poker night teaches an agent
+  // nothing about chess, and re-summarizing every kind after every contest would pay for
+  // 0G calls to restate notes that did not change.
+  const kind = memoryKindFor(contestKind);
   const agents = [...new Set(entries.filter((e) => !e.isHouse).map((e) => e.agentId))];
   if (agents.length === 0) return;
 
@@ -354,7 +537,7 @@ export function scheduleMemoryUpdates(
     }
     queued += 1;
     queue = queue
-      .then(() => runOne(agentId))
+      .then(() => runOne(agentId, kind))
       .catch(() => undefined)
       .finally(() => {
         queued -= 1;

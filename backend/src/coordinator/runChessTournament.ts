@@ -6,6 +6,8 @@ import { contestEngineAbi, coordinatorAddress, loadDeployment, publicClient } fr
 import { getAgentCompute } from "../runners/traitStore.js";
 import { rankAgents, type AgentScore } from "../runners/scoring.js";
 import { playChessGame, type ChessPlayer } from "./chessGame.js";
+import { openMemoryFor, scheduleMemoryUpdates } from "../runners/agentMemory.js";
+import { emptySession, type MemorySession } from "../runners/memoryMarket.js";
 import {
   buildBracket,
   nextMatch,
@@ -128,6 +130,17 @@ export async function runChessTournament(contestId: number, entries: TourneyPlay
   const seats: BracketSeat[] = seeded.map((p, i) => seatOf(p, i + 1));
   const playerById = new Map(players.map((p) => [p.agentId, p]));
 
+  // Each agent's memory budget for the WHOLE bracket, opened once. A player who goes deep
+  // spends more than one knocked out in the first round, which is the point: memory is
+  // priced per move it actually informed. Unfunded agents get an empty session and play
+  // exactly as they would have without memory.
+  const memoryOf = new Map<number, MemorySession>();
+  for (const p of players) {
+    memoryOf.set(p.agentId, await openMemoryFor(p.agentId, contestId, "chess", p.isHouse));
+  }
+  const funded = [...memoryOf.values()].filter((s) => s.funded).length;
+  if (funded > 0) console.log(`chess tournament ${contestId}: ${funded}/${players.length} agents playing with memory`);
+
   await query("update contests_meta set status = 'running' where contest_id = $1", [contestId]);
   broadcast({
     type: "status",
@@ -183,6 +196,10 @@ export async function runChessTournament(contestId: number, entries: TourneyPlay
         match: { round: m.round, index: m.index, label, totalRounds },
         recordCaptureStandings: false,
         moveLog,
+        memory: {
+          white: memoryOf.get(white.agentId) ?? emptySession,
+          black: memoryOf.get(black.agentId) ?? emptySession,
+        },
       });
       moveIndexBase += result.plies;
 
@@ -202,6 +219,17 @@ export async function runChessTournament(contestId: number, entries: TourneyPlay
     }
   } catch (err) {
     console.error(`chess tournament ${contestId}: bracket loop aborted, settling on state so far:`, (err as Error).message);
+  }
+
+  // Settle the memory each agent bought. One charge() per agent for the whole bracket, so
+  // hundreds of moves cost no transactions while they are being played. This runs even if
+  // the bracket loop threw: the agents consumed the memory they consumed. Never throws —
+  // an uncollected debit is the platform's problem, not a reason to stall a payout.
+  for (const [agentId, session] of memoryOf) {
+    if (session.calls === 0) continue;
+    await session.settle().catch((err) =>
+      console.error(`chess tournament ${contestId}: memory settle for agent ${agentId} failed:`, (err as Error).message),
+    );
   }
 
   // Final placement for every agent (1 = champion, 2 = runner-up, semifinal losers share
@@ -258,7 +286,11 @@ export async function runChessTournament(contestId: number, entries: TourneyPlay
     totalLatencyMs: 0,
     computeLevel: tierOf.get(p.agentId) ?? 0,
   }));
-  return finalizeContest(contestId, rankAgents(scores));
+  const result = await finalizeContest(contestId, rankAgents(scores));
+  // Fold this bracket into each real agent's CHESS memory (its own record, separate from
+  // what it learned about puzzles). Queued, not awaited: the payout has landed.
+  scheduleMemoryUpdates(`chess tournament ${contestId}`, players, "chess");
+  return result;
 }
 
 // Broadcast a lobby snapshot (seats filling, no matches played yet) for an open chess

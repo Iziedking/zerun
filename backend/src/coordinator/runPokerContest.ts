@@ -22,6 +22,8 @@ import { decideStrategy, policyForTier, type Policy } from "../runners/poker/str
 import { recordDuel, buildDossier, type PokerStats } from "../runners/poker/dossier.js";
 import { recordDuelResult } from "../runners/poker/ratings.js";
 import { author0gPolicy, policy0gEnabled } from "../runners/poker/policy0g.js";
+import { openMemoryFor, scheduleMemoryUpdates } from "../runners/agentMemory.js";
+import { emptySession, type MemorySession } from "../runners/memoryMarket.js";
 
 // The authored/scouted policy override this contest already stored for an agent, so a
 // recovered (replayed) match reuses the exact same tuning and its decisions match.
@@ -178,6 +180,15 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   // Scouting no longer feeds a prompt; it tunes the buyer's opponent model. A
   // scouted agent gets a small, bounded policy tweak against this specific opponent.
   const overrideOf = new Map<number, Partial<Policy>>();
+
+  // Each agent's poker memory: the strategy note it wrote about its own leaks. Paid for
+  // out of its MemoryEscrow balance, one charge per 0G call it informs. Poker makes one
+  // such call per contest (the policy authoring), so this is a single debit per agent.
+  const memoryOf = new Map<number, MemorySession>();
+  for (const p of players) {
+    memoryOf.set(p.agentId, await openMemoryFor(p.agentId, contestId, "poker", p.isHouse));
+  }
+
   for (const seat of [0, 1] as const) {
     const me = players[seat];
     const opponent = players[seat === 0 ? 1 : 0];
@@ -213,6 +224,7 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
           me.agentId,
           levelOf.get(me.agentId) ?? 0,
           access.stats ?? null,
+          memoryOf.get(me.agentId) ?? emptySession,
         ).catch(() => null);
       }
       if (authoredOn0g) {
@@ -471,6 +483,16 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   // replay upload comes after and is best effort, so a slow or stalled upload can no
   // longer leave a finished match stuck unsettled.
   const result = await finalizeContest(contestId, rankAgents(scores));
+  // Collect what each agent owes for the memory it played with (one charge per agent),
+  // then fold this duel into its poker memory. Both are best effort and neither can
+  // unsettle a paid contest.
+  for (const [agentId, session] of memoryOf) {
+    if (session.calls === 0) continue;
+    await session.settle().catch((err) =>
+      console.error(`poker ${contestId}: memory settle for agent ${agentId} failed:`, (err as Error).message),
+    );
+  }
+  scheduleMemoryUpdates(`poker ${contestId}`, players, "poker");
   await storePokerReplay(contestId, net, matchLog);
   return result;
 }

@@ -14,6 +14,7 @@ import {
   coordinatorAccount,
   waitReceipt,
   GAS_PRICE,
+  memoryEscrowAddress,
 } from "../chain/contracts.js";
 import {
   nextLevelCostWei,
@@ -33,6 +34,15 @@ import { standingsFor } from "../coordinator/standings.js";
 import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
 import { getAgentMemory, memoryEnabled, memoryLift, memoryQueueDepth } from "../runners/agentMemory.js";
+import { agentAddress } from "../runners/agentWallet.js";
+import {
+  accountOf,
+  isPaidMemoryKind,
+  memoryMarketConfigured,
+  pricePerCallWei,
+  unsettledWei,
+  type MemoryKind,
+} from "../runners/memoryMarket.js";
 import { xConfigured, verifyWalletSig, beginXAuth, completeXAuth, xIdentityFor } from "../auth/xConnect.js";
 import { scheduleHouseFill, coordinatorGasBalance } from "../coordinator/autopilot.js";
 import { getAgentCompute } from "../runners/traitStore.js";
@@ -727,6 +737,9 @@ app.get("/api/deployment", (c) => {
       prizeEscrow: dep.prizeEscrow,
       agentRegistry: dep.agentRegistry,
       contestEngine: dep.contestEngine,
+      // Optional: null until the memory market is deployed. The funding UI needs it to
+      // build a depositAndAllow transaction from the operator's own wallet.
+      memoryEscrow: memoryEscrowAddress(),
     },
   });
 });
@@ -775,11 +788,46 @@ app.get("/api/poker/ladder", async (c) => {
 // tendencies, and the 0G Storage anchor. `enabled` reflects the AGENT_MEMORY flag so the
 // UI can show whether memory is influencing play. Returns memory: null when the agent has
 // none yet (or the flag is off and nothing was ever written).
+// An agent's memory. `kind` selects which one: "general" (solver + analyst), "poker", or
+// "chess". They are separate records, because what an agent learned about arithmetic is
+// not what it learned about the Sicilian.
 app.get("/api/agents/:id/memory", async (c) => {
   const agentId = Number(c.req.param("id"));
   if (!agentId) return c.json({ error: "a numeric agent id is required" }, 400);
-  const memory = await getAgentMemory(agentId);
-  return c.json({ enabled: memoryEnabled(), memory });
+  const raw = c.req.query("kind") ?? "general";
+  const kind: MemoryKind = raw === "poker" || raw === "chess" ? raw : "general";
+  const memory = await getAgentMemory(agentId, kind);
+  return c.json({ enabled: memoryEnabled(), kind, paid: isPaidMemoryKind(kind), memory });
+});
+
+// The agent's wallet and its memory balance.
+//
+// The address is derived from a public extended key at the agent's own id. The backend
+// cannot sign for it; it exists so an agent has a stable identity you can look up. Value
+// lives in MemoryEscrow, where only the agent's owner can withdraw, and the coordinator
+// can spend only up to the allowance that owner granted, only to an immutable treasury.
+app.get("/api/agents/:id/wallet", async (c) => {
+  const agentId = Number(c.req.param("id"));
+  if (!agentId) return c.json({ error: "a numeric agent id is required" }, 400);
+
+  const [account, owed] = await Promise.all([accountOf(agentId), unsettledWei(agentId).catch(() => 0n)]);
+  const price = pricePerCallWei();
+  const spendable = account ? (account.balanceWei < account.allowanceWei ? account.balanceWei : account.allowanceWei) : 0n;
+
+  return c.json({
+    agentId,
+    address: agentAddress(agentId),
+    escrow: memoryEscrowAddress(),
+    market: memoryMarketConfigured(),
+    pricePerCallWei: price.toString(),
+    // How many more memory-assisted 0G calls this agent can afford right now. This is the
+    // number that decides whether it plays poker and chess with its memory or without.
+    callsRemaining: price > 0n ? Number(spendable / price) : 0,
+    balanceWei: (account?.balanceWei ?? 0n).toString(),
+    allowanceWei: (account?.allowanceWei ?? 0n).toString(),
+    spentWei: (account?.spentWei ?? 0n).toString(),
+    unsettledWei: owed.toString(),
+  });
 });
 
 // The measured lift from agent memory: accuracy of graded answers produced with memory

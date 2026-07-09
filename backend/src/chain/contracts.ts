@@ -27,6 +27,9 @@ export interface Deployment {
   prizeEscrow: `0x${string}`;
   agentRegistry: `0x${string}`;
   contestEngine: `0x${string}`;
+  // The agent memory market. Optional: the arena runs without it, and memory for poker
+  // and chess is simply unavailable until it is deployed.
+  memoryEscrow?: `0x${string}`;
   deployer?: string;
   coordinator?: string;
   chainId?: number;
@@ -121,6 +124,31 @@ export const testUsdcAbi = parseAbi([
 export const prizeEscrowAbi = parseAbi([
   "function poolBalance(address controller, uint256 poolId) view returns (uint256)",
 ]);
+
+// MemoryEscrow: an agent's non-custodial 0G balance for memory. The coordinator holds
+// SPENDER_ROLE, whose only power is charge(), bounded by the owner's allowance and paid
+// to an immutable treasury. It cannot withdraw, and it cannot redirect.
+export const memoryEscrowAbi = parseAbi([
+  "function deposit(uint256 agentId) payable",
+  "function depositAndAllow(uint256 agentId) payable",
+  "function setAllowance(uint256 agentId, uint256 allowance)",
+  "function withdraw(uint256 agentId, uint256 amount)",
+  "function charge(uint256 agentId, uint256 amount)",
+  "function accountOf(uint256 agentId) view returns (uint256 balance, uint256 allowance, uint256 spent)",
+  "function spendable(uint256 agentId) view returns (uint256)",
+  "function treasury() view returns (address)",
+]);
+
+// The memory market is optional: no address, no paid memory, everything else unaffected.
+export function memoryEscrowAddress(): `0x${string}` | null {
+  const env = process.env.ADDR_MEMORY_ESCROW as `0x${string}` | undefined;
+  if (env && /^0x[0-9a-fA-F]{40}$/.test(env)) return env;
+  try {
+    return loadDeployment().memoryEscrow ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export const publicClient = createPublicClient({ chain: ogGalileo, transport: http(config.chain.rpcUrl) });
 
