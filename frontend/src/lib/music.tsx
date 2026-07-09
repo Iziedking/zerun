@@ -48,6 +48,11 @@ export function MusicProvider({ children }: { children: ReactNode }) {
   const [muted, setMutedState] = useState(false); // default: sound on
   // Whether the theme was playing when a contest ducked it, so it can be restored on exit.
   const duckedRef = useRef(false);
+  // Whether a contest is currently holding the theme down. This is a SUPPRESSION, not just a
+  // pause: pausing alone was not enough, because the autoplay-on-first-gesture listener stayed
+  // armed and the very next click anywhere on the contest page started the theme again, right
+  // over the chess move sounds. Every path that can start playback checks this.
+  const suppressedRef = useRef(false);
   const [playing, setPlaying] = useState(false);
   const [available, setAvailable] = useState(true);
 
@@ -123,7 +128,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       if (document.hidden) {
         wasPlayingRef.current = !a.paused;
         if (!a.paused) a.pause();
-      } else if (wasPlayingRef.current && !mutedRef.current) {
+      } else if (wasPlayingRef.current && !mutedRef.current && !suppressedRef.current) {
         a.play().then(() => announcePlay()).catch(() => {});
       }
     };
@@ -145,7 +150,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const start = () => {
       if (done) return;
       const a = audioRef.current;
-      if (!a || !a.paused || mutedRef.current) return;
+      if (!a || !a.paused || mutedRef.current || suppressedRef.current) return;
       a.play()
         .then(() => {
           done = true;
@@ -178,13 +183,17 @@ export function MusicProvider({ children }: { children: ReactNode }) {
     const a = audioRef.current;
     if (!a) return;
     if (on) {
+      // Remember whether the theme was audible, so a visitor who arrived on a contest page with
+      // the theme still blocked by autoplay does not get it switched on when they leave.
       duckedRef.current = !a.paused;
+      suppressedRef.current = true;
       if (!a.paused) {
         a.pause();
         setPlaying(false);
       }
       return;
     }
+    suppressedRef.current = false;
     // Restore only if we were the ones who paused it, and the user has not muted meanwhile.
     if (duckedRef.current && !mutedRef.current) {
       a.play().then(() => announcePlay()).catch(() => {});
@@ -194,7 +203,7 @@ export function MusicProvider({ children }: { children: ReactNode }) {
 
   const play = useCallback(() => {
     const a = audioRef.current;
-    if (!a || mutedRef.current || !a.paused) return;
+    if (!a || mutedRef.current || suppressedRef.current || !a.paused) return;
     a.play().then(() => announcePlay()).catch(() => setAvailable(false));
   }, [announcePlay]);
 
@@ -207,6 +216,8 @@ export function MusicProvider({ children }: { children: ReactNode }) {
       return;
     }
     setMuted(false);
+    // Unmuting during a contest un-mutes the GAME sounds; the theme stays down until you leave.
+    if (suppressedRef.current) return;
     a.play().then(() => announcePlay()).catch(() => setAvailable(false));
   }, [setMuted, announcePlay]);
 

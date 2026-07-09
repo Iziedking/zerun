@@ -8,12 +8,18 @@ import { ZerunLoader } from "./ZerunLoader";
 //
 //   1. FIRST LOAD: the splash. The bouncing Z, the wordmark, and "Built on 0G" with the 0G
 //      mark. Held 7s the first time this browser ever opens Zerun, 3s on every load after.
-//   2. EVERY ROUTE AFTER: the same curtain, without the 0G credit — repeating the credit on
-//      each click turns a statement into wallpaper. This one exists purely for feel: the app
-//      is not fetching anything behind it, so the wait is real and it is deliberate.
+//   2. NAVIGATING BETWEEN THE MAIN PAGES: the same curtain, without the 0G credit — repeating
+//      the credit on each click turns a statement into wallpaper. This one exists purely for
+//      feel: nothing is fetching behind it, so the wait is real and it is deliberate.
 //
 // It is skipped entirely for `prefers-reduced-motion`, and on back/forward navigation, where
 // a person expects the page they just left to come straight back rather than a loading screen.
+//
+// And it is skipped for everything that is not a top-level page. An in-app action that happens
+// to end in a `router.push` — hosting a contest and landing on it, claiming an agent, finishing
+// onboarding — is not a navigation the user asked for, it is the result of work they just did.
+// Covering that result with two seconds of branding makes the app feel like it is stalling on
+// their behalf. The curtain belongs to the nav bar, and nowhere else.
 
 // The FIRST time anyone opens Zerun: the brand moment. The mark bounces, the bar fills, and
 // "Built on 0G" sits under it long enough to be read rather than glimpsed.
@@ -41,6 +47,15 @@ function firstEverVisit(): boolean {
     // remembered should not be held for seven seconds on every single load.
     return false;
   }
+}
+
+// The only destinations that draw a curtain: the pages in the top nav, plus Docs. Anything
+// else — /contest/123, /onboarding, /admin, /x/... — arrives instantly. Exact matches only,
+// so a nested route under one of these does not inherit the curtain.
+const CURTAIN_ROUTES = new Set(["/", "/arena", "/ladder", "/leaderboard", "/models", "/profile", "/docs"]);
+
+function isCurtainRoute(path: string): boolean {
+  return CURTAIN_ROUTES.has(path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path);
 }
 
 function prefersReducedMotion(): boolean {
@@ -93,6 +108,7 @@ export function RouteCurtain() {
       return;
     }
     if (prefersReducedMotion()) return;
+    if (!isCurtainRoute(pathname)) return;
 
     setPhase("route");
     const t = setTimeout(() => setPhase("idle"), ROUTE_MS);
