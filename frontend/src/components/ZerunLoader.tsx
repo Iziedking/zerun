@@ -9,21 +9,26 @@ import { cx } from "./zerun/cx";
 // Ladder turns a statement into wallpaper.
 
 /**
- * The 0G mark.
+ * The 0G mark, from 0G's own asset at `/0g-mark.svg`.
  *
- * Prefers the real asset at `/0g-mark.svg` — drop 0G's own SVG there and it is used verbatim.
- * Until then it falls back to a drawn tile rather than to nothing: an absent logo beside the
- * words "Built on 0G" reads as a broken image, which is worse than a plain, honest mark.
+ * It is a WIDE glyph (378x183, a ratio of ~2.07), not a square icon, so it is sized by height
+ * and given its natural width. Passing size to both would squash their logo, which is the one
+ * thing you must not do to somebody else's brand.
+ *
+ * If the file ever goes missing it falls back to a drawn tile rather than to nothing: an absent
+ * logo beside the words "Built on 0G" reads as a broken image.
  */
-function ZeroGMark({ size = 20 }: { size?: number }) {
+const ZERO_G_ASPECT = 378 / 183;
+
+function ZeroGMark({ height = 16 }: { height?: number }) {
   const [failed, setFailed] = useState(false);
 
   if (failed) {
     return (
       <span
         aria-hidden
-        style={{ width: size, height: size }}
-        className="grid shrink-0 place-items-center rounded-[6px] bg-[#A855F7] font-display text-[10px] font-extrabold leading-none text-white"
+        style={{ width: height, height }}
+        className="grid shrink-0 place-items-center rounded-[5px] bg-[#B75FFF] font-display text-[9px] font-extrabold leading-none text-white"
       >
         0G
       </span>
@@ -32,7 +37,14 @@ function ZeroGMark({ size = 20 }: { size?: number }) {
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src="/0g-mark.svg" alt="" width={size} height={size} onError={() => setFailed(true)} className="shrink-0" />
+    <img
+      src="/0g-mark.svg"
+      alt=""
+      height={height}
+      width={Math.round(height * ZERO_G_ASPECT)}
+      onError={() => setFailed(true)}
+      className="shrink-0"
+    />
   );
 }
 
