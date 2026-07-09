@@ -110,14 +110,30 @@ export function ContestLive({
     mutedRef.current = muted;
   }, [muted]);
 
-  // A game brings its own sound. Pause the theme while a chess or poker contest is on screen
-  // and give it back on the way out — without touching the mute setting, so the operator's own
-  // choice survives the visit. The other kinds have no in-game audio, so they keep the theme.
+  // Whether this contest has finished. A settled contest is not an event any more: its board is
+  // a replay, no move sounds will fire, and the platform theme should be playing over it.
+  const over = settled != null || status?.status === "settled";
+  const overRef = useRef(over);
+  useEffect(() => {
+    overRef.current = over;
+  }, [over]);
+
+  // A game brings its own sound. Pause the theme while a chess or poker contest is being PLAYED,
+  // and hand it back the moment the event ends — not when the operator finally navigates away.
+  // Keying this on `kind` alone meant the theme stayed down after the final hand, so the page sat
+  // in silence: the game sounds had stopped and the theme was still suppressed.
+  //
+  // `duck` never touches the mute setting, so the operator's own choice survives the visit: if
+  // they muted the theme before the contest, it stays muted when it ends.
   useEffect(() => {
     if (kind !== "chess" && kind !== "poker") return;
+    if (over) {
+      duck(false);
+      return;
+    }
     duck(true);
     return () => duck(false);
-  }, [kind, duck]);
+  }, [kind, over, duck]);
 
   // Initial feed load (live updates then arrive over the WS).
   useEffect(() => {
@@ -164,8 +180,10 @@ export function ContestLive({
       setRows((prev) => [row, ...prev].slice(0, MAX_ROWS));
       // A short, kind-themed blip as each live action lands, throttled so a fast feed
       // stays pleasant. Muting the music mutes these too.
+      // A settled contest still streams late rows as the feed catches up. Those are history, not
+      // events, and chirping through them after the winner banner is up sounds like a stuck game.
       const t = Date.now();
-      if (!mutedRef.current && t - lastSfxRef.current > SFX_THROTTLE_MS) {
+      if (!mutedRef.current && !overRef.current && t - lastSfxRef.current > SFX_THROTTLE_MS) {
         lastSfxRef.current = t;
         if (kind === "poker") playPokerAction(p.answer);
         else playActionSound(kind);
@@ -236,7 +254,10 @@ export function ContestLive({
       // few seconds apart, so this is never throttled away the way a fast solve feed is —
       // but keep the guard, because the engine can play a fallback move instantly.
       const tc = Date.now();
-      if (!mutedRef.current) {
+      // Once the contest has settled, replayed moves are history. `playChessGameEnd` below is
+      // deliberately NOT gated: it is the sound of the last game finishing, and it lands before
+      // the settle message does.
+      if (!mutedRef.current && !overRef.current) {
         // Ply 1 is the opening move of a game — of the duel, or of each bracket match, since
         // playChessGame restarts the count per game. Announce it, then let the moves knock.
         if (p.ply === 1) {
