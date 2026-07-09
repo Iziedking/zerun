@@ -62,11 +62,29 @@ const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
 //   glm-*              the matcher does substring matching, so "glm-5" also swallows
 //                      "glm-5.1", "glm-5.2", and "GLM-5-FP8".
 //
-// L4 and L5 are UNVERIFIED: the ledger had no available balance left to set up their
-// sub-accounts when the bake-off ran. Measure them before trusting them.
-const MODEL_BASE_MAINNET = "deepseek-v4-flash"; // levels 0-3, terse and correct
-const MODEL_PRO_MAINNET = "deepseek-v4-pro"; // level 4  (unverified)
-const MODEL_MAX_MAINNET = "qwen3.7-max"; // level 5  (unverified)
+// The premium tiers were MEASURED on mainnet and both candidates failed:
+//
+//   deepseek-v4-pro  solver PASS 5.7s | chess EMPTY ANSWER | forecast EMPTY ANSWER
+//   qwen3.7-max      solver PASS 10.9s | chess PASS 10.4s  | forecast ABORTED (>30s)
+//
+// `deepseek-v4-pro` returns an empty completion on anything but a generous budget: it is a
+// reasoning model whose hidden tokens eat the allowance, and chess only grants 48. And
+// `qwen3.7-max` spends 10.4s per chess move, so against the 300s match cap a game reaches
+// roughly 28 plies before the clock decides it — and its forecast overruns the 30s
+// premium-attempt timeout.
+//
+// Routing a tier at either would be worse than not routing it at all: `resolveCandidates`
+// tries the preferred model FIRST, so every one of a few hundred chess moves would burn a
+// doomed premium attempt before falling back. So on mainnet every tier currently reasons on
+// the base model, and the Compute ladder is carried by self-consistency passes and the token
+// budget alone. Testnet keeps its premium models, which do work.
+//
+// To restore a mainnet model gradient, measure candidates with `models:bakeoff` — but note
+// each new provider now locks 2 0G of ledger (1 0G reserve + 1 0G fee headroom), so explore
+// deliberately. Untried and plausible: openai/gpt-5.4-mini (0.009 out/1k), MiniMax-M3, glm-5.2.
+const MODEL_BASE_MAINNET = "deepseek-v4-flash"; // every tier, on mainnet: terse, fast, correct
+const MODEL_PRO_MAINNET = "deepseek-v4-flash"; // level 4  (was deepseek-v4-pro: empty answers)
+const MODEL_MAX_MAINNET = "deepseek-v4-flash"; // level 5  (was qwen3.7-max: too slow for chess)
 
 // Higher tiers keep their bigger compute (more self-consistency passes and a
 // bigger token budget) AND route to a stronger model, so the advantages compound:

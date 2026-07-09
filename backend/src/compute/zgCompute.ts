@@ -28,12 +28,14 @@ const { createZGComputeNetworkBroker } =
 //   4. inference.acknowledgeProviderSigner(provider)  (accept its TEE signer)
 //   5. inference.getServiceMetadata(provider) -> { endpoint, model }
 //   6. once per provider: GET {endpoint}/attestation/report -> can it sign a response at all?
-//   7. per request: inference.getRequestHeaders(provider, content) -> headers.
-//      NOTE: this ALSO funds the provider's sub-account on first use, transferring
-//      max(2e6 * (inputPrice + outputPrice), 1 0G) out of the ledger's available balance.
-//      We do not call transferFund ourselves; the SDK would override it upward anyway.
-//   8. POST {endpoint}/chat/completions with those single-use headers
-//   9. inference.processResponse(provider, id, answer) -> TEE verified boolean, but only
+//   7. once per provider, IF it lacks headroom: ledger.transferFund(provider, "inference", n).
+//      getRequestHeaders (step 8) funds the sub-account itself on first use, but only to
+//      max(2e6 * (inputPrice + outputPrice), 1 0G) — and 1 0G is exactly the provider's own
+//      minimum reserve, so it can pay no fees. Check the balance before topping up: this
+//      code runs on every process start, and each top-up locks 1 0G for 24 hours.
+//   8. per request: inference.getRequestHeaders(provider, content) -> headers
+//   9. POST {endpoint}/chat/completions with those single-use headers
+//  10. inference.processResponse(provider, id, answer) -> TEE verified boolean, but only
 //      when step 6 said the provider attests. No live provider does, today.
 
 type Broker = Awaited<ReturnType<typeof createZGComputeNetworkBroker>>;
@@ -64,6 +66,27 @@ async function checkAttestation(endpoint: string, model: string): Promise<boolea
   }
 }
 const ATTESTATION_CHECK_MS = Number(process.env.COMPUTE_ATTESTATION_CHECK_MS ?? "8000");
+
+// The provider's own floor, and the on-chain MIN_TRANSFER_AMOUNT: a sub-account funded to
+// exactly this can pay no fees at all.
+const PROVIDER_RESERVE_OG = 1;
+// How much spare a sub-account must hold above that reserve before we stop topping it up.
+// A call costs on the order of 0.001-0.007 0G, so this is hundreds of answers.
+const MIN_HEADROOM_OG = Number(process.env.COMPUTE_MIN_HEADROOM_OG ?? "0.2");
+
+// The 0G actually spendable in a provider's sub-account: its balance less anything already
+// requested as a refund (a pending refund is not available to pay fees).
+async function currentHeadroomOg(broker: Broker, provider: string): Promise<number | null> {
+  try {
+    const acct = (await withTimeout("getAccount", broker.inference.getAccount(provider))) as unknown as {
+      balance: bigint;
+      pendingRefund: bigint;
+    };
+    return Number(ethers.formatEther(acct.balance - acct.pendingRefund));
+  } catch {
+    return null; // no sub-account yet
+  }
+}
 
 export interface ComputeAnswer {
   text: string;
@@ -238,9 +261,10 @@ export interface NetworkConfig {
   /** Hard ceiling on the ledger's TOTAL balance. We never deposit past this. */
   ledgerMaxOg: number;
   /**
-   * @deprecated Ignored. The SDK sizes provider sub-accounts itself inside
-   * `getRequestHeaders` (`topUpAccountIfNeeded` transfers at least 1 0G per provider), so
-   * this value never took effect. Kept only so existing env files do not break.
+   * Extra 0G locked into each provider's sub-account ON TOP of the 1 0G the SDK transfers,
+   * which is itself exactly the provider's minimum reserve. Without headroom the account
+   * cannot cover its own unsettled fees and the provider rejects every call after the first.
+   * Floored at 1 by the contract's MIN_TRANSFER_AMOUNT, so budget 2 0G per provider.
    */
   perProviderOg: number;
   pinnedProvider: string;
@@ -453,17 +477,47 @@ function makeNetwork(net: NetworkConfig) {
         } catch (err) {
           console.warn(`[${net.label}] acknowledgeProviderSigner skipped: ${(err as Error).message}`);
         }
-        // No transferFund here, on purpose.
+        // Give the sub-account HEADROOM above the provider's minimum reserve.
         //
-        // The SDK funds a provider's sub-account itself, inside getRequestHeaders:
-        // `topUpAccountIfNeeded` transfers `max(2_000_000 * (inputPrice + outputPrice), 1 0G)`
-        // on the first request to each provider. Our own transferFund was a second on-chain
-        // write that the SDK then overrode upward, so `COMPUTE_*_PROVIDER_OG` never took
-        // effect — asking for 0.1 still locked 1.2. Let the SDK size it, and spend one less
-        // transaction per provider.
+        // The SDK funds each sub-account itself inside getRequestHeaders
+        // (`topUpAccountIfNeeded` transfers `max(2e6 * (inputPrice + outputPrice), 1 0G)`),
+        // and for every model we route to, that formula lands on the 1 0G floor. But 1 0G is
+        // exactly the provider's own `minimum reserve`, so the account has nothing to pay
+        // fees from. The first call accrues an unsettled fee and the provider then rejects
+        // every request:
         //
-        // The consequence for capacity planning: EVERY provider costs at least 1 0G of
-        // ledger, and a dear model costs more. Three tiers plus a fallback is 4+ 0G.
+        //   400 validate request: insufficient balance: your locked balance is 1.000000 0G,
+        //   but the required minimum is 1.001362 0G (breakdown: minimum reserve 1.000000 0G
+        //   + unsettled fees 0.001362 0G + ...)
+        //
+        // A tier looked healthy in `models:list` and served exactly one answer before
+        // silently falling back to the base model forever. So we top the account up.
+        //
+        // The amount is contract-floored: MIN_TRANSFER_AMOUNT is 1 0G on chain, so anything
+        // smaller reverts. Budget 2 0G of ledger per provider (the SDK's reserve plus this).
+        //
+        // CHECK FIRST. This runs on every handle setup, and handles are per-process, so a
+        // restarted backend would top every provider up again. Locking a further 1 0G per
+        // provider per restart drains a ledger fast, and it is not recoverable for 24 hours.
+        try {
+          const locked = await currentHeadroomOg(broker, provider);
+          if (locked !== null && locked >= PROVIDER_RESERVE_OG + MIN_HEADROOM_OG) {
+            // Already has headroom. Do nothing: another 1 0G would be locked for 24 hours.
+          } else {
+            const topUpOg = Math.max(1, net.perProviderOg);
+            await walletWrite(() =>
+              withTimeout(
+                "transferFund",
+                broker.ledger.transferFund(provider, "inference", ethers.parseEther(String(topUpOg))),
+              ),
+            );
+            console.log(`[${net.label}] locked ${topUpOg} 0G of fee headroom into ${provider.slice(0, 10)}…`);
+          }
+        } catch (err) {
+          // Not fatal: the account may already hold headroom. If it does not, the provider's
+          // 400 above tells us plainly, and the tier falls back to the next candidate.
+          console.warn(`[${net.label}] fee headroom top-up skipped for ${provider}: ${(err as Error).message}`);
+        }
         const { endpoint, model } = await withTimeout(
           "getServiceMetadata",
           broker.inference.getServiceMetadata(provider),
