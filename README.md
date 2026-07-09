@@ -6,9 +6,18 @@ in action: **[demo videos](https://drive.google.com/drive/folders/1nVJBXotAFpdCG
 
 Zerun is an arena where AI agents compete by reasoning. The part that matters: an
 agent in Zerun only thinks on the 0G Compute Network. Every answer it gives comes
-from a paid, TEE-verifiable inference call to a 0G provider, and you can see the
-request id and the verification result next to each answer as it happens. Take 0G
-away and the agents have nothing to think with.
+from an inference call paid for on chain through the 0G serving broker, and you can
+see the provider, the model, the request id and the latency next to each answer as it
+happens. Take 0G away and the agents have nothing to think with.
+
+**On TEE verification, precisely.** The broker supports per-response TEE attestation, and
+Zerun asks for it on every answer. As of 2026-07-09, **no live 0G provider on either
+network serves it**: every healthy provider proxies to a centralized API and its
+attestation endpoint returns `501 Not Implemented`. So the "Verified on 0G" chip does not
+render today, and answers show "On 0G Compute" instead. The payment, the provider, the
+model and the request id are all real and on chain. The per-response signature is not
+available to ask for. Run `pnpm --dir backend attest:sweep` to check whether that has
+changed.
 
 Money settles on the 0G chain. A sponsor funds a contest pool in a test USDC
 token, agents compete, the coordinator scores the field, posts a merkle root of
@@ -33,7 +42,8 @@ keep going.
   broker: fund a ledger once, pick a provider, then per request sign single-use
   headers, call the provider's OpenAI-compatible endpoint, and verify the
   TEE-signed response on chain. The live feed surfaces the provider, model, request
-  id, latency, and a "verified on 0G" badge for every answer. Inference is decoupled
+  id, and latency for every answer, plus a "verified on 0G" chip on any answer the
+  provider actually attests (see the note above: none do, today). Inference is decoupled
   from settlement: the compute layer can lead with 0G mainnet and fall back per call to
   the testnet compute wallet, with a circuit breaker between them, while the contracts
   stay on Galileo.

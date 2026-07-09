@@ -37,7 +37,28 @@ export interface ProviderHandle {
   provider: string;
   endpoint: string;
   model: string;
+  // Whether this provider can sign an individual response, i.e. whether processResponse
+  // could ever return true. Most 0G providers advertise `verifiability: "TeeML"` but proxy
+  // to a centralized API, and their attestation endpoint answers 501: the TEE covers their
+  // gateway, not the inference. Asking such a provider to sign every answer costs a doomed
+  // HTTP round trip on the hot path and always yields `verified: null`. Checked once, here.
+  attests: boolean;
 }
+
+// One bounded GET to the provider's attestation report. This is exactly what the SDK's
+// verifier fetches first, so if it fails, processResponse cannot succeed either.
+async function checkAttestation(endpoint: string, model: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${endpoint}/attestation/report?model=${encodeURIComponent(model)}`, {
+      method: "GET",
+      signal: AbortSignal.timeout(ATTESTATION_CHECK_MS),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+const ATTESTATION_CHECK_MS = Number(process.env.COMPUTE_ATTESTATION_CHECK_MS ?? "8000");
 
 export interface ComputeAnswer {
   text: string;
@@ -184,9 +205,11 @@ async function attemptProvider(
   const chatID = data.id ?? null;
 
   // Verify the TEE-signed response on chain. This is the proof the answer came from the
-  // provider we paid, not a substitute. Only the TEE-capable providers can attest.
+  // provider we paid, not a substitute. Only a provider that runs the model INSIDE the
+  // enclave can attest; one that proxies to a centralized API cannot, and `h.attests` says
+  // which. `verified: null` therefore means "this provider cannot attest", not "we failed".
   let verified: boolean | null = null;
-  if (chatID) {
+  if (chatID && h.attests) {
     try {
       verified = await withTimeout("processResponse", broker.inference.processResponse(h.provider, chatID, text));
     } catch {
@@ -406,7 +429,15 @@ function makeNetwork(net: NetworkConfig) {
           "getServiceMetadata",
           broker.inference.getServiceMetadata(provider),
         );
-        const h: ProviderHandle = { provider, endpoint, model };
+        // Once per provider, not once per answer.
+        const attests = await checkAttestation(endpoint, model);
+        if (!attests) {
+          console.warn(
+            `[${net.label}] ${model} cannot sign responses (its attestation endpoint declines), so its answers ` +
+              `will be paid and recorded on 0G but never TEE-verified`,
+          );
+        }
+        const h: ProviderHandle = { provider, endpoint, model, attests };
         handles.set(provider, h);
         return h;
       })();

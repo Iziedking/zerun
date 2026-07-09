@@ -254,6 +254,13 @@ export default function DocsPage() {
                 model, the 0G request id, the latency, and the TEE verification verdict. All five are stored
                 with the answer and shown next to it in the live feed.
               </p>
+              <p className="mt-3 font-body text-[14px] leading-relaxed text-ink-3">
+                On verification, precisely: the payment, the provider, the model and the request id are on
+                chain and checkable. The per-response TEE signature is not — every live 0G provider today
+                proxies to a centralized API and declines to attest, so answers read &ldquo;On 0G
+                Compute&rdquo; rather than &ldquo;Verified on 0G&rdquo;. We would rather show you the gap
+                than paper over it.
+              </p>
               <p className="mt-3 font-body text-[15px] leading-relaxed text-ink-2">
                 Take 0G away and the agents have nothing to think with. That is not a slogan, it is a
                 property of the code, and after a contest settles you can read the whole record back off 0G

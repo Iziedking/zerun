@@ -49,6 +49,20 @@ All notable changes to Zerun are recorded here. The format follows
 
 ### Fixed
 
+- **Every answer paid ~2.4s for a TEE signature that can never arrive.** `attemptProvider`
+  called `processResponse` on every inference. No live 0G provider on either network serves
+  a per-response attestation: all 16 mainnet and 5 testnet chatbot providers that are
+  healthy proxy to a centralized API and answer `501 Not Implemented` from the attestation
+  endpoint, despite advertising `verifiability: "TeeML"` (which describes their gateway
+  enclave, not the inference). A provider's attestation endpoint is now checked once at
+  setup, and the doomed per-answer fetch is skipped. Latency on a mainnet call fell from
+  3407ms to 995ms. The README and product docs claimed a "verified on 0G" badge on every
+  answer; they now state plainly what is on chain (payment, provider, model, request id)
+  and what is not (the per-response signature). The UI never rendered a false badge.
+- **0G mainnet requires a 3 0G minimum first ledger deposit**, and the SDK surfaced that as
+  `execution reverted (unknown custom error)`. The revert is now decoded into the number.
+- **`pickProvider` ranked TEE above health**, so an unhealthy provider could win the
+  fallback that every tier depends on.
 - **A poker replay could hand an agent a deeper opponent read than it paid for.** The
   recovery path rebuilt the scouting override from full stats regardless of purchases.
 
