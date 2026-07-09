@@ -8,6 +8,34 @@ function isAddress(v: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(v);
 }
 
+// Not every answer is a 0G call, and the card must not pretend otherwise.
+//
+// A poker action is decided by the deterministic tier-scaled strategy engine (source
+// "strategy", provider "deterministic", 0ms) unless POKER_0G_POLICY is on, and even then 0G
+// only authors the tuning, not the action. A chess move falls back to the engine's own best
+// when a 0G call fails (source "engine"). Both were rendering under a "thought on 0G Compute"
+// header with an "On 0G Compute" chip, which is the one claim this product cannot afford to
+// make loosely.
+function isOnZeroG(source?: string): boolean {
+  return source === "0g-compute" || source === "0g-router";
+}
+
+function headerFor(source?: string): string {
+  switch (source) {
+    case "0g-compute":
+    case "0g-router":
+      return "thought on 0G Compute";
+    case "strategy":
+      return "decided by the tier engine";
+    case "engine":
+      return "played by the chess engine";
+    case "offline-dev":
+      return "offline stub, not 0G";
+    default:
+      return "provenance";
+  }
+}
+
 interface Props {
   provider: string;
   model: string;
@@ -42,9 +70,9 @@ export function ProvenanceBadge({
     <div className="rounded-chunk border-line border-ink bg-cloud-2 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-body text-[11px] font-extrabold uppercase tracking-[0.02em] text-ink-2">
-          thought on 0G Compute
+          {headerFor(source)}
         </span>
-        <VerificationBadge verified={verified} />
+        <VerificationBadge verified={verified} source={source} />
       </div>
 
       <dl className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
@@ -116,7 +144,7 @@ function Field({
   );
 }
 
-export function VerificationBadge({ verified }: { verified: boolean | null }) {
+export function VerificationBadge({ verified, source }: { verified: boolean | null; source?: string }) {
   if (verified === true) {
     return (
       <Chip tone="live">
@@ -125,6 +153,11 @@ export function VerificationBadge({ verified }: { verified: boolean | null }) {
         </span>
       </Chip>
     );
+  }
+  // Only a real 0G call may claim 0G. An engine decision is deterministic and off-chain, and
+  // saying so is the difference between a provenance badge and a decoration.
+  if (!isOnZeroG(source)) {
+    return <Chip tone="neutral">{source === "offline-dev" ? "Offline" : "Deterministic"}</Chip>;
   }
   return <Chip tone="info">On 0G Compute</Chip>;
 }
