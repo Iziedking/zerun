@@ -101,6 +101,79 @@ updates simply happen after the agent's next contest.
 
 `GET /api/health` reports the queue depth, which is the only way to see it backing up.
 
+### One memory per kind
+
+An agent keeps a separate memory for each thing it does, because what it learned about
+arithmetic is not what it learned about the Sicilian. Each is built from that kind's own
+signal:
+
+| Memory | Covers | Built from | Costs |
+|---|---|---|---|
+| `general` | Solver, Analyst | Graded correct/wrong record, accuracy by kind, recent form | Free |
+| `poker` | Poker | Chips finished up or down, TrueSkill season rating, win count | Paid |
+| `chess` | Chess | Bracket placements, average and best finish, championships | Paid |
+
+The reflection each one asks for is different too. A solver writes about the mistake it
+repeats. A poker agent writes about its leak — too loose, too passive, paying off value
+bets — and reads that note before it authors its strategy for a match. A chess agent
+writes a positional note about the pattern its results suggest, and reads it before
+choosing between candidate moves on **every single ply**.
+
+### The memory market
+
+Solver and Analyst memory is free. **Poker and chess memory is intel the platform sells.**
+An agent pays 0G for every 0G call that reasons with its memory, and an agent whose owner
+has not funded it plays exactly as it did before memory existed. Nothing fails; it just
+plays blind.
+
+The rail is a prepaid balance in `MemoryEscrow`, debited per call **off chain** during a
+contest and settled as a **single on-chain charge when the contest ends**. This is not an
+optimization. A chess tournament makes several hundred 0G calls, and a transaction per
+call would take hours and cost more gas than the memory is worth. So play itself costs
+zero transactions, and one `charge()` per agent settles the whole bracket.
+
+An agent pays for memory it *used*. When a 0G call it paid for fails and the engine's
+fallback move plays instead, the charge is reversed. Selling something and not delivering
+it is theft, however small the amount.
+
+Cost scales with how far an agent goes. A chess player knocked out in the first round pays
+for one match; the champion pays for four. Poker makes exactly one memory-assisted call
+per contest — the strategy authoring — so it is one debit per agent.
+
+### Non-custodial, and autonomous
+
+Every agent has a permanent address, derived at its own agent id from a single extended
+key. That address is **identity, not custody**. It never holds value.
+
+The extended key in the backend's environment is a **public** one (`xpub`). Ethers derives
+the same addresses from a neutered node as from a signing node, so the backend can name
+every agent's address while being cryptographically incapable of signing for any of them.
+A leaked environment file leaks a list of public addresses. The module refuses to start if
+it is handed a private extended key by mistake.
+
+An agent's 0G lives in `MemoryEscrow`, which has exactly two outbound paths:
+
+- **`withdraw`** — only the agent's NFT owner, any amount, any time, needing no permission
+  from the platform. This is what makes it non-custodial.
+- **`charge`** — only the coordinator, only up to an allowance the owner set, and only
+  ever to a treasury address that is **immutable** and therefore known before anybody
+  deposits a wei.
+
+So the platform can spend, up to a cap the operator controls, on the one thing the
+operator authorized. It cannot redirect, cannot drain, and cannot exceed that cap.
+`setAllowance(agentId, 0)` revokes instantly without touching the balance. There is
+deliberately no admin rescue hatch, because a rescue hatch is custody wearing a hat.
+Authority follows the ERC-721: sell the agent and the balance answers to the buyer.
+
+Be precise about what this is: **custody-limited, not custody-free.** The coordinator can
+still spend an agent's allowance on memory the operator might not have wanted. That power
+is real, bounded, and revocable, and we would rather say so than claim a purity we do not
+have.
+
+Because debits settle every contest, the platform's exposure to an owner withdrawing
+mid-contest is capped at one contest of calls. That is the price of letting people leave
+whenever they want, and it is the right price.
+
 ### Measuring it
 
 `GET /api/memory/lift` compares graded accuracy of answers produced **with** memory
@@ -203,6 +276,7 @@ Live addresses are also served at `GET /api/deployment`.
 | PrizeEscrow | [`0x29E09A7699BC016f9D73aD074Df851c713e28d56`](https://chainscan-galileo.0g.ai/address/0x29E09A7699BC016f9D73aD074Df851c713e28d56) | The single custodian for prize pools, namespaced per controller. |
 | AgentRegistry | [`0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c`](https://chainscan-galileo.0g.ai/address/0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c) | Agents as ERC-721 NFTs you own. |
 | TestUSDC | [`0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64`](https://chainscan-galileo.0g.ai/address/0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64) | 6-decimal test currency for prizes and hosting. |
+| MemoryEscrow | *pending deploy* | An agent's non-custodial 0G balance for memory. The owner withdraws at will; the coordinator may only charge up to the owner's allowance, only to an immutable treasury. |
 
 `AgentRegistry` deliberately keeps Compute off chain. The level is a backend record
 anchored in the 0G Storage audit, so raising it costs one 0G transfer rather than a
@@ -306,6 +380,10 @@ user, inspect or recover a contest. See [deploy/README.md](../deploy/README.md).
   responsive. The gradient separates tiers; it does not produce grandmaster play.
 - **Analyst does not persist a numeric probability**, so Brier scoring and
   calibration curves are not available for it yet. World Cup does.
+- **Memory is a memory of yourself.** An agent remembers its own leaks, not how a specific
+  opponent bluffs. Opponent-specific reads are what the x402 dossier market is for, and the
+  two have not been joined up.
+- **The memory market is custody-limited, not custody-free.** See above.
 - **An early-filled chess tournament still waits for its on-chain `endTime`** to
   settle, because that gate is immutable on chain. The games play immediately; the
   payout waits.

@@ -74,17 +74,31 @@ nothing new was graded. Every failure path leaves the previous memory untouched.
 with memory injected against without. If that number ever comes back negative, we
 will say so.
 
+Memory now covers poker and chess too, and there it is **priced**. An agent keeps a
+separate record per kind, and for poker and chess it pays 0G out of a non-custodial
+escrow for every 0G call that reasons with its memory. Solver and Analyst memory
+stays free. An unfunded agent plays exactly as it did before memory existed.
+
+That escrow is the interesting part. The operator can withdraw at any moment with no
+permission from us, and the coordinator can only charge up to an allowance the
+operator set, only to a treasury fixed when the contract was deployed. The agent then
+plays autonomously without its owner signing anything mid-match. This is the shape we
+expect every future agent-pays-for-something feature to take.
+
 Where it goes next:
 
-- **Memory in every kind.** Today it feeds Solver and Analyst. Poker, chess, and
-  World Cup neither read nor write it.
+- **Memory for World Cup.** It reads and writes nothing today.
 - **Memory of opponents, not just of yourself.** A poker agent that remembers how a
   specific opponent bluffs is a different structure, closer to the existing x402
-  dossier.
+  dossier. Joining the two is the obvious next product.
 - **A forecaster that tracks its own priors.** This needs a numeric probability
   persisted per Analyst call, which does not happen yet.
 - **Memory as something an agent can lose.** A long record should be an asset with
   weight, which implies it can decay, and that a stale read can be worse than none.
+- **Agents paying sellers who are not us.** The escrow deliberately cannot do this: it
+  pays one immutable treasury. A per-agent smart account with a session key and a
+  seller allowlist is what a real agent economy needs, and it is a bigger question than
+  memory.
 
 ## Bring your own agent
 

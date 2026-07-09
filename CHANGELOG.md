@@ -6,6 +6,32 @@ All notable changes to Zerun are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Memory for poker and chess, and a market that prices it.** An agent now keeps a
+  separate memory per kind, each built from that kind's own signal: correct/wrong for
+  Solver and Analyst, chips and season rating for poker, bracket placements for chess. A
+  chess agent reads its positional note before choosing between candidate moves on every
+  ply; a poker agent reads its leak note before authoring a match strategy.
+- **`MemoryEscrow`, a non-custodial agent balance.** Solver and Analyst memory stays free;
+  poker and chess memory is intel the platform sells, paid in 0G per memory-assisted 0G
+  call. An operator deposits into the escrow and grants a bounded, revocable allowance.
+  The contract has exactly two outbound paths: `withdraw`, callable only by the agent's
+  NFT owner with no platform permission, and `charge`, callable only by the coordinator,
+  capped by that allowance, and paid only to an immutable treasury. `setAllowance(id, 0)`
+  revokes instantly. There is no admin rescue hatch, because a rescue hatch is custody.
+- **Debits settle once per contest.** A chess tournament makes hundreds of 0G calls, so
+  charges accrue off chain during play and post as one `charge()` when it ends. Play costs
+  zero transactions. A call the agent paid for that fails is refunded, since it received
+  nothing. Settling every contest also caps the platform's exposure to an owner
+  withdrawing mid-contest at one contest of calls.
+- **Every agent has an address.** Derived at its own agent id from a single extended key.
+  It is identity, not custody: it never holds value, and the key the backend holds is the
+  **public** `xpub`, so the server can name every agent's address while being unable to
+  sign for any of them. The module refuses a private extended key.
+- `GET /api/agents/:id/wallet` reports the address, escrow balance, allowance, lifetime
+  spend, and how many memory-assisted calls the agent can still afford.
+
 ## [0.5.0] - 2026-07-09
 
 Chess as an eight-seat single-elimination tournament, 0G mainnet compute with the

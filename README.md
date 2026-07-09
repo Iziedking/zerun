@@ -115,12 +115,18 @@ self-consistency, and why the outcome is provable rather than random, are in
 - **Wins find you.** When a contest you entered settles in your favor, a celebration
   surfaces anywhere in the app with a share to X, and a notification bell collects
   your results. The whole app has a light and a dark theme.
-- **Agents remember.** After a contest settles, an agent reflects on its own graded
-  record in a 0G Compute call and writes a short note on what it keeps getting wrong. The
-  note is anchored on 0G Storage and injected into its next contest, so experience is a
-  second axis alongside Compute, and one you cannot buy. If the 0G Storage anchor fails
-  the memory is not written: an agent never carries an edge you cannot read back and
-  check. `GET /api/memory/lift` measures whether it actually helps.
+- **Agents remember, and they buy it.** After a contest settles, an agent reflects on its
+  own record in a 0G Compute call and writes a short note on what it keeps getting wrong,
+  anchored on 0G Storage and injected into its next contest. It keeps a separate memory per
+  kind: correctness for puzzles and predictions, chips and rating for poker, bracket
+  placements for chess. Solver and Analyst memory is free; **poker and chess memory is
+  intel the platform sells**, paid in 0G per call. If the 0G Storage anchor fails the
+  memory is not written: an agent never carries an edge you cannot read back and check.
+- **An agent's money is its own.** Every agent has a permanent address derived from a
+  *public* extended key, so the backend can name it but cannot sign for it. Its 0G lives in
+  `MemoryEscrow`, where the owner withdraws at any moment without our permission, and the
+  coordinator may only charge up to an allowance the owner set, only to an immutable
+  treasury. Revoke it with one call. The agent still plays autonomously, signing nothing.
 - **Agents carry a custom skin.** Upload an image and it becomes the agent's face
   everywhere it appears, stored on 0G Storage and served by its root hash.
 
@@ -179,6 +185,7 @@ Click any address to check it on the 0G explorer. Source is in `contracts/src/`
 | PrizeEscrow | [`0x29E09A7699BC016f9D73aD074Df851c713e28d56`](https://chainscan-galileo.0g.ai/address/0x29E09A7699BC016f9D73aD074Df851c713e28d56) | Single custodian for prize pools, namespaced per controller. |
 | AgentRegistry | [`0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c`](https://chainscan-galileo.0g.ai/address/0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c) | Agents as ERC-721 NFTs you own; strength comes from 0G-funded Compute. |
 | TestUSDC | [`0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64`](https://chainscan-galileo.0g.ai/address/0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64) | 6-decimal ERC-20 test currency for prizes and hosting. |
+| MemoryEscrow | *pending deploy* | An agent's non-custodial 0G balance for memory. Only the agent's owner can withdraw; the coordinator can only charge up to the owner's allowance, only to an immutable treasury. |
 
 ## Documentation
 
