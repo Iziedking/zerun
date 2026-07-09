@@ -17,7 +17,7 @@ import {
   type Color,
   type Position,
 } from "../runners/chess/engine.js";
-import { bestCandidates, depthForTier } from "../runners/chess/search.js";
+import { bestCandidates, adjudicate, engineForTier } from "../runners/chess/search.js";
 import { CHESS_SYSTEM, buildChessPrompt, parseChessChoice } from "../runners/chess/decide.js";
 
 // One chess game, played move by move on 0G. The engine hands the side to move a
@@ -36,8 +36,28 @@ import { CHESS_SYSTEM, buildChessPrompt, parseChessChoice } from "../runners/che
 // same number of calls whenever it ends.
 const MATCH_MS = Number(process.env.CHESS_MATCH_SECONDS ?? "600") * 1000;
 const MAX_PLY = Number(process.env.CHESS_MAX_PLY ?? "300");
-const CANDIDATES = Number(process.env.CHESS_CANDIDATES ?? "3");
+// How many candidate moves reach the prompt. Normally the TIER decides (a high tier is shown
+// fewer, closer-to-equal options and so cannot pick a losing one); set this to override every
+// tier at once, which only the bake-off and the perft harness want.
+const CANDIDATES = Number(process.env.CHESS_CANDIDATES ?? "0");
 const MIN_MOVE_MS = Number(process.env.CHESS_MIN_MOVE_MS ?? "300");
+
+// Extra clock the premium tiers get to convert a won position. A deep search is slow and an
+// endgame is long: a tier-5 agent that has ground its opponent down to king-and-pawns needs
+// the moves to actually promote and mate, or the game is adjudicated and its work is thrown
+// away as "material". Low tiers gain nothing from more clock — they have no technique to
+// spend it on — so the cap follows the STRONGER seat. This is the drag: 4 and 5 can play long.
+const DRAG_MS = Number(process.env.CHESS_DRAG_SECONDS ?? "240") * 1000;
+const DRAG_MIN_TIER = Number(process.env.CHESS_DRAG_MIN_TIER ?? "4");
+function matchMsFor(white: ChessPlayer, black: ChessPlayer): number {
+  const top = Math.max(white.tier, black.tier);
+  return MATCH_MS + (top >= DRAG_MIN_TIER ? DRAG_MS * (top - DRAG_MIN_TIER + 1) : 0);
+}
+
+// How much of an edge, in centipawns, the neutral adjudicator must see before it calls a
+// winner. Below this the position really is level and the game falls through to the next key.
+// A pawn is 100; 100cp is "clearly better", not "a rounding error".
+const ADJ_MARGIN = Number(process.env.CHESS_ADJUDICATION_MARGIN ?? "100");
 
 // When the engine's best move leads the second-best by this many centipawns, the choice is
 // forced in all but name. Spending a paced, paid 0G call to rubber-stamp it starves the game
@@ -103,7 +123,7 @@ async function decideMove(
   tier: number,
   memory: MemorySession,
 ): Promise<{ uci: string; reason: string; source: string; provider: string; model: string; chatID: string | null; verified: boolean | null; latencyMs: number; memoryUsed: boolean }> {
-  const candidates = bestCandidates(pos, depthForTier(tier), CANDIDATES);
+  const candidates = bestCandidates(pos, tier, CANDIDATES > 0 ? CANDIDATES : undefined);
   const youAre: "white" | "black" = pos.turn === "w" ? "white" : "black";
   const models = computePlan(tier).models;
 
@@ -117,7 +137,7 @@ async function decideMove(
       reason: candidates.length > 1 ? `forced, ${Math.round(lead / 100)} pawns clear` : "only move",
       source: "engine",
       provider: "deterministic",
-      model: `tier-${Math.max(0, Math.min(5, Math.floor(tier)))}-search`,
+      model: `tier-${Math.max(0, Math.min(5, Math.floor(tier)))}-search-d${engineForTier(tier).depth}`,
       chatID: null,
       verified: null,
       latencyMs: 0,
@@ -162,7 +182,7 @@ async function decideMove(
       reason: `engine plays ${best.uci}`,
       source: "engine",
       provider: "deterministic",
-      model: `tier-${Math.max(0, Math.min(5, Math.floor(tier)))}-search`,
+      model: `tier-${Math.max(0, Math.min(5, Math.floor(tier)))}-search-d${engineForTier(tier).depth}`,
       chatID: null,
       verified: null,
       latencyMs: 0,
@@ -193,10 +213,11 @@ export async function playChessGame(opts: PlayChessGameOptions): Promise<ChessGa
   let pos = parseFEN(START_FEN);
   const seen = new Map<string, number>();
   let ply = 0;
-  const deadline = Date.now() + MATCH_MS;
+  const matchMs = matchMsFor(white, black);
+  const deadline = Date.now() + matchMs;
   console.log(
     `chess ${contestId}: game start, ${white.agentName} (white) vs ${black.agentName} (black)` +
-      `${match ? ` [${match.label}]` : ""}, cap ${MATCH_MS / 1000}s / ${MAX_PLY} ply`,
+      `${match ? ` [${match.label}]` : ""}, cap ${matchMs / 1000}s / ${MAX_PLY} ply`,
   );
 
   try {
@@ -265,24 +286,55 @@ export async function playChessGame(opts: PlayChessGameOptions): Promise<ChessGa
     console.error(`chess ${contestId}: game loop error, deciding on state so far:`, (err as Error).message);
   }
 
-  // Decide the board winner. Checkmate is decisive; otherwise the most captured material
-  // (by value) wins, breaking a tie by higher tier then lower agent id.
+  // ---------------------------------------------------------------------------
+  // Deciding the game. A contest must name a winner, and most of ours do not end in
+  // checkmate, so the tiebreak is not a footnote — it IS the result for the majority of
+  // games. It runs as a ladder, each rung answering a narrower question:
+  //
+  //   1. checkmate            the board already answered.
+  //   2. position             who was WINNING when the clock stopped? A neutral engine, the
+  //                           same depth and eval for both seats regardless of tier, reads
+  //                           the final position. This is the honest read of an unfinished
+  //                           game, and it is what "material" was always a crude proxy for:
+  //                           material counts a queen you won and ignores the mate you are
+  //                           about to be handed. Only applied to a game that ran out of
+  //                           clock; a game the board itself drew was not unfinished.
+  //   3. material             captured value. A real draw (stalemate, threefold, fifty-move)
+  //                           means neither side could make progress, so the record of the
+  //                           game played is fairer than a verdict on the final still frame.
+  //   4. tier                 the taboo, made explicit: when nothing on the board separates
+  //                           them, the agent that invested more 0G takes it.
+  //   5. lower agent id       deterministic last resort, so a game never fails to resolve.
   const key = repetitionKey(pos);
   const finalOutcome = outcome(pos, seen.get(key) ?? 1);
   const caps = capturedValue(pos);
+  const drawnOnBoard = finalOutcome.over && finalOutcome.result !== "checkmate";
   let winnerSeat: 0 | 1;
   let how: string;
+
+  // The neutral verdict on the final position, white's point of view, in centipawns. Costs
+  // one search at the very end of a game, not per move.
+  let edge = 0;
+  try {
+    edge = drawnOnBoard ? 0 : adjudicate(pos);
+  } catch (err) {
+    console.error(`chess ${contestId}: adjudication failed, falling back to material:`, (err as Error).message);
+  }
+
   if (finalOutcome.over && finalOutcome.result === "checkmate" && finalOutcome.winner) {
     winnerSeat = finalOutcome.winner === "w" ? 0 : 1;
     how = "checkmate";
+  } else if (Math.abs(edge) >= ADJ_MARGIN) {
+    winnerSeat = edge > 0 ? 0 : 1;
+    how = `adjudicated, +${(Math.abs(edge) / 100).toFixed(1)}`;
   } else if (caps.w !== caps.b) {
     winnerSeat = caps.w > caps.b ? 0 : 1;
-    how = finalOutcome.over ? "material (draw)" : "material (time)";
+    how = drawnOnBoard ? "material (draw)" : "material (time)";
   } else {
     const t0 = players[0].tier;
     const t1 = players[1].tier;
     winnerSeat = t0 > t1 ? 0 : t1 > t0 ? 1 : players[0].agentId <= players[1].agentId ? 0 : 1;
-    how = "even, decided by tier";
+    how = t0 === t1 ? "even, decided by seniority" : "even, decided by tier";
   }
 
   return {

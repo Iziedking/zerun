@@ -198,8 +198,13 @@ const POKER_RUN_TIMEOUT_MS = Number(process.env.POKER_RUN_TIMEOUT_MS ?? "600000"
 // cap, plus the lobby, plus slack. Raising CHESS_MATCH_SECONDS without raising this would have
 // the sweeper cancel a tournament that was still playing.
 const CHESS_MATCH_MS = Number(process.env.CHESS_MATCH_SECONDS ?? "600") * 1000;
+// A premium seat earns extra clock to convert (CHESS_DRAG_SECONDS in chessGame), and a bracket
+// full of them earns it in every leg. The watchdog has to allow for the longest game the rules
+// permit, not the nominal cap, or it kills a tournament that is playing exactly as designed.
+const CHESS_DRAG_MS = Number(process.env.CHESS_DRAG_SECONDS ?? "240") * 1000;
+const CHESS_MATCH_MAX_MS = CHESS_MATCH_MS + 2 * CHESS_DRAG_MS; // tier 5 on both sides
 const CHESS_RUN_TIMEOUT_MS = Number(
-  process.env.CHESS_RUN_TIMEOUT_MS ?? String(CHESS_LOBBY_SECONDS * 1000 + 7 * CHESS_MATCH_MS + 900_000),
+  process.env.CHESS_RUN_TIMEOUT_MS ?? String(CHESS_LOBBY_SECONDS * 1000 + 7 * CHESS_MATCH_MAX_MS + 900_000),
 );
 function runTimeoutFor(kind: ContestKind): number {
   if (kind === "poker") return POKER_RUN_TIMEOUT_MS;
