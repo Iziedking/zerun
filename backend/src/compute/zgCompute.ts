@@ -214,6 +214,30 @@ export interface NetworkConfig {
 // re-reads the ledger over RPC, which is both slow and a needless failure surface.
 const LEDGER_RECHECK_MS = Number(process.env.COMPUTE_LEDGER_RECHECK_MS ?? "60000");
 
+// The 0G ledger contract rejects a first deposit below the network's floor with a custom
+// error carrying (sent, minimum). Mainnet's floor is 3 0G. Without decoding it, the SDK
+// surfaces only "execution reverted (unknown custom error)", which sends you hunting for a
+// bug in your own code when the chain is simply telling you the number.
+const LEDGER_BELOW_MINIMUM = "0x54443ec4";
+
+function explainLedgerRevert(err: unknown, label: string, sentOg: number): string {
+  const e = err as { data?: string; info?: { error?: { data?: string } }; message?: string };
+  const data = e?.data ?? e?.info?.error?.data ?? "";
+  if (typeof data === "string" && data.startsWith(LEDGER_BELOW_MINIMUM) && data.length >= 138) {
+    try {
+      const sent = ethers.formatEther(BigInt(`0x${data.slice(10, 74)}`));
+      const min = ethers.formatEther(BigInt(`0x${data.slice(74, 138)}`));
+      return (
+        `0G ${label} requires a minimum first ledger deposit of ${min} 0G, but ${sent} 0G was offered. ` +
+        `Raise COMPUTE_${label.toUpperCase()}_LEDGER_OG to at least ${min}.`
+      );
+    } catch {
+      /* fall through to the raw message */
+    }
+  }
+  return `${(e?.message ?? String(err))} (offered ${sentOg} 0G)`;
+}
+
 function makeNetwork(net: NetworkConfig) {
   let brokerPromise: Promise<Broker> | null = null;
   let handle: ProviderHandle | null = null;
@@ -291,7 +315,7 @@ function makeNetwork(net: NetworkConfig) {
         } catch (err) {
           // The read may simply have failed on a flaky RPC while the ledger exists. Re-read
           // before giving up, so a stale read cannot bring the whole contest down.
-          console.warn(`[${net.label}] addLedger failed: ${(err as Error).message}`);
+          console.warn(`[${net.label}] addLedger failed: ${explainLedgerRevert(err, net.label, target)}`);
           const retry = await ledgerBalanceOg(broker);
           if (retry === null) throw err;
           return retry;
@@ -304,7 +328,8 @@ function makeNetwork(net: NetworkConfig) {
           return target;
         } catch (err) {
           console.warn(
-            `[${net.label}] depositFund failed, continuing on the existing ${current} OG: ${(err as Error).message}`,
+            `[${net.label}] depositFund failed, continuing on the existing ${current} OG: ` +
+              explainLedgerRevert(err, net.label, target - current),
           );
           return current;
         }

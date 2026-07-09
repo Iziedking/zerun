@@ -41,28 +41,37 @@ const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
 // only matches on the network that serves it, so one list drives both, and the order means
 // mainnet never has to fail through a testnet name to find its model.
 //
-// Chosen from the live catalog (all healthy, all attesting TeeML) on advertised price,
-// weighing INPUT as heavily as output. Zerun's prompts are long and its answers are short —
-// a chess move ships ~300 tokens of board and candidates to get back ~48 — so the input
-// price dominates the bill. Picking on output price alone leads you to the wrong model:
+// Chosen by MEASURING them (src/scripts/modelBakeoff.ts), not by reading the price list.
+// Advertised price per token turned out to be the least useful number of the three:
 //
-//   model                          in/1k     out/1k    per chess move
-//   qwen/qwen3-vl-30b-a3b-instruct 0.000100  0.000979  0.000077
-//   0GM-1.0-35B-A3B                0.000164  0.000988  0.000096
-//   deepseek-v4-flash              0.000625  0.001240  0.000247   <- 3.2x the first, on the
-//                                                                    strength of input alone
+//   model                          out/1k    solver answer   forecast answer   latency
+//   deepseek-v4-flash              0.001240  3 chars         339 chars         3.0s
+//   qwen/qwen3-vl-30b-a3b-instruct 0.000979  403 chars       1338 chars        6.3s
 //
-// Deliberately avoiding the `glm-*` names: the matcher does substring matching, so "glm-5"
-// would also swallow "glm-5.1", "glm-5.2", and "GLM-5-FP8".
-const MODEL_BASE_MAINNET = "qwen/qwen3-vl-30b-a3b-instruct"; // levels 0-3, cheapest healthy
-const MODEL_BASE_MAINNET_ALT = "0GM-1.0-35B-A3B"; // 0G's own model, near-identical price
-const MODEL_PRO_MAINNET = "deepseek-v4-pro"; // level 4
-const MODEL_MAX_MAINNET = "qwen3.7-max"; // level 5
+// qwen3-vl is nominally 21% cheaper per output token and 6x cheaper per input token, and it
+// still costs several times more per answer, because it is a verbose reasoning model: it
+// spends 400 characters deriving "252" where deepseek writes "252". Zerun's runners parse
+// terse structured output — a number, a UCI move, a trailing `PROB:` — so verbosity is not
+// merely expensive, it is a correctness risk: qwen3-vl's forecast ran to 1338 characters and
+// only just fit inside the 440-token budget. At the 160-token budget it blew past the
+// `PROB:` line entirely and the runner parsed a stray digit.
+//
+// Rejected, with reasons, so nobody re-adds them:
+//   0GM-1.0-35B-A3B    returns an EMPTY answer every time; the call is billed and wasted.
+//   openai/gpt-oss-20b cheapest in the catalog by far, but `fetch failed` — it really is down.
+//   glm-*              the matcher does substring matching, so "glm-5" also swallows
+//                      "glm-5.1", "glm-5.2", and "GLM-5-FP8".
+//
+// L4 and L5 are UNVERIFIED: the ledger had no available balance left to set up their
+// sub-accounts when the bake-off ran. Measure them before trusting them.
+const MODEL_BASE_MAINNET = "deepseek-v4-flash"; // levels 0-3, terse and correct
+const MODEL_PRO_MAINNET = "deepseek-v4-pro"; // level 4  (unverified)
+const MODEL_MAX_MAINNET = "qwen3.7-max"; // level 5  (unverified)
 
 // Higher tiers keep their bigger compute (more self-consistency passes and a
 // bigger token budget) AND route to a stronger model, so the advantages compound:
 // more 0G invested buys both more thinking and a better brain.
-const BASE_MODELS = [MODEL_BASE_MAINNET, MODEL_BASE_MAINNET_ALT, MODEL_BASE];
+const BASE_MODELS = [MODEL_BASE_MAINNET, MODEL_BASE];
 
 const LEVELS: InferencePlan[] = [
   { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "", intel: 0, models: BASE_MODELS },

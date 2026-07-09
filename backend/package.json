@@ -20,7 +20,10 @@
     "worldcup:test": "tsx src/scripts/worldcupTest.ts",
     "seed": "tsx src/scripts/seedAndRun.ts",
     "typecheck": "tsc --noEmit",
-    "providers:probe": "tsx src/scripts/providerProbe.ts"
+    "providers:probe": "tsx src/scripts/providerProbe.ts",
+    "ledger:probe": "tsx src/scripts/ledgerProbe.ts",
+    "tee:probe": "tsx src/scripts/teeProbe.ts",
+    "models:bakeoff": "tsx src/scripts/modelBakeoff.ts"
   },
   "dependencies": {
     "@0gfoundation/0g-storage-ts-sdk": "1.2.10",
