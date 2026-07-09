@@ -8,9 +8,15 @@ import { MemoryEscrow } from "../src/MemoryEscrow.sol";
 /// redeployed: MemoryEscrow reads agent ownership live, so it attaches to the arena as it
 /// already stands.
 ///
+///   ADDR_AGENT_REGISTRY=0x... MEMORY_TREASURY=0x... \
 ///   forge script script/DeployMemoryEscrow.s.sol \
-///     --rpc-url $RPC_URL --broadcast \
-///     --sig "run()"
+///     --rpc-url https://evmrpc-testnet.0g.ai \
+///     --broadcast --legacy --with-gas-price 3gwei
+///
+/// The last two flags are not optional. 0G keeps a base fee near zero but enforces a
+/// minimum gas price around 2 gwei, so Foundry's EIP-1559 estimate produces a tip the node
+/// rejects outright: "gas tip cap 1, minimum needed 2000000000". `--legacy` drops the tip
+/// and `--with-gas-price` matches the backend's flat GAS_PRICE.
 ///
 /// Env:
 ///   DEPLOYER_PRIVATE_KEY  the deploying key (becomes DEFAULT_ADMIN_ROLE)
