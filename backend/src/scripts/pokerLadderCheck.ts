@@ -171,7 +171,54 @@ function sixHanded(hands: number, reps: number) {
   if (reps < 5) console.log(`\n  ${reps} session(s) is too few to trust the ordering. Try REPS=8.`);
 }
 
+// A/B the multiway correction the right way: PAIRED.
+//
+// Running the two arms separately and comparing their means throws away the fact that both
+// saw the identical decks. Card luck dominates six-handed variance, and it cancels exactly
+// when you difference the two arms hand-for-hand. So run each session twice, flag off then
+// on, and study the per-session DELTA. Its standard error is the honest error bar on "does
+// this change help", and it is far smaller than either arm's own.
+function abTest(hands: number, reps: number) {
+  const tiers = [0, 1, 2, 3, 4, 5];
+  console.log(`\npaired A/B of POKER_MULTIWAY, six-handed`);
+  console.log(`${reps} session(s) x ${hands} hands, each played twice on identical decks\n`);
+
+  const deltas: number[][] = [];
+  for (let r = 0; r < reps; r++) {
+    const seed = r * 1_000_003;
+    process.env.POKER_MULTIWAY = "off";
+    const before = tableSession(tiers, hands, seed);
+    process.env.POKER_MULTIWAY = "on";
+    const after = tableSession(tiers, hands, seed);
+    deltas.push(before.map((b, i) => ((after[i]! - b) / hands) * 100));
+    console.log(`  session ${r + 1}/${reps} done`);
+  }
+  process.env.POKER_MULTIWAY = "off";
+
+  console.log(`\n  tier   delta chips/100     +/- se     t      verdict`);
+  for (const t of tiers) {
+    const xs = deltas.map((d) => d[t]!);
+    const mean = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const sd = xs.length > 1 ? Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / (xs.length - 1)) : NaN;
+    const se = sd / Math.sqrt(xs.length);
+    const tstat = se > 0 ? mean / se : 0;
+    // |t| >= 2 is the crude bar for "not noise" at these sample sizes.
+    const verdict = !Number.isFinite(tstat) ? "n/a" : Math.abs(tstat) >= 2 ? (mean > 0 ? "HELPS" : "HURTS") : "noise";
+    console.log(
+      `  L${t}   ${mean.toFixed(1).padStart(14)}  ${se.toFixed(1).padStart(9)}  ${tstat.toFixed(2).padStart(6)}   ${verdict}`,
+    );
+  }
+  console.log(`\n  A positive delta on the aware tiers (3,4,5) and a negative one on the unaware`);
+  console.log(`  tiers (0,1) is the change working as designed. Anything marked "noise" is not evidence.`);
+}
+
 function main() {
+  // AB=1 runs the paired before/after of POKER_MULTIWAY.
+  if (process.env.AB === "1") {
+    abTest(Math.max(6, Math.round(HANDS / 6) * 6), Number(process.env.REPS ?? "4"));
+    return;
+  }
+
   // TABLE=1 runs the six-handed check instead of the heads-up grid.
   if (process.env.TABLE === "1") {
     sixHanded(Math.max(6, Math.round(HANDS / 6) * 6), Number(process.env.REPS ?? "1"));

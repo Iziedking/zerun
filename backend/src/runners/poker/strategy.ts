@@ -438,6 +438,65 @@ export function policyForTier(tier: number, override?: Partial<Policy>): Policy 
 }
 
 // ----------------------------------------------------------------------------
+// Multiway awareness
+// ----------------------------------------------------------------------------
+//
+// The POLICIES table is tuned heads-up, and `equity()` already measures win probability
+// against the WHOLE field. Those two facts fight each other at a full table.
+//
+// A `valueBet` of 0.56 means "bet when you beat a random opponent 56% of the time". Against
+// five opponents, 56% equity is roughly the top two percent of hands, so the threshold
+// essentially never fires and the sharper tiers go PASSIVE multiway rather than aggressive.
+// At the same time `cbetBluff` and `semibluffRaise` are plain frequencies, unaware of how
+// many players must fold for a bluff to work, so an aggressive tier bluffs into five
+// opponents exactly as often as into one.
+//
+// Measured: heads-up the ladder is clean (L5 leads, +1224 chips/100 over 6000 hands), but
+// six-handed L2 through L5 are indistinguishable across four independent sessions.
+//
+// The correction. A bet is +EV for value when equity beats the field's share of the pot,
+// `1/(opp+1)`, by the same margin the tier applies heads-up. And bluff frequency should fall
+// as more players have to fold. Both corrections are scaled by TIER AWARENESS, so a rookie
+// still misplays multiway and only the top of the ladder adjusts correctly — the gradient
+// then exists at a table, not merely in a duel.
+//
+// Gated by POKER_MULTIWAY so the change can be measured against the old behaviour with
+// `TABLE=1 REPS=n` before it decides real contests.
+
+const TIER_AWARENESS = [0, 0.15, 0.4, 0.6, 0.8, 1.0];
+
+export function multiwayEnabled(): boolean {
+  return (process.env.POKER_MULTIWAY ?? "off").toLowerCase() === "on";
+}
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/**
+ * The policy an agent should actually play with, given how many opponents are live.
+ * Heads-up (opp === 1) this is the identity, so duels are untouched.
+ */
+export function multiwayPolicy(p: Policy, opp: number, tier: number): Policy {
+  if (!multiwayEnabled() || opp <= 1) return p;
+
+  const aware = TIER_AWARENESS[Math.max(0, Math.min(5, Math.floor(tier)))]!;
+  if (aware === 0) return p; // a rookie does not know a table from a duel
+
+  // The equity a bet must beat to be value against `opp` opponents, keeping each tier's own
+  // heads-up margin over the break-even point.
+  const breakEven = 1 / (opp + 1);
+  const valueBet = lerp(p.valueBet, Math.min(0.9, breakEven + (p.valueBet - 0.5)), aware);
+  const valueRaise = lerp(p.valueRaise, Math.min(0.95, breakEven + (p.valueRaise - 0.5)), aware);
+
+  // Every extra player is another fold you need. A pure bluff scales down hardest; a
+  // semibluff keeps some of its frequency because it still has equity when called.
+  const cbetBluff = lerp(p.cbetBluff, p.cbetBluff / opp, aware);
+  const semibluffBet = lerp(p.semibluffBet, p.semibluffBet / Math.sqrt(opp), aware);
+  const semibluffRaise = lerp(p.semibluffRaise, p.semibluffRaise / Math.sqrt(opp), aware);
+
+  return { ...p, valueBet, valueRaise, cbetBluff, semibluffBet, semibluffRaise };
+}
+
+// ----------------------------------------------------------------------------
 // Decision
 // ----------------------------------------------------------------------------
 
@@ -555,13 +614,17 @@ function decidePreflop(
 
 function decidePostflop(
   input: StrategyInput,
-  p: Policy,
+  basePolicy: Policy,
   rng: () => number,
   toCall: number,
   potOdds: number,
 ): StrategyDecision {
   const { hole, board, legal } = input;
   const draw = drawStrength(hole, board);
+  // Postflop is where the live-opponent count is known and meaningful, so this is where the
+  // heads-up-tuned thresholds get corrected for the size of the field. Preflop `opponents` is
+  // the whole table rather than the players who will actually see a flop, so it is left alone.
+  const p = multiwayPolicy(basePolicy, Math.max(1, Math.floor(input.opponents ?? 1)), input.tier);
   // Beating the whole field, not just one player: at a full table a hand needs far more
   // equity to bet or call, so this is what stops the higher tiers value-betting into five
   // players and bleeding chips.
