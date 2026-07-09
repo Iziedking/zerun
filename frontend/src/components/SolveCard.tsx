@@ -119,7 +119,9 @@ export function SolveCard({ row, kind = "solver" }: { row: SolveRow; kind?: Cont
               ) : (
                 <span className="font-body text-[15px] font-extrabold text-ink">{answer}</span>
               )}
-              {isPoker && row.reasoning && (
+              {/* Poker states its betting reasoning; chess states why it chose that move from
+                  the engine's candidates. Both are the agent's own words, on 0G. */}
+              {(isPoker || kind === "chess") && row.reasoning && (
                 <span className="mt-1 block font-body text-[12px] font-semibold text-ink-2">{row.reasoning}</span>
               )}
             </ThoughtBubble>

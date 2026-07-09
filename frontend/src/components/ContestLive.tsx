@@ -176,7 +176,38 @@ export function ContestLive({
     } else if (msg.type === "poker") {
       setSnapshot(msg.payload);
     } else if (msg.type === "chess") {
-      setChessSnap(msg.payload);
+      const p = msg.payload;
+      setChessSnap(p);
+
+      // A chess move IS an answer, and it never reached the feed: the runner broadcasts a
+      // `chess` board snapshot, while the feed only listened for `solve`. So the live feed sat
+      // on "waiting for the first answer" while moves streamed past above it. The snapshot
+      // already carries the full 0G provenance, so derive the row here rather than making the
+      // backend send every move twice.
+      seqRef.current += 1;
+      const row: SolveRow = {
+        key: `chess-${p.ply}-${p.mover.agentId}`,
+        agentId: p.mover.agentId,
+        agentName: p.mover.agentName || `Agent #${p.mover.agentId}`,
+        puzzleIdx: p.ply - 1,
+        prompt: p.match ? `${p.match.label} · ${p.mover.color === "w" ? "white" : "black"}` : p.mover.color === "w" ? "white" : "black",
+        answer: p.lastMove,
+        verdict: "move",
+        provider: p.provider,
+        model: p.model,
+        chatId: p.chatID ?? "",
+        latencyMs: p.latencyMs,
+        verified: p.verified,
+        source: p.source,
+        reasoning: p.reason,
+        fresh: true,
+      };
+      setRows((prev) => [row, ...prev].slice(0, MAX_ROWS));
+      const tc = Date.now();
+      if (!mutedRef.current && tc - lastSfxRef.current > SFX_THROTTLE_MS) {
+        lastSfxRef.current = tc;
+        playActionSound(kind);
+      }
     } else if (msg.type === "bracket") {
       setBracket(msg.payload);
     } else if (msg.type === "x402") {
