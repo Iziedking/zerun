@@ -6,6 +6,59 @@ All notable changes to Zerun are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-09
+
+Chess as an eight-seat single-elimination tournament, 0G mainnet compute with the
+testnet wallet as an automatic fallback, and a documentation home. Full note:
+[docs/releases/2026-07-09-chess-tournaments.md](docs/releases/2026-07-09-chess-tournaments.md).
+
+### Added
+
+- **Chess tournaments.** A negamax alpha-beta engine with piece-square tables offers the
+  three strongest candidate moves and the agent's 0G Compute call picks among them and
+  explains itself, so the engine guarantees legality while 0G supplies judgment. Search
+  depth scales with Compute tier (1, 2, 2, 3, 3, 4 ply), so tier buys both deeper search
+  and a better model. Eight seats, single elimination, seeded by tier, capped at 300
+  seconds and 300 plies per match, with material then tier then agent id breaking a
+  timeout. Settlement pays by bracket placement, and a house agent can win the bracket on
+  the board while the pot still routes to the best real player.
+- **A lobby instead of a join window.** A chess tournament opens as a lobby and starts the
+  moment all eight seats fill; if ten minutes pass with seats empty, house agents take
+  them and it starts anyway. The bracket, the live match, and the placements podium stream
+  to the contest page.
+- **0G mainnet compute.** Inference is decoupled from settlement: the compute layer can
+  run mainnet as its primary network with the testnet compute wallet as an automatic
+  per-call fallback, while the contracts stay on Galileo. Each network keeps its own
+  broker, ledger, and provider handles, and a circuit breaker skips a failing mainnet leg
+  for a cooldown so an outage does not make every call pay a timeout first. Enabled by
+  configuration (`COMPUTE_MAINNET_RPC_URL` and a funded key), not code.
+- **Documentation.** A Docs link beside GitHub in the footer, and an on-site `/docs` page
+  covering [how to play](docs/how-to-play.md), [the product](docs/product.md), and
+  [the roadmap](docs/roadmap.md).
+
+### Fixed
+
+- **Chess moves displayed as errors.** The backend writes a `move` verdict, which is
+  neither right nor wrong; the frontend verdict map lacked it and fell through to its
+  error case, painting every successful TEE-verified move red.
+- **Concurrent agents collided on one wallet nonce.** Every inference call re-checked the
+  0G Compute ledger with no single-flight guard, so three parallel agents could each send
+  a deposit from the same key on the same nonce. Two reverted and the call died before it
+  ever sent an inference request. Wallet-writing broker calls are now serialized behind a
+  mutex, the ledger check is single-flight and cached, and a failed top-up falls through
+  to the existing balance instead of failing a call the ledger could pay for.
+- **A failed 0G call was silent.** The last provider candidate never logged and the
+  runners discarded the error, so an agent showed a bare `error` with no way to learn why.
+  Every failed pass now reports its reason, and a failed call is no longer mislabelled
+  `offline-dev` when the offline stub never ran.
+- **Agent skins could hang into a 503.** A skin uploaded to 0G Storage had its local copy
+  discarded, so serving it depended on an unbounded storage download; a cold cache plus a
+  slow indexer hung the request until the gateway killed it. Downloads are now bounded,
+  the local copy is kept alongside the 0G anchor, and legacy skins backfill themselves on
+  their first successful read.
+- **An entry-fee challenge could show a `0.00` prize.** The winner card read the staked
+  prize pool instead of the collected fee pot.
+
 ## [0.4.0] - 2026-07-07
 
 The poker heads-up ladder, standings that show the number that actually decides a
@@ -141,6 +194,8 @@ on-chain settlement.
 - A Next.js frontend: the marketing landing, the live arena, contest hosting, agent
   skins on 0G Storage, the workshop, and a token-gated support console.
 
+[0.5.0]: https://github.com/Iziedking/zerun/releases/tag/v0.5.0
+[0.4.0]: https://github.com/Iziedking/zerun/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Iziedking/zerun/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Iziedking/zerun/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Iziedking/zerun/releases/tag/v0.1.0
