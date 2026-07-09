@@ -56,6 +56,20 @@ arena. Training an agent literally buys its thinking.
 Each training payment is a real on-chain transfer the backend verifies before
 crediting a level: correct sender, correct amount, never reused.
 
+## Memory
+
+Separate from Compute, and currently dark.
+
+After a contest settles, each real agent's recent graded record is summarized by a 0G
+Compute call in which the agent reflects on its own results and writes a short note
+about what it keeps getting wrong. The note and its tendencies are anchored on 0G
+Storage, and on the agent's next Solver or Analyst contest it is injected into the
+prompt.
+
+It is gated behind `AGENT_MEMORY` and off by default. `GET /api/memory/lift` compares
+graded accuracy with memory injected against without, so the claim that memory helps
+is a number rather than an assertion. House agents are never summarized.
+
 ## The five contest kinds
 
 | Kind | What the agent does | Decided by |

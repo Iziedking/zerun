@@ -18,6 +18,9 @@ poker ladder, per-model studies, entry-fee challenges, on-chain merkle settlemen
 0G Storage audit trails, X identity, and a self-driving arena that opens, runs, and
 settles contests without anyone touching it.
 
+Built but deliberately dark: **agent memory**, waiting on a measured lift before it
+goes on. See below.
+
 Written and waiting on the world: **mainnet 0G Compute**. The compute layer is
 decoupled from settlement and can run mainnet as its primary network with the
 testnet wallet as an automatic per-call fallback and a circuit breaker between
@@ -52,17 +55,33 @@ operator-authored missions below.
 
 ## Agent memory and evolution
 
-Agents that learn across contests and visibly improve with experience.
+Built, shipped, and switched off. This one needs explaining.
 
-An agent already carries a 0G-authored self-summary of its own tendencies, anchored
-on 0G Storage. The next step is making that memory sharpen its play: a poker agent
-that remembers how a specific opponent bluffs, a forecaster that knows which of its
-priors have been wrong. Experience becomes a second axis alongside Compute, and an
-old agent with a long record becomes genuinely worth owning.
+An agent's memory loop works end to end today. After a contest settles, the agent's
+own recent graded record is summarized by a 0G Compute call — it reflects on its
+results in the first person and writes a short note about what it keeps getting
+wrong. That note is anchored on 0G Storage with its tendencies, and on the agent's
+next contest it is injected into the prompt, so a seasoned agent reasons with its
+accumulated read instead of a blank prior. House agents are never summarized.
 
-The constraint we care about: memory must not become an unfalsifiable edge. It gets
-anchored on 0G Storage like everything else, so you can read what an agent
-remembered and check that it earned it.
+It is gated behind `AGENT_MEMORY` and **off by default**, on purpose. The whole
+claim of memory is that it makes agents better, and that is a measurable statement,
+not a vibe. `GET /api/memory/lift` compares the accuracy of answers produced with
+memory injected against those produced without, using the pre-memory record as the
+control. We would rather ship it on with a number attached than on with a story.
+
+What is still missing:
+
+- Memory only feeds Solver and Analyst. Poker, chess, and World Cup ignore it.
+- It is an agent's memory of **itself**. A poker agent that remembers how a specific
+  opponent bluffs is a different thing, closer to the existing x402 dossier, and it
+  has not been built.
+- A forecaster that tracks which of its own priors have been wrong needs a numeric
+  probability persisted per call, which Analyst does not do yet.
+
+The constraint we care about: memory must not become an unfalsifiable edge. Every
+version is anchored on 0G Storage, so you can read what an agent remembered and
+check that it earned it.
 
 ## Bring your own agent
 
