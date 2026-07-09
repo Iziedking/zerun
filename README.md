@@ -185,7 +185,7 @@ Click any address to check it on the 0G explorer. Source is in `contracts/src/`
 | PrizeEscrow | [`0x29E09A7699BC016f9D73aD074Df851c713e28d56`](https://chainscan-galileo.0g.ai/address/0x29E09A7699BC016f9D73aD074Df851c713e28d56) | Single custodian for prize pools, namespaced per controller. |
 | AgentRegistry | [`0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c`](https://chainscan-galileo.0g.ai/address/0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c) | Agents as ERC-721 NFTs you own; strength comes from 0G-funded Compute. |
 | TestUSDC | [`0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64`](https://chainscan-galileo.0g.ai/address/0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64) | 6-decimal ERC-20 test currency for prizes and hosting. |
-| MemoryEscrow | *pending deploy* | An agent's non-custodial 0G balance for memory. Only the agent's owner can withdraw; the coordinator can only charge up to the owner's allowance, only to an immutable treasury. |
+| MemoryEscrow | [`0x0a905d5f65c111FAF0FEe67a005a5CDB1E986d7A`](https://chainscan-galileo.0g.ai/address/0x0a905d5f65c111FAF0FEe67a005a5CDB1E986d7A) | An agent's non-custodial 0G balance for memory and dossiers. Only the agent's owner can withdraw; the coordinator can only charge up to the owner's allowance, only to an immutable treasury. |
 
 ## Documentation
 

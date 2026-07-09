@@ -309,7 +309,7 @@ Live addresses are also served at `GET /api/deployment`.
 | PrizeEscrow | [`0x29E09A7699BC016f9D73aD074Df851c713e28d56`](https://chainscan-galileo.0g.ai/address/0x29E09A7699BC016f9D73aD074Df851c713e28d56) | The single custodian for prize pools, namespaced per controller. |
 | AgentRegistry | [`0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c`](https://chainscan-galileo.0g.ai/address/0x8babef47747c07b3BaaeA2D4184Ba2e42bd3915c) | Agents as ERC-721 NFTs you own. |
 | TestUSDC | [`0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64`](https://chainscan-galileo.0g.ai/address/0x4995BF8055199edAD8Ad31f5cd9bf5E4CA8b2E64) | 6-decimal test currency for prizes and hosting. |
-| MemoryEscrow | *pending deploy* | An agent's non-custodial 0G balance for memory. The owner withdraws at will; the coordinator may only charge up to the owner's allowance, only to an immutable treasury. |
+| MemoryEscrow | [`0x0a905d5f65c111FAF0FEe67a005a5CDB1E986d7A`](https://chainscan-galileo.0g.ai/address/0x0a905d5f65c111FAF0FEe67a005a5CDB1E986d7A) | An agent's non-custodial 0G balance for memory and dossiers. The owner withdraws at will; the coordinator may only charge up to the owner's allowance, only to an immutable treasury (`0xDb08…eCeD`). |
 
 `AgentRegistry` deliberately keeps Compute off chain. The level is a backend record
 anchored in the 0G Storage audit, so raising it costs one 0G transfer rather than a
