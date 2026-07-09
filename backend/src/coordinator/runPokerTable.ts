@@ -25,7 +25,17 @@ const MATCH_MS = Number(process.env.POKER_MATCH_SECONDS ?? "300") * 1000;
 // Same cap as the duel: the match ends at the cap with the chip leader ahead on a
 // real split, instead of grinding until someone busts and the table reads all-or-zero.
 const MAX_HANDS = Number(process.env.POKER_MAX_HANDS ?? "50");
-const DECISION_SPACING_MS = Number(process.env.POKER_DECISION_SPACING_MS ?? "400");
+// How long a spectator gets to read each action before the next one lands.
+//
+// Poker decisions here are DETERMINISTIC: the strategy engine answers in ~0ms, so nothing in
+// the game paces itself. At 400ms a six-handed street resolved in under two seconds and the
+// table read as a flicker, then sat still. The wait is not the problem a spectator has -- the
+// jitter is. Roughly a second per action, and a longer beat when the board turns, gives the
+// eye somewhere to land and makes the same hand feel calm AND fast.
+const DECISION_SPACING_MS = Number(process.env.POKER_DECISION_SPACING_MS ?? "900");
+// The beat when a street ends and the board changes. A new card is the biggest event on the
+// felt and it deserves its own moment, rather than arriving under someone else's action.
+const STREET_BEAT_MS = Number(process.env.POKER_STREET_BEAT_MS ?? "1400");
 const MAX_SEATS = 6;
 const START_STACK = 1000;
 
@@ -105,7 +115,22 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
     const handActions: unknown[] = [];
 
     let guard = 0;
+    let shownStreet = t.street;
     while (!t.handOver && guard++ < 2000) {
+      // The board just turned. Broadcast the new street on its own, hold it, and only then let
+      // the next player act. Without this the flop lands silently inside whichever action
+      // happened to follow it, and a spectator never sees the cards arrive.
+      if (t.street !== shownStreet) {
+        shownStreet = t.street;
+        if (spacingMs > 0) {
+          try {
+            broadcast({ type: "poker", contestId, payload: tableSnapshot(t, players, handIndex) });
+          } catch {
+            /* cosmetic only; never break the hand loop */
+          }
+          await sleep(STREET_BEAT_MS);
+        }
+      }
       const seat = t.toAct;
       const entry = players[seat]!;
       const view = viewFor(t);
@@ -284,7 +309,9 @@ function tableSnapshot(
   t: MultiTable,
   players: TableEntry[],
   handIndex: number,
-  lastAction: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null },
+  // Omitted for the street beat, which is a board change rather than anybody's move: carrying
+  // the previous player's action into it would re-announce a move that already happened.
+  lastAction?: { agentId: number; name: string; action: string; reasoning: string; chatID: string | null },
 ) {
   const streets = ["preflop", "flop", "turn", "river"];
   const seats = players.map((p, s) => ({
