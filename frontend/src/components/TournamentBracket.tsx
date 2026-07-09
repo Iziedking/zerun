@@ -107,7 +107,7 @@ function MatchCard({
   );
 }
 
-function Lobby({ snapshot }: { snapshot: WsBracketSnapshot }) {
+function Lobby({ snapshot, isChallenge = false }: { snapshot: WsBracketSnapshot; isChallenge?: boolean }) {
   const slots = Array.from({ length: snapshot.capacity }, (_, i) => snapshot.seats[i] ?? null);
   const need = Math.max(0, snapshot.capacity - snapshot.filled);
   return (
@@ -123,6 +123,28 @@ function Lobby({ snapshot }: { snapshot: WsBracketSnapshot }) {
           {need === 0 ? "Bracket full — starting…" : `Auto-starts the moment all ${snapshot.capacity} seats fill`}
         </span>
       </div>
+
+      {/* What happens if the room never fills. The two rules differ, and getting this wrong
+          costs an operator a cancelled contest: the house fills a funded contest at the
+          deadline, but it cannot pay an entry fee, so it never fills a challenge. */}
+      {need > 0 && (
+        <p className="mt-2 font-body text-[13px] leading-relaxed text-ink-2">
+          {isChallenge ? (
+            <>
+              This is an entry-fee challenge, so the pot is the entrants&apos; fees and{" "}
+              <strong className="text-ink">house agents never join</strong> — they cannot pay in.
+              At the deadline it plays with whoever turned up: two entrants play a duel, three or
+              more play a bracket. With only one entrant it cancels and every fee is refunded.
+            </>
+          ) : (
+            <>
+              If seats are still empty at the deadline, house agents take them and the tournament
+              starts anyway. A house agent can win the bracket, but the pot always goes to the best
+              real player.
+            </>
+          )}
+        </p>
+      )}
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {slots.map((seat, i) => (
           <div
@@ -149,13 +171,20 @@ function Lobby({ snapshot }: { snapshot: WsBracketSnapshot }) {
   );
 }
 
-export function TournamentBracket({ snapshot }: { snapshot: WsBracketSnapshot }) {
+export function TournamentBracket({
+  snapshot,
+  isChallenge = false,
+}: {
+  snapshot: WsBracketSnapshot;
+  /** An entry-fee challenge: the house cannot join, so the lobby fills or it does not. */
+  isChallenge?: boolean;
+}) {
   const seatOf = new Map(snapshot.seats.map((s) => [s.agentId, s]));
 
   if (snapshot.status === "lobby") {
     return (
       <StickerCard className="p-4 sm:p-5">
-        <Lobby snapshot={snapshot} />
+        <Lobby snapshot={snapshot} isChallenge={isChallenge} />
       </StickerCard>
     );
   }

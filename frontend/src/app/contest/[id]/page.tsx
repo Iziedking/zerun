@@ -195,6 +195,7 @@ export default function ContestPage() {
         initialStandings={standings}
         highlight={address ?? undefined}
         kind={contest.kind}
+        isChallenge={isChallenge}
       />
 
       {contest.audit_root && <AuditTrail root={contest.audit_root} tx={contest.audit_tx} />}

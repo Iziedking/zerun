@@ -59,11 +59,14 @@ export function ContestLive({
   initialStandings,
   highlight,
   kind = "solver",
+  isChallenge = false,
 }: {
   contestId: number;
   initialStandings: Standing[];
   highlight?: string;
   kind?: ContestKind;
+  /** An entry-fee challenge. The house never joins one, which changes how a chess lobby ends. */
+  isChallenge?: boolean;
 }) {
   const [rows, setRows] = useState<SolveRow[]>([]);
   const [visible, setVisible] = useState(FEED_PAGE);
@@ -194,7 +197,7 @@ export function ContestLive({
         />
       )}
       {kind === "poker" && snapshot && <PokerTable snapshot={snapshot} />}
-      {kind === "chess" && bracket && <TournamentBracket snapshot={bracket} />}
+      {kind === "chess" && bracket && <TournamentBracket snapshot={bracket} isChallenge={isChallenge} />}
       {kind === "chess" && chessSnap && <ChessBoard snapshot={chessSnap} />}
       {(kind === "poker" || kind === "worldcup") && <X402Feed payments={payments} />}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
