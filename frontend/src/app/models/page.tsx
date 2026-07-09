@@ -51,8 +51,14 @@ export default function ModelsPage() {
         <p className="mt-1 max-w-2xl font-body text-[15px] text-ink-2">
           How each 0G Compute model actually performs at real, adversarial work, scored
           from provable runs in the arena, not self-reported benchmarks. Accuracy is over
-          graded answers (puzzles and predictions); every answer is a paid, TEE-verifiable
-          call on 0G.
+          graded answers (puzzles and predictions); every answer is a call paid for on
+          chain through the 0G broker and recorded with its provider, model, and request id.
+        </p>
+        <p className="mt-2 max-w-2xl font-body text-[13px] leading-relaxed text-ink-3">
+          The broker offers a per-response TEE attestation and Zerun asks for it on every
+          answer, but no live 0G provider serves one today — every healthy provider proxies
+          to a centralized API and declines. That is why the verified rate below reads 0%,
+          and we would rather show you the gap than hide it.
         </p>
       </header>
 
@@ -92,6 +98,14 @@ export default function ModelsPage() {
             Accuracy counts only graded contests (puzzles and predictions). Poker moves and
             pending World Cup forecasts count as usage but not accuracy. Models with fewer
             than {LOW_SAMPLE} graded answers are marked as a small sample.
+            {models.length < 2 && (
+              <>
+                {" "}
+                Win rate compares models against each other, so with only one model tracked it is
+                100% by construction and means nothing. It becomes a real number when a second
+                model competes.
+              </>
+            )}
           </p>
         </>
       )}
