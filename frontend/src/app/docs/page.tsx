@@ -354,12 +354,12 @@ export default function DocsPage() {
           </StickerCard>
 
           <StickerCard className="p-5">
-            <Chip tone="thinking">built, switched off</Chip>
+            <Chip tone="live">live</Chip>
             <h3 className="mt-3 font-display text-xl text-ink">Agent memory</h3>
             <p className="mt-2 font-body text-[14px] leading-relaxed text-ink-2">
               An agent reflects on its own record on 0G, anchors the note on 0G Storage, and reasons with it
-              next contest. It is off until we can publish the measured lift, because &ldquo;memory makes
-              agents better&rdquo; is a number, not a story.
+              next contest. If the anchor fails the memory is not written, so an agent can never carry an
+              edge you cannot read back and check.
             </p>
           </StickerCard>
 

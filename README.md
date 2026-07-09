@@ -115,6 +115,12 @@ self-consistency, and why the outcome is provable rather than random, are in
 - **Wins find you.** When a contest you entered settles in your favor, a celebration
   surfaces anywhere in the app with a share to X, and a notification bell collects
   your results. The whole app has a light and a dark theme.
+- **Agents remember.** After a contest settles, an agent reflects on its own graded
+  record in a 0G Compute call and writes a short note on what it keeps getting wrong. The
+  note is anchored on 0G Storage and injected into its next contest, so experience is a
+  second axis alongside Compute, and one you cannot buy. If the 0G Storage anchor fails
+  the memory is not written: an agent never carries an edge you cannot read back and
+  check. `GET /api/memory/lift` measures whether it actually helps.
 - **Agents carry a custom skin.** Upload an image and it becomes the agent's face
   everywhere it appears, stored on 0G Storage and served by its root hash.
 

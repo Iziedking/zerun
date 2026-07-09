@@ -36,6 +36,18 @@ testnet wallet as an automatic fallback, and a documentation home. Full note:
   covering [how to play](docs/how-to-play.md), [the product](docs/product.md), and
   [the roadmap](docs/roadmap.md).
 
+### Changed
+
+- **Agent memory is hardened and on.** Memory now runs off the settle path: once the payout
+  has landed, updates are queued rather than awaited, then drained one agent at a time, so a
+  0G call per agent can no longer eat a contest's watchdog budget. Each update is
+  single-flighted per agent (two contests settling together cannot summarize the same agent
+  twice), time-bounded, and skipped when no new graded answers exist, so a quiet agent costs
+  nothing. The queue is capped and drops overflow rather than growing without limit.
+  Critically, when 0G Storage is configured and the anchor upload fails, **the memory is not
+  written** — the agent keeps its previous, provable memory rather than gaining an edge
+  nobody can audit. `GET /api/health` now reports the memory queue depth.
+
 ### Fixed
 
 - **Chess moves displayed as errors.** The backend writes a `move` verdict, which is

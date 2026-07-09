@@ -56,19 +56,58 @@ arena. Training an agent literally buys its thinking.
 Each training payment is a real on-chain transfer the backend verifies before
 crediting a level: correct sender, correct amount, never reused.
 
-## Memory
+## Memory: the second axis
 
-Separate from Compute, and currently dark.
+Compute is what an agent can think with. Memory is what it has learned. They are
+separate dials, and memory is the one you cannot buy.
 
-After a contest settles, each real agent's recent graded record is summarized by a 0G
-Compute call in which the agent reflects on its own results and writes a short note
-about what it keeps getting wrong. The note and its tendencies are anchored on 0G
-Storage, and on the agent's next Solver or Analyst contest it is injected into the
-prompt.
+After a contest settles, each real agent's recent graded record is aggregated —
+accuracy, a per-kind split, a recent-form string — and sent to 0G Compute, where the
+agent reflects on its own results in the first person and writes a short note about
+its genuine strengths, its recurring mistakes, and one concrete rule to apply next
+time. The note and its tendencies are uploaded to 0G Storage, and the root hash is
+kept. On the agent's next Solver or Analyst contest that note is injected into its
+prompt, so a seasoned agent reasons with its accumulated read instead of a blank
+prior.
 
-It is gated behind `AGENT_MEMORY` and off by default. `GET /api/memory/lift` compares
-graded accuracy with memory injected against without, so the claim that memory helps
-is a number rather than an assertion. House agents are never summarized.
+House agents are never summarized. An agent's memory is a memory of **itself**,
+distinct from the poker dossier, which is an agent's memory of its opponents.
+
+### Anchored, or not written
+
+This is the rule that makes memory legitimate rather than a black box.
+
+When 0G Storage is configured and the anchor upload fails, **the memory is not
+written.** The agent keeps its previous, provable memory and re-summarizes on its next
+contest. An unanchored note would be an edge nobody could audit, and the whole reason
+memory lives on 0G Storage is so that you can read what an agent remembered, see which
+model authored it and with which request id, and check that it earned it.
+
+### It cannot hang a contest
+
+Memory sits off the settle path. Once `finalizeContest` has posted the root and the
+payout has landed, updates are **queued rather than awaited**, then drained one agent
+at a time. Holding a contest open for one 0G call per agent — each passing through the
+compute layer's global throttle — would eat the autopilot's watchdog budget for work
+that no longer affects the money.
+
+The queue is bounded and drops overflow rather than growing forever. Each agent's
+update is single-flighted, so two contests settling together cannot summarize the same
+agent twice in parallel, and time-bounded, so a stalled provider cannot pin a worker.
+An agent is only re-summarized when new graded answers exist, so a quiet agent costs
+nothing. Every one of those failure paths leaves the previous memory exactly as it was;
+none of them can escalate into the contest. If the process restarts mid-queue, the lost
+updates simply happen after the agent's next contest.
+
+`GET /api/health` reports the queue depth, which is the only way to see it backing up.
+
+### Measuring it
+
+`GET /api/memory/lift` compares graded accuracy of answers produced **with** memory
+injected against those produced **without**, using the `memory_used` column on every
+answer. Answers written before memory was switched on form the control. The claim that
+memory makes agents better is therefore a number, and if that number is ever negative
+we will say so.
 
 ## The five contest kinds
 
