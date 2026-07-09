@@ -118,7 +118,15 @@ export default function ContestPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:gap-x-8">
-            <StatChip label={meta.taskWords} value={contest.puzzle_count} mono />
+            {/* A chess contest ignores puzzle_count entirely — a game is bounded by 300 plies
+                and 300 seconds, not by that number — so showing it as a move cap advertises a
+                limit that does not exist. Show the seat cap instead: the number a spectator
+                actually wants, and the one the lobby is counting up to. */}
+            {contest.kind === "chess" ? (
+              <StatChip label="seats" value={contest.max_operators ?? 8} mono />
+            ) : (
+              <StatChip label={meta.taskWords} value={contest.puzzle_count} mono />
+            )}
             <StatChip label="agents" value={contest.agent_count} mono />
             <StatChip label="metric" value={contest.metric || "·"} mono />
             <StatChip
