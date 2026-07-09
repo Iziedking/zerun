@@ -17,7 +17,7 @@ import type {
 } from "@/lib/types";
 import { kindMeta } from "@/lib/kind";
 import { useMusic } from "@/lib/music";
-import { playActionSound } from "@/lib/sound";
+import { playActionSound, playChessMove, playChessGameEnd } from "@/lib/sound";
 import { SolveCard, type SolveRow } from "./SolveCard";
 import { PokerTable, X402Feed } from "./PokerTable";
 import { ChessBoard } from "./ChessBoard";
@@ -85,6 +85,10 @@ export function ContestLive({
   const { muted } = useMusic();
   const mutedRef = useRef(muted);
   const lastSfxRef = useRef(0);
+  // How many bracket matches were decided at the last snapshot, so a newly finished game
+  // sounds its cadence exactly once. -1 until the first snapshot: an operator opening the
+  // page mid-tournament must not hear a cadence for games that finished before they arrived.
+  const decidedRef = useRef(-1);
   // Latest standings, so the settle handler can name the winner (rank 1) at once.
   const standingsRef = useRef<Standing[]>(initialStandings);
   useEffect(() => {
@@ -203,12 +207,22 @@ export function ContestLive({
         fresh: true,
       };
       setRows((prev) => [row, ...prev].slice(0, MAX_ROWS));
+      // A piece landing, and a heavier double knock when it took something. Moves arrive a
+      // few seconds apart, so this is never throttled away the way a fast solve feed is —
+      // but keep the guard, because the engine can play a fallback move instantly.
       const tc = Date.now();
       if (!mutedRef.current && tc - lastSfxRef.current > SFX_THROTTLE_MS) {
         lastSfxRef.current = tc;
-        playActionSound(kind);
+        playChessMove(p.capture);
       }
     } else if (msg.type === "bracket") {
+      // A game just ended when one more match has a winner than it did a tick ago. The board
+      // snapshot cannot tell us: it stops arriving, it never announces. Counting decided
+      // matches is the only signal the bracket actually gives.
+      const decided = msg.payload.rounds.flat().filter((m) => m.winner != null).length;
+      const isNewGame = decidedRef.current >= 0 && decided > decidedRef.current;
+      decidedRef.current = decided;
+      if (isNewGame && !mutedRef.current) playChessGameEnd();
       setBracket(msg.payload);
     } else if (msg.type === "x402") {
       setPayments((prev) => [msg.payload, ...prev].slice(0, 20));

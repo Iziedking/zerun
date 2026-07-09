@@ -49,6 +49,77 @@ function tones(
   }
 }
 
+// A short burst of filtered noise. Oscillators can only sing; a chess piece meeting a board
+// is a transient, and no pure tone will ever sound like wood. Band-passing white noise gives
+// the knock its body, and the tight envelope gives it the click.
+let noiseBuf: AudioBuffer | null = null;
+function noiseBuffer(ctx: AudioContext): AudioBuffer {
+  if (noiseBuf && noiseBuf.sampleRate === ctx.sampleRate) return noiseBuf;
+  const len = Math.floor(ctx.sampleRate * 0.2);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  noiseBuf = buf;
+  return buf;
+}
+
+function knock(opts: { t?: number; freq: number; q?: number; dur?: number; gain?: number }): void {
+  const ctx = audioCtx();
+  if (!ctx) return;
+  try {
+    const start = ctx.currentTime + (opts.t ?? 0);
+    const dur = opts.dur ?? 0.045;
+
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(ctx);
+    const band = ctx.createBiquadFilter();
+    band.type = "bandpass";
+    band.frequency.value = opts.freq;
+    band.Q.value = opts.q ?? 4;
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(opts.gain ?? 0.09, start + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.0006, start + dur);
+
+    src.connect(band).connect(gain).connect(ctx.destination);
+    src.start(start);
+    src.stop(start + dur + 0.02);
+  } catch {
+    /* ignore a single bad knock */
+  }
+}
+
+/**
+ * A piece landing on the board.
+ *
+ * A quiet move is one wooden tap: a noise knock for the click, plus a low sine for the body
+ * of the piece meeting the board. A capture is two — the captured piece lifted away, then the
+ * capturing piece set down harder, pitched lower so it reads as heavier, not merely louder.
+ * Both are brief: a tournament plays a few hundred of these and it must never become nagging.
+ */
+export function playChessMove(capture = false): void {
+  if (!capture) {
+    knock({ freq: 1500, q: 3, dur: 0.04, gain: 0.075 });
+    tones([{ f: 190, t: 0, dur: 0.06, type: "sine", gain: 0.05 }]);
+    return;
+  }
+  // The captured piece, lifted and set aside.
+  knock({ freq: 2100, q: 5, dur: 0.03, gain: 0.055 });
+  // Then the capturing piece, landing where it stood.
+  knock({ t: 0.075, freq: 1100, q: 2.5, dur: 0.06, gain: 0.1 });
+  tones([{ f: 140, t: 0.075, dur: 0.09, type: "sine", gain: 0.07 }]);
+}
+
+/** Checkmate, or a game decided on the clock. A short, settled two-note cadence. */
+export function playChessGameEnd(): void {
+  knock({ freq: 900, q: 2, dur: 0.07, gain: 0.09 });
+  tones([
+    { f: 261.63, t: 0.02, dur: 0.28, type: "sine", gain: 0.1 }, // C4
+    { f: 392.0, t: 0.16, dur: 0.4, type: "sine", gain: 0.1 }, // G4
+  ]);
+}
+
 // A rising major arpeggio for a win. Kept as the original celebratory chime.
 export function playWinnerChime(): void {
   tones([
@@ -82,6 +153,11 @@ export function playActionSound(kind: string): void {
     case "worldcup":
       // A quick upward pip, a nod to a ref's whistle.
       tones([{ f: 880, t: 0.0, dur: 0.09, type: "sawtooth", gain: 0.06 }]);
+      break;
+    case "chess":
+      // A quiet move. Callers that know whether the move captured should prefer
+      // playChessMove(capture) directly, which is what the live board does.
+      playChessMove(false);
       break;
     default:
       // Solver (and any other): a bright rising think-blip.
