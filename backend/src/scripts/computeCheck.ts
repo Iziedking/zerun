@@ -1,5 +1,5 @@
 import { config } from "../config/index.js";
-import { ensureReady, ensureLedger, listProviders, mainnetComputeEnabled } from "../compute/zgCompute.js";
+import { ensureReady, ensureLedger, listProviders, mainnetComputeEnabled, tierUsesMainnet } from "../compute/zgCompute.js";
 import { callModel, computeMode } from "../compute/client.js";
 import { computePlan, MAX_COMPUTE_LEVEL } from "../runners/computeLevels.js";
 
@@ -61,11 +61,13 @@ async function main() {
   }
 
   console.log("\nrunning one inference...");
+  // Run at the top tier, so this exercises the network a premium agent actually uses.
   const res = await callModel({
     systemPrompt: "You are a precise solver. Answer with only the final result, no words.",
     userPrompt: "Compute: 17 + 25",
     maxTokens: 64,
     temperature: 0.2,
+    tier: MAX_COMPUTE_LEVEL,
   });
 
   console.log("--- result ---");
