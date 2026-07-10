@@ -182,9 +182,20 @@ export async function runChessContest(contestId: number): Promise<RunResult> {
       computeLevel: tierOf.get(payee.agentId) ?? 0,
     },
   ];
-  const finalized = await finalizeContest(contestId, rankAgents(scores));
-  // Fold this game into each agent's CHESS memory. Queued, not awaited: the payout has landed,
-  // and a slow 0G summarize must never hold the settle path open.
+  // Memory is scheduled BEFORE the on-chain finalize, and this ordering is load-bearing.
+  //
+  // `finalizeContest` posts a score root to the chain, and that transaction can throw --
+  // most commonly `nonce too low`, when the coordinator wallet has another write in flight.
+  // The autopilot watchdog then resettles the contest from the stored root, which pays
+  // everyone correctly but never returns to this function. So every line after the finalize
+  // was dead code on exactly the contests that hit a nonce collision, and in production that
+  // was most of them: the memory table sat empty while the arena settled 460 contests.
+  //
+  // Nothing here needs the contest to be settled. `scheduleMemoryUpdates` is a fire-and-forget
+  // queue reading `contest_scores` and `solve_runs`, both already written during the game, and
+  // the tendency queries never filter on status. Settling an agent's memory debits likewise
+  // only touches its own escrow. Neither can unsettle a paid contest, and now neither can be
+  // skipped by one that failed to settle on the first attempt.
   scheduleMemoryUpdates(`chess duel ${contestId}`, players, "chess");
-  return finalized;
+  return finalizeContest(contestId, rankAgents(scores));
 }

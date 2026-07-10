@@ -496,10 +496,23 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
   // Settle first, so paying the winner never waits on 0G Storage. The verifiable
   // replay upload comes after and is best effort, so a slow or stalled upload can no
   // longer leave a finished match stuck unsettled.
-  const result = await finalizeContest(contestId, rankAgents(scores));
+  // Memory is scheduled BEFORE the on-chain finalize, and this ordering is load-bearing.
+  //
+  // `finalizeContest` posts a score root to the chain, and that transaction can throw --
+  // most commonly `nonce too low`, when the coordinator wallet has another write in flight.
+  // The autopilot watchdog then resettles the contest from the stored root, which pays
+  // everyone correctly but never returns to this function. So every line after the finalize
+  // was dead code on exactly the contests that hit a nonce collision, and in production that
+  // was most of them: the memory table sat empty while the arena settled 460 contests.
+  //
+  // Nothing here needs the contest to be settled. `scheduleMemoryUpdates` is a fire-and-forget
+  // queue reading `contest_scores` and `solve_runs`, both already written during the game, and
+  // the tendency queries never filter on status. Settling an agent's memory debits likewise
+  // only touches its own escrow. Neither can unsettle a paid contest, and now neither can be
+  // skipped by one that failed to settle on the first attempt.
+  //
   // Collect what each agent owes for the memory it played with (one charge per agent),
-  // then fold this duel into its poker memory. Both are best effort and neither can
-  // unsettle a paid contest.
+  // then fold this duel into its poker memory.
   for (const [agentId, session] of memoryOf) {
     if (session.calls === 0) continue;
     await session.settle().catch((err) =>
@@ -507,6 +520,8 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
     );
   }
   scheduleMemoryUpdates(`poker ${contestId}`, players, "poker");
+
+  const result = await finalizeContest(contestId, rankAgents(scores));
   await storePokerReplay(contestId, net, matchLog);
   return result;
 }

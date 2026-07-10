@@ -10,6 +10,7 @@ import { contestEngineAbi, coordinatorAddress, loadDeployment, publicClient } fr
 import { storageConfigured, uploadJson } from "../storage/zgStorage.js";
 import { shuffle, handLabels, cardLabel } from "../runners/poker/cards.js";
 import { startHand, applyAction, viewFor, type MultiTable } from "../runners/poker/multi.js";
+import { scheduleMemoryUpdates } from "../runners/agentMemory.js";
 import type { Action } from "../runners/poker/table.js";
 import { decideStrategy } from "../runners/poker/strategy.js";
 
@@ -293,7 +294,20 @@ export async function runPokerTable(contestId: number, entries: TableEntry[]): P
       detail: `${winner.agentName} wins the table (${net[winnerSeat]! >= 0 ? "+" : ""}${net[winnerSeat]} chips over ${handIndex} hands)`,
     },
   });
-  // Settle first, so paying the winner never waits on 0G Storage. The verifiable
+  // Fold this table into each real agent's POKER memory. The duel path has always done this;
+  // the multi-seat table never did, so a six-max night taught its players nothing.
+  //
+  // Scheduled BEFORE the on-chain finalize, and that ordering is load-bearing.
+  // `finalizeContest` posts a score root, and that transaction throws on a `nonce too low`
+  // collision when the coordinator wallet has another write in flight. The watchdog then
+  // resettles from the stored root -- paying everyone correctly, but never returning here.
+  // Anything after the finalize was dead code on exactly the contests that collided.
+  //
+  // Nothing here needs a settled contest: the queue reads `contest_scores`, already written
+  // during play, and the tendency queries never filter on status.
+  scheduleMemoryUpdates(`poker table ${contestId}`, players, "poker");
+
+  // Settle next, so paying the winner never waits on 0G Storage. The verifiable
   // replay upload comes after and is best effort and time-bounded.
   const result = await finalizeContest(contestId, rankAgents(scores));
   console.log(`poker table ${contestId}: finalize ${result.settled ? "settled" : result.posted ? "posted (settle pending)" : "did not settle"}`);
