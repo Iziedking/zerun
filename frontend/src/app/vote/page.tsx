@@ -88,7 +88,7 @@ export default function VotePage() {
           body={
             <>
               <p className="font-body text-[14px] text-ink-2">
-                We send {status?.amountOg ?? "0.0001"} 0G of real mainnet gas straight to your
+                We send {status?.amountOg ?? "0.003"} 0G of real mainnet gas straight to your
                 wallet. Once per wallet, and it costs you nothing.
               </p>
               {!isConnected ? (
