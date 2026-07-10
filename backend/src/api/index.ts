@@ -149,6 +149,25 @@ app.get("/api/social/x/:address", async (c) => {
   return c.json({ identity });
 });
 
+// Resolve a verified X handle to the wallet it is bound to, so an operator can send tUSDC to
+// "@someone" instead of pasting 42 hex characters. The binding is one-to-one and enforced by
+// `unique (x_id)` on social_identity, so a handle can never point at two wallets.
+//
+// Read-only, and it reveals only what the profile page already shows: a public handle next to
+// a public address. Returns 404 when the handle is not connected, which is the honest answer:
+// sending to an unverified handle would mean guessing at an address.
+app.get("/api/social/resolve/:handle", async (c) => {
+  const raw = (c.req.param("handle") ?? "").trim().replace(/^@+/, "");
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(raw)) return c.json({ error: "not a valid X handle" }, 400);
+  const { rows } = await query<{ wallet: string; x_handle: string; x_name: string | null; x_avatar: string | null }>(
+    "select wallet, x_handle, x_name, x_avatar from social_identity where lower(x_handle) = lower($1) limit 1",
+    [raw],
+  );
+  const hit = rows[0];
+  if (!hit) return c.json({ error: `@${raw} has not connected X to a Zerun wallet` }, 404);
+  return c.json({ wallet: hit.wallet, handle: hit.x_handle, name: hit.x_name, avatar: hit.x_avatar });
+});
+
 // Map of agent id -> the owner's X profile image, for every agent whose operator has
 // linked X. The UI uses this as the agent's avatar everywhere (games, standings,
 // ladder, leaderboard), overriding an uploaded skin; the skin stays the fallback when
