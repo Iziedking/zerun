@@ -443,3 +443,12 @@ export type WsMessage =
   | { type: "poker"; contestId: number; payload: WsPokerSnapshot }
   | { type: "chess"; contestId: number; payload: WsChessSnapshot }
   | { type: "bracket"; contestId: number; payload: WsBracketSnapshot };
+
+// A verified X handle resolved to the wallet it is bound to. The binding is one-to-one, so
+// this is an address you can send to rather than a guess.
+export interface XResolved {
+  wallet: string;
+  handle: string;
+  name: string | null;
+  avatar: string | null;
+}

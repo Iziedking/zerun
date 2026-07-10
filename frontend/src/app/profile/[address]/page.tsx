@@ -12,6 +12,7 @@ import type { OperatorProfile } from "@/lib/types";
 import { InlineClaimButton } from "@/components/InlineClaimButton";
 import { RefundNudge } from "@/components/RefundNudge";
 import { MemoryPanel } from "@/components/MemoryPanel";
+import { TransferUsdc } from "@/components/TransferUsdc";
 import { AgentWalletPanel } from "@/components/AgentWalletPanel";
 import { ConnectX } from "@/components/ConnectX";
 import { SkinUpload } from "@/components/SkinUpload";
@@ -135,6 +136,13 @@ function ProfileBody({
 
       {/* Entry-fee refunds owed from cancelled challenges, surfaced so nobody has to hunt. */}
       {isMe && <RefundNudge contestIds={profile.refunds ?? []} />}
+
+      {/* Only the owner can spend their own tUSDC, so only the owner sees this. */}
+      {isMe && (
+        <section>
+          <TransferUsdc />
+        </section>
+      )}
 
       {/* Hero band */}
       <StickerCard className="relative overflow-hidden p-7">

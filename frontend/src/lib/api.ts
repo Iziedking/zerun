@@ -16,6 +16,7 @@ import type {
   AgentMemoryResponse,
   AgentWallet,
   MemoryKind,
+  XResolved,
   XIdentity,
   RecentFeedItem,
   Standing,
@@ -88,6 +89,10 @@ export const api = {
   agentMemory: (agentId: number, kind: MemoryKind = "general") =>
     req<AgentMemoryResponse>(`/api/agents/${agentId}/memory?kind=${kind}`),
   agentWallet: (agentId: number) => req<AgentWallet>(`/api/agents/${agentId}/wallet`),
+
+  /** The wallet behind a verified X handle. Throws when the handle has not connected X. */
+  resolveHandle: (handle: string) =>
+    req<XResolved>(`/api/social/resolve/${encodeURIComponent(handle.replace(/^@+/, ""))}`),
 
   // X (Twitter) connect: status, start (returns the authorize URL), callback (binds the
   // identity), and the public read of a wallet's linked handle for the verified badge.
