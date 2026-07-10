@@ -27,17 +27,31 @@ const METRIC = {
 
 type HostKind = "solver" | "analyst" | "poker" | "worldcup" | "chess";
 
-// How the pool is split among the top finishers. topN sets how many winners share
-// it; the pool is weighted so rank 1 takes the largest share, descending (the
-// linear weighting the settlement uses). pct is that breakdown, for display.
+// How the pool is split among the top finishers. `topN` is the only knob that exists: the
+// settlement weights the pool n, n-1, ... 1 down the ranks (see computePayouts), so rank 1
+// always takes the largest share. There is no second dial.
 const SPLITS = [
-  { key: "winner", label: "Winner takes all", topN: 1, cut: 10000, pct: [100] },
-  { key: "top2", label: "Top 2 split", topN: 2, cut: 7000, pct: [67, 33] },
-  { key: "top3", label: "Top 3 split", topN: 3, cut: 6000, pct: [50, 33, 17] },
-  { key: "top5", label: "Top 5 split", topN: 5, cut: 5000, pct: [33, 27, 20, 13, 7] },
+  { key: "winner", label: "Winner takes all", topN: 1, cut: 10000 },
+  { key: "top2", label: "Top 2 split", topN: 2, cut: 7000 },
+  { key: "top3", label: "Top 3 split", topN: 3, cut: 6000 },
+  { key: "top5", label: "Top 5 split", topN: 5, cut: 5000 },
 ] as const;
 
 const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th"];
+
+/**
+ * The exact percentages the settlement will pay for a field of `n` winners: the linear
+ * weights n, n-1, ... 1, normalised. Derived rather than hardcoded, because a table of
+ * literals drifts from the code that actually moves the money — and because the real `n`
+ * depends on how many agents turn up, not on what the host picked.
+ */
+function splitPct(n: number): number[] {
+  const total = (n * (n + 1)) / 2;
+  const pct = Array.from({ length: n }, (_, i) => Math.round((100 * (n - i)) / total));
+  // Rounding dust goes to rank 1, exactly as computePayouts hands its remainder to rank 1.
+  pct[0] += 100 - pct.reduce((a, b) => a + b, 0);
+  return pct;
+}
 
 // "1st 50%, 2nd 33%, 3rd 17%"
 function splitBreakdown(pct: readonly number[]): string {
@@ -108,7 +122,26 @@ export function HostContestForm({
   // it outright) and a chess DUEL. A chess bracket finishes everybody by placement, so its pool
   // can be split down the podium, and the host chooses how far.
   const winnerTakesAll = isPoker || (isChess && !isChessBracket);
-  const split = winnerTakesAll ? SPLITS[0]! : SPLITS.find((s) => s.key === splitKey)!;
+
+  // The most winners this contest can ever HAVE. `computePayouts` slices the ranked field to
+  // `topN`, so a top-5 split with two operators pays two people, not five — the extra ranks
+  // simply do not exist. Publishing topN=5 there promises a payout table the settlement can
+  // never produce. Cap the offer at the field size and say the true percentages.
+  //
+  // A chess bracket seats exactly `chessSeatCount`. Otherwise the field is bounded only by
+  // MAX OPERATORS, and when that is blank it is unbounded and every split is honest.
+  const fieldCap = isChessBracket
+    ? chessSeatCount
+    : maxOps.trim() && Number(maxOps) > 0
+      ? Math.max(1, Math.round(Number(maxOps)))
+      : Infinity;
+  const offered = SPLITS.filter((s) => s.topN <= fieldCap);
+
+  // The host's choice may have just become impossible (they lowered MAX OPERATORS after
+  // picking Top 5). Fall back to the deepest split the field can actually support.
+  const chosen = offered.find((s) => s.key === splitKey) ?? offered[offered.length - 1] ?? SPLITS[0]!;
+  const split = winnerTakesAll ? SPLITS[0]! : chosen;
+  const splitClamped = !winnerTakesAll && chosen.key !== splitKey;
 
   const usdcAddr = deployment?.contracts.testUSDC;
   const engineAddr = deployment?.contracts.contestEngine;
@@ -423,9 +456,9 @@ export function HostContestForm({
                   disabled={busy}
                   className={inputCx}
                 >
-                  {SPLITS.filter((s) => s.topN <= chessSeatCount).map((s) => (
+                  {offered.map((s) => (
                     <option key={s.key} value={s.key}>
-                      {s.label} ({s.pct.join("/")})
+                      {s.label} ({splitPct(s.topN).join("/")})
                     </option>
                   ))}
                 </select>
@@ -500,14 +533,16 @@ export function HostContestForm({
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Winners split">
               <select
-                value={splitKey}
+                value={split.key}
                 onChange={(e) => setSplitKey(e.target.value as (typeof SPLITS)[number]["key"])}
                 disabled={busy}
                 className={inputCx}
               >
-                {SPLITS.map((s) => (
+                {/* Only the splits this field can actually pay. A top-5 option on a two-operator
+                    contest is an offer the settlement cannot honour. */}
+                {offered.map((s) => (
                   <option key={s.key} value={s.key}>
-                    {s.label} ({s.pct.join("/")})
+                    {s.label} ({splitPct(s.topN).join("/")})
                   </option>
                 ))}
               </select>
@@ -524,8 +559,19 @@ export function HostContestForm({
             </Field>
           </div>
           <p className="font-body text-[12px] text-ink-3">
-            Split: {splitBreakdown(split.pct)}.
+            Split: {splitBreakdown(splitPct(split.topN))}.
             {maxOps.trim() ? ` Up to ${maxOps} operators can join.` : " Open to any number of operators."}
+          </p>
+          {splitClamped && (
+            <p className="font-body text-[12px] font-bold text-coral">
+              Deeper splits need more operators. With {Number.isFinite(fieldCap) ? fieldCap : "this"}{" "}
+              {fieldCap === 1 ? "operator" : "operators"} the pool can only reach {split.topN}{" "}
+              {split.topN === 1 ? "winner" : "winners"}, so that is what will be paid.
+            </p>
+          )}
+          <p className="font-body text-[12px] text-ink-3">
+            Fewer entrants than winners? Only the agents that actually scored are paid, and the
+            pool is re-weighted across them. Nothing is stranded.
           </p>
         </>
       )}
