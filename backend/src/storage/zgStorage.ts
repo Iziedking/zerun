@@ -25,10 +25,19 @@ function getIndexer() {
   return _indexer;
 }
 
+// An upload pays a storage fee, which is a real transaction on the same chain the arena's
+// contracts live on. The coordinator hands out explicit sequential nonces for its own writes,
+// but ethers counts independently: point both at one account and a storage upload can consume
+// the nonce the coordinator is about to post a score root with, and the chain rejects the root
+// as `nonce too low`. Give storage its own key when one is provided.
+//
+// It falls back to COMPUTE_PRIVATE_KEY (also off the coordinator's nonce space) and finally to
+// the deployer, so an unconfigured deployment still works exactly as it did.
 function getSigner(): ethers.Wallet {
-  if (!config.signerKey) throw new Error("DEPLOYER_PRIVATE_KEY not set; 0G Storage needs a signer");
+  const key = process.env.STORAGE_PRIVATE_KEY || process.env.COMPUTE_PRIVATE_KEY || config.signerKey;
+  if (!key) throw new Error("no signer key set; 0G Storage needs one (STORAGE_PRIVATE_KEY or DEPLOYER_PRIVATE_KEY)");
   const provider = new ethers.JsonRpcProvider(config.chain.rpcUrl);
-  return new ethers.Wallet(config.signerKey, provider);
+  return new ethers.Wallet(key, provider);
 }
 
 export function storageConfigured(): boolean {

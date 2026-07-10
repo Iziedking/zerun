@@ -199,21 +199,43 @@ export function coordinatorWallet() {
     transport: http(config.chain.rpcUrl),
   });
   const rawWrite = client.writeContract.bind(client) as (args: any) => Promise<`0x${string}`>;
+
+  // Is this failure the chain telling us our nonce is stale? Another signer on this account
+  // (0G Compute's broker, 0G Storage's fee tx) consumed it while we were counting locally.
+  const isNonceDrift = (err: unknown): boolean =>
+    /nonce too low|nonce (is )?(too low|already been used)|replacement transaction underpriced/i.test(
+      (err as Error)?.message ?? "",
+    );
+
   const serializedWrite = (args: any): Promise<`0x${string}`> => {
     const run = _sendChain.then(async () => {
-      if (_nonce == null) {
-        _nonce = await publicClient.getTransactionCount({
-          address: coordinatorAccount().address,
-          blockTag: "pending",
-        });
-      }
-      try {
+      const send = async (): Promise<`0x${string}`> => {
+        if (_nonce == null) {
+          _nonce = await publicClient.getTransactionCount({
+            address: coordinatorAccount().address,
+            blockTag: "pending",
+          });
+        }
         const hash = await rawWrite({ ...args, nonce: _nonce });
         _nonce = _nonce + 1;
         return hash;
+      };
+      try {
+        return await send();
       } catch (err) {
-        _nonce = null; // resync from chain on the next send so a gap does not stick
-        throw err;
+        _nonce = null; // resync from chain so a gap does not stick
+        // Give it exactly one more shot with a freshly read nonce. Losing this send meant
+        // losing a score root, and the contest then had to be resettled by the watchdog.
+        // Only retried on nonce drift, which is idempotent to re-send; any other revert is
+        // a real failure and must surface.
+        if (!isNonceDrift(err)) throw err;
+        console.warn(`coordinator: nonce drifted (another signer used this account); retrying once`);
+        try {
+          return await send();
+        } catch (retryErr) {
+          _nonce = null;
+          throw retryErr;
+        }
       }
     });
     // Keep the queue alive whether this send resolved or threw.
