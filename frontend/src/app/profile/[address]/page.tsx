@@ -137,13 +137,6 @@ function ProfileBody({
       {/* Entry-fee refunds owed from cancelled challenges, surfaced so nobody has to hunt. */}
       {isMe && <RefundNudge contestIds={profile.refunds ?? []} />}
 
-      {/* Only the owner can spend their own tUSDC, so only the owner sees this. */}
-      {isMe && (
-        <section>
-          <TransferUsdc />
-        </section>
-      )}
-
       {/* Hero band */}
       <StickerCard className="relative overflow-hidden p-7">
         <div className="grid items-center gap-6 sm:grid-cols-[160px_1fr]">
@@ -180,8 +173,10 @@ function ProfileBody({
         </div>
       </StickerCard>
 
-      {/* Roster (read-only for everyone; the owner gets full controls in the Workshop) */}
-      <section>
+      {/* Roster on the left, and for the owner, the tUSDC transfer card in the space it leaves
+          on the right. The roster is a handful of avatars: it never fills the row on its own. */}
+      <section className={cx("grid gap-6", isMe && "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start")}>
+        <div>
         <h2 className="mb-4 font-display text-2xl text-ink">The roster</h2>
         {agents.length ? (
           <ul className="flex flex-wrap gap-6">
@@ -206,6 +201,10 @@ function ProfileBody({
             <p className="font-body text-[15px] text-ink-2">No agents on this roster yet.</p>
           </StickerCard>
         )}
+        </div>
+
+        {/* Only the owner can spend their own tUSDC, so only the owner sees this. */}
+        {isMe && <TransferUsdc />}
       </section>
 
       {/* What each agent has learned on 0G, and the 0G it spends to use that memory in poker

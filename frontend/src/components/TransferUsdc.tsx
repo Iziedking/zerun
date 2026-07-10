@@ -118,9 +118,10 @@ export function TransferUsdc() {
       return;
     }
 
+    let hash: `0x${string}`;
     try {
       setPhase("sending");
-      const hash = await walletAction.run(
+      hash = await walletAction.run(
         () =>
           writeContractAsync({
             abi: testUsdcAbi,
@@ -132,88 +133,94 @@ export function TransferUsdc() {
           }),
         `Sending ${amount} tUSDC.`,
       );
-      await publicClient.waitForTransactionReceipt({ hash });
-      setTxHash(hash);
-      setPhase("sent");
-      setAmount("");
-      setTo("");
-      setResolved(null);
-      balance.refetch();
     } catch (err) {
+      // Only a failure to BROADCAST belongs here: a rejected signature, a bad nonce, no gas.
       setError(friendlyError(err));
       setPhase("idle");
+      return;
     }
+
+    // The transaction is on the chain. Everything after this point is confirmation, and a
+    // stalled RPC while we wait for a receipt is not the send failing -- it already happened.
+    // Reporting "something glitched" there told people their money had not moved when it had.
+    setTxHash(hash);
+    setPhase("sent");
+    setAmount("");
+    setTo("");
+    setResolved(null);
+
+    // Confirm in the background, then re-read the balance so it reflects the mined transfer
+    // rather than the pending one. Failure here is silent by design.
+    publicClient
+      .waitForTransactionReceipt({ hash })
+      .catch(() => undefined)
+      .finally(() => balance.refetch());
   }, [address, usdcAddr, publicClient, trimmed, resolved, looksLikeHandle, amount, balance, walletAction, writeContractAsync]);
 
   if (!address) return null;
 
   const inputCx =
-    "w-full rounded-chunk border-line border-ink bg-cloud px-3 py-2.5 font-body text-[14px] font-bold text-ink " +
+    "w-full rounded-chunk border-line border-ink bg-cloud px-2.5 py-2 font-body text-[13px] font-bold text-ink " +
     "shadow-pop-press outline-none placeholder:text-ink-3 focus:border-violet disabled:opacity-60";
 
   return (
-    <StickerCard className="p-5">
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+    <StickerCard className="p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
         <div className="flex items-center gap-2">
-          <span className="font-display text-lg text-ink">Send tUSDC</span>
+          <span className="font-display text-[17px] text-ink">Send tUSDC</span>
           <Chip tone="neutral">testnet</Chip>
         </div>
-        <div className="text-right">
-          <div className="font-display text-xl text-ink tabular-nums">{balance.formatted}</div>
-          <div className="font-body text-[11px] font-extrabold uppercase tracking-[0.04em] text-ink-3">
-            your balance
-          </div>
-        </div>
+        <span className="font-display text-[15px] text-ink tabular-nums">
+          {balance.formatted}{" "}
+          <span className="font-body text-[10px] font-extrabold uppercase tracking-[0.04em] text-ink-3">
+            balance
+          </span>
+        </span>
       </div>
-      <p className="mb-4 font-body text-[13px] text-ink-2">
-        Pay a friend by wallet address, or by the X handle they connected to Zerun.
+      <p className="mb-3 mt-0.5 font-body text-[12px] text-ink-2">
+        Pay a friend by wallet address, or by the X handle they connected.
       </p>
 
-      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-        <label className="block">
-          <span className="mb-1 block font-body text-[11px] font-extrabold uppercase tracking-[0.04em] text-ink-2">
-            To
-          </span>
-          <input
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            disabled={busy}
-            placeholder="@handle or 0x…"
-            spellCheck={false}
-            autoComplete="off"
-            className={inputCx}
-          />
-        </label>
-        <label className="block sm:w-40">
-          <span className="mb-1 block font-body text-[11px] font-extrabold uppercase tracking-[0.04em] text-ink-2">
-            Amount
-          </span>
-          <input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            disabled={busy}
-            inputMode="decimal"
-            placeholder="25"
-            className={inputCx}
-          />
-        </label>
+      {/* Recipient and amount on one row: the amount is short, and a stacked pair made the card
+          twice as tall as the roster it sits beside. */}
+      <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-2">
+        <input
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          disabled={busy}
+          placeholder="@handle or 0x…"
+          aria-label="Recipient"
+          spellCheck={false}
+          autoComplete="off"
+          className={inputCx}
+        />
+        <input
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          disabled={busy}
+          inputMode="decimal"
+          placeholder="25"
+          aria-label="Amount"
+          className={inputCx}
+        />
       </div>
 
-      {/* Who the money is actually going to, before it goes. */}
-      <div className="mt-3 min-h-[44px]">
+      {/* Who the money is actually going to, before it goes. Reserves one line so the Send
+          button does not hop when a handle resolves. */}
+      <div className="mt-2 min-h-[38px]">
         {phase === "resolving" && (
           <span className="inline-flex items-center gap-2 font-body text-[13px] text-ink-3">
             <Spinner /> Looking up {trimmed}…
           </span>
         )}
         {phase !== "resolving" && resolved && (
-          <div className="flex items-center gap-2 rounded-chunk border-line border-ink bg-mint/20 px-3 py-2">
+          <div className="flex items-center gap-2 rounded-chunk border-line border-ink bg-mint/20 px-2.5 py-1.5">
             {resolved.avatar && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={resolved.avatar}
                 alt=""
-                className="h-7 w-7 shrink-0 rounded-full border-2 border-ink"
+                className="h-6 w-6 shrink-0 rounded-full border-2 border-ink"
               />
             )}
             <span className="min-w-0 truncate font-body text-[13px] font-extrabold text-ink">
@@ -235,17 +242,17 @@ export function TransferUsdc() {
 
       {error && <p className="mt-1 font-body text-[13px] font-bold text-coral">{error}</p>}
       {phase === "sent" && txHash && (
-        <p className="mt-1 font-body text-[13px] font-bold text-ink-2">
-          Sent. <span className="font-mono text-[12px] text-ink-3">{shortId(txHash, 8, 6)}</span>
+        <p className="mt-1 font-body text-[13px] font-extrabold text-ink">
+          Sent. <span className="font-mono text-[12px] font-bold text-ink-3">{shortId(txHash, 8, 6)}</span>
         </p>
       )}
 
-      <div className="mt-4 flex items-center gap-3">
+      <div className="mt-2 flex items-center gap-3">
         <PopButton onClick={send} disabled={busy || !usdcAddr || balance.isZero}>
           {phase === "sending" ? "Sending…" : "Send"}
         </PopButton>
         {balance.isZero && (
-          <span className="font-body text-[13px] text-ink-3">Mint some tUSDC first and you can share it.</span>
+          <span className="font-body text-[12px] text-ink-3">Mint some tUSDC first and you can share it.</span>
         )}
       </div>
     </StickerCard>
