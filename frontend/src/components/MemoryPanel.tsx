@@ -65,7 +65,9 @@ export function MemoryPanel({ agentId }: { agentId: number }) {
 
   const current = withMemory[Math.min(page, withMemory.length - 1)]!;
   const many = withMemory.length > 1;
-  const go = (delta: number) => setPage((p) => (p + delta + withMemory.length) % withMemory.length);
+  // Clamped, not wrapped. A "page 1 of 3" counter promises an end, so the arrow that would
+  // step past it goes dead rather than teleporting the reader back to the start.
+  const go = (delta: number) => setPage((p) => Math.min(withMemory.length - 1, Math.max(0, p + delta)));
 
   return (
     <StickerCard className="p-5">
@@ -83,60 +85,57 @@ export function MemoryPanel({ agentId }: { agentId: number }) {
             </Chip>
           ) : null}
         </div>
-        {many && <Pager page={page} total={withMemory.length} onGo={go} />}
       </div>
 
-      <MemoryBody data={current} />
+      {/* A fixed floor under the body. The chess note is a couple of lines shorter than the
+          puzzles one, and without this the footer jumps up the page as you flip between them. */}
+      <div className="min-h-[220px]">
+        <MemoryBody data={current} />
+      </div>
 
-      {/* The dots repeat the position at the bottom of a tall card, where the arrows have
-          scrolled out of reach. They are a control too: tapping one jumps straight there. */}
-      {many && (
-        <div className="mt-4 flex items-center justify-center gap-2">
-          {withMemory.map((d, i) => (
-            <button
-              key={d.kind}
-              type="button"
-              onClick={() => setPage(i)}
-              aria-label={`Show ${KIND_LABEL[d.kind]} memory`}
-              aria-current={i === page}
-              className={cx(
-                "h-3 rounded-pill border-2 border-ink transition-all duration-200",
-                i === page ? "w-7 bg-violet" : "w-3 bg-cloud hover:bg-cloud-2",
-              )}
-            />
-          ))}
-        </div>
-      )}
+      {many && <Pager page={page} total={withMemory.length} onGo={go} />}
     </StickerCard>
   );
 }
 
-/** Back and forward, and where you are. Chunky, outlined, and it squishes when pressed. */
+/**
+ * The footer of the deck: where you are on the left, where you can go on the right. It reads
+ * as a sentence rather than as a widget, and the count tells you how many memories exist
+ * before you have clicked anything.
+ */
 function Pager({ page, total, onGo }: { page: number; total: number; onGo: (d: number) => void }) {
   return (
-    <div className="flex shrink-0 items-center gap-2">
-      <ArrowButton dir="back" onClick={() => onGo(-1)} />
-      <span className="font-display text-[13px] tabular-nums text-ink-2">
-        {page + 1} / {total}
+    <div className="mt-5 flex items-center justify-between gap-3 border-t-line border-ink/10 pt-4">
+      <span className="font-body text-[12px] font-extrabold uppercase tracking-[0.06em] text-ink-3">
+        Page {page + 1} of {total} · {total} {total === 1 ? "memory" : "memories"}
       </span>
-      <ArrowButton dir="forward" onClick={() => onGo(1)} />
+      <div className="flex shrink-0 items-center gap-2">
+        <ArrowButton dir="back" onClick={() => onGo(-1)} disabled={page === 0} />
+        <ArrowButton dir="forward" onClick={() => onGo(1)} disabled={page === total - 1} />
+      </div>
     </div>
   );
 }
 
-function ArrowButton({ dir, onClick }: { dir: "back" | "forward"; onClick: () => void }) {
+function ArrowButton({ dir, onClick, disabled }: { dir: "back" | "forward"; onClick: () => void; disabled: boolean }) {
   const back = dir === "back";
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-label={back ? "Previous memory" : "Next memory"}
       className={cx(
-        "grid h-9 w-9 place-items-center rounded-chunk border-line border-ink bg-cloud text-ink",
+        "grid h-10 w-10 place-items-center rounded-pill border-line border-ink text-ink",
         // Same squish as PopButton: it pushes into the page, shadow and all.
-        "shadow-pop transition-[transform,box-shadow] duration-150 ease-spring",
-        "hover:-translate-x-px hover:-translate-y-px hover:shadow-pop-lg",
-        "active:translate-x-[2px] active:translate-y-[2px] active:shadow-pop-press",
+        "transition-[transform,box-shadow,opacity] duration-150 ease-spring",
+        disabled
+          ? "cursor-not-allowed bg-cloud-2 opacity-40 shadow-pop-press"
+          : cx(
+              "bg-cloud shadow-pop",
+              "hover:-translate-x-px hover:-translate-y-px hover:shadow-pop-lg",
+              "active:translate-x-[2px] active:translate-y-[2px] active:shadow-pop-press",
+            ),
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet",
       )}
     >
