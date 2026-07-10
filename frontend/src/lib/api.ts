@@ -17,6 +17,7 @@ import type {
   AgentWallet,
   MemoryKind,
   XResolved,
+  VoteGasStatus,
   XIdentity,
   RecentFeedItem,
   Standing,
@@ -93,6 +94,14 @@ export const api = {
   /** The wallet behind a verified X handle. Throws when the handle has not connected X. */
   resolveHandle: (handle: string) =>
     req<XResolved>(`/api/social/resolve/${encodeURIComponent(handle.replace(/^@+/, ""))}`),
+
+  voteGasStatus: (address: string) => req<VoteGasStatus>(`/api/vote/gas?address=${address}`),
+  claimVoteGas: (address: string) =>
+    req<{ txHash: string; amountOg: string }>(`/api/vote/gas`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address }),
+    }),
 
   // X (Twitter) connect: status, start (returns the authorize URL), callback (binds the
   // identity), and the public read of a wallet's linked handle for the verified badge.

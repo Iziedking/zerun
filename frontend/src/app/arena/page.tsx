@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ArenaBoard } from "@/components/ArenaBoard";
+import { ZeroCupCard } from "@/components/ZeroCupCard";
 import { LiveStrip } from "@/components/LiveStrip";
 import { HostContestModal } from "@/components/HostContest";
 import { useArenaStats } from "@/lib/useAgents";
@@ -29,6 +30,9 @@ export default function ArenaPage() {
           </p>
         </div>
       </header>
+
+      {/* Zero Cup. Above the board because a vote closes on a date and a contest does not. */}
+      <ZeroCupCard />
 
       <StatsBand />
 

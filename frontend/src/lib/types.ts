@@ -452,3 +452,12 @@ export interface XResolved {
   name: string | null;
   avatar: string | null;
 }
+
+// The Zero Cup vote-gas faucet: a whisper of real mainnet 0G so a voter can boost, once.
+export interface VoteGasStatus {
+  enabled: boolean;
+  amountOg: string;
+  claimed: boolean;
+  txHash: string | null;
+  remainingClaims: number;
+}
