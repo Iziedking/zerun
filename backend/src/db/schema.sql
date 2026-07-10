@@ -397,3 +397,19 @@ create table if not exists dossier_purchases (
   primary key (buyer_agent, opponent_agent, tier)
 );
 create index if not exists dossier_purchases_buyer_idx on dossier_purchases (buyer_agent, opponent_agent);
+
+-- Zero Cup vote-gas faucet. A voter needs a whisper of 0G MAINNET gas to boost their vote on
+-- 0G's own site, and most people arriving from a tweet have none. We send them a fixed, tiny
+-- amount, once, and record it here.
+--
+-- The address is the primary key, so the claim is once per wallet, forever. The row is written
+-- BEFORE the transfer and deleted if the transfer fails, which makes a slow send safe to retry
+-- without paying twice. `amount_wei` is real mainnet 0G, so this table is also the ledger of
+-- what the campaign has spent.
+create table if not exists vote_gas_claims (
+  address    text primary key,      -- lowercased recipient wallet
+  amount_wei numeric not null,
+  tx_hash    text,                  -- null while the send is in flight
+  created_at timestamptz not null default now()
+);
+create index if not exists vote_gas_claims_created_idx on vote_gas_claims (created_at desc);

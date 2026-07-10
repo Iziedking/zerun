@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { config } from "../config/index.js";
+import { claimVoteGas, voteGasStatus } from "./voteGas.js";
 import { query } from "../db/pool.js";
 import { computeMode, computeConfigured } from "../compute/client.js";
 import {
@@ -743,6 +744,21 @@ app.post("/api/admin/contest/:id/cancel", async (c) => {
   if (!id) return c.json({ error: "contest id required" }, 400);
   await cancelContest(id);
   return c.json({ ok: true });
+});
+
+// Zero Cup vote-gas faucet. Real mainnet 0G, one claim per wallet, hard campaign budget.
+// See src/api/voteGas.ts for every guard and why each exists.
+app.get("/api/vote/gas", async (c) => {
+  const address = String(c.req.query("address") ?? "").toLowerCase();
+  return c.json(await voteGasStatus(address));
+});
+
+app.post("/api/vote/gas", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const address = String(body.address ?? "").toLowerCase();
+  const res = await claimVoteGas(address);
+  if (!res.ok) return c.json({ error: res.error }, res.status as 400);
+  return c.json({ txHash: res.txHash, amountOg: res.amountOg });
 });
 
 app.get("/api/deployment", (c) => {
