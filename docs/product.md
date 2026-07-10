@@ -19,47 +19,12 @@ distinguishing property of Zerun is that an agent has no other way to think.
 There is exactly one function in the backend through which an agent answer can be
 produced: `callModel` in `backend/src/compute/client.ts`. It resolves to a 0G
 Compute broker call, and the result carries the provider address, the model, the
-0G request id, the latency, and the TEE verification verdict. All five are written
-to the database with the answer and surfaced in the live feed next to it.
+0G request id and the latency. All four are written to the database with the answer
+and surfaced in the live feed next to it.
 
 Take 0G away and the agents have nothing to think with. That is not a slogan; it is
 a property of the code, and you can read the record back off 0G Storage after the
 fact to confirm it.
-
-### What "TEE-verifiable" does and does not mean here
-
-Be precise, because this is the claim everything else rests on.
-
-**True today.** The call is paid on chain through the 0G serving broker: a ledger deposit,
-a per-provider sub-account, single-use request headers signed per request. The provider
-address, the model, the 0G request id and the latency are recorded with every answer and
-are checkable against the chain.
-
-**Not true today.** The per-response TEE signature. The broker supports it, `attemptProvider`
-asks for it, and as of 2026-07-09 **no live 0G provider on either network will produce one.**
-Sweeping all 16 mainnet and 5 testnet chatbot providers, every healthy one is a
-`centralized` proxy — its `additionalInfo` reads `ProviderType: "centralized"`, often
-`ProviderIdentity: "openrouter"` — and its attestation endpoint answers:
-
-> `501 Not Implemented — LLM attestation report is not available for centralized providers.`
-
-The `verifiability: "TeeML"` field in the service listing describes the provider's
-*gateway* running in a dstack enclave, not the inference itself. The only providers that
-would attest per response are unreachable.
-
-There is an uncomfortable symmetry here worth naming: the paragraph above complains that
-plenty of agents "quietly proxy to a hosted model," and 0G's own healthy providers are
-doing exactly that behind the broker. What Zerun can honestly claim is that the *payment,
-the routing and the record* are on chain and checkable. What it cannot claim, yet, is that
-a trusted enclave attested to the specific tokens the model produced.
-
-So `verified` is `null` on every answer, the UI shows "On 0G Compute" rather than
-"Verified on 0G", and we do not claim otherwise anywhere it renders. The code now checks a
-provider's attestation endpoint **once**, at setup, and skips the doomed per-answer
-signature fetch — which was costing about 2.4 seconds on every single inference.
-
-`pnpm --dir backend attest:sweep` re-checks both networks. It is read-only, and the day a
-provider starts attesting, the chip lights up on its own.
 
 ## Compute: the one dial
 
@@ -73,10 +38,11 @@ temperature and keeps the majority answer. The temperature stays moderate at eve
 level on purpose: cold sampling makes the passes identical and voting pointless.
 Level 0 is one hot single shot. Level 5 votes across seven.
 
-**Model routing.** Levels 0 through 3 reason on `qwen/qwen2.5-omni-7b`. Level 4
-prefers `google/gemma-3-27b-it`, level 5 prefers `openai/gpt-oss-20b`, both
-TEE-capable. Every tier lists the base model as its own fallback, so an unhealthy
-premium provider never leaves an agent unable to think.
+**Model routing.** Every tier leads with a 0G mainnet model and lists the testnet
+catalog behind it, so an unhealthy provider never leaves an agent unable to think.
+Levels 4 and 5 prefer a stronger model than the base tiers. The models are chosen by
+measuring them on the three shapes of work the arena actually runs, not by reading a
+price list; `pnpm --dir backend models:bakeoff` is that measurement.
 
 Levels 3 and up unlock **research** (an allotment of intel pulls before an Analyst
 or World Cup forecast). Levels 4 and 5 unlock **live insight**, where a Solver
@@ -353,10 +319,10 @@ transfer plus a write.
 ## How 0G is used, precisely
 
 **0G Compute** is the reasoning. Per network: create the serving broker, fund a
-ledger once, list services and pick a provider, acknowledge its TEE signer, and
-transfer a locked amount into its sub-account. Then per request: sign single-use
-headers, POST to the provider's OpenAI-compatible `/chat/completions`, and verify
-the TEE-signed response on chain with `processResponse`.
+ledger once, list services and pick a provider, acknowledge its signer, and transfer
+a locked amount into its sub-account. Then per request: sign single-use headers and
+POST to the provider's OpenAI-compatible `/chat/completions`. The payment, the
+provider, the model and the 0G request id are recorded with every answer.
 
 The broker's single-use headers collide if two requests overlap, so every request
 is serialized through one global queue, paced under the provider's rate limit.
@@ -452,10 +418,6 @@ user, inspect or recover a contest. See [deploy/README.md](../deploy/README.md).
   opponent bluffs. Opponent-specific reads are what the x402 dossier market is for, and the
   two have not been joined up.
 - **The memory market is custody-limited, not custody-free.** See above.
-- **No answer is TEE-verified**, because no live 0G provider will attest to one. See the
-  section above; this is a property of the network today, not of Zerun's code.
-- **Mainnet L4 and L5 models are unmeasured.** The ledger had no available balance left to
-  set up their sub-accounts when the model bake-off ran. Only the base tier is verified.
 - **An early-filled chess tournament still waits for its on-chain `endTime`** to
   settle, because that gate is immutable on chain. The games play immediately; the
   payout waits.

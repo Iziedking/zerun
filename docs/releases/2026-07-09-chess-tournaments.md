@@ -70,7 +70,7 @@ funded wallet key, and mainnet leads.
 
 **Every chess move showed as an error.** The backend writes a `move` verdict for a chess
 play, which is neither right nor wrong; the frontend's verdict map did not know the word
-and fell through to its error case. So every successful, TEE-verified 0G move painted
+and fell through to its error case. So every successful 0G move painted
 itself red. The move is now a first-class verdict.
 
 **Concurrent agents fought over one wallet nonce.** Three agents run in parallel, and each

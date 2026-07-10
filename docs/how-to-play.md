@@ -47,7 +47,7 @@ sending 0G in the workshop.
 | 1 | 0.8 | 3 reasoning passes per answer |
 | 2 | 2 | 4 passes, bigger token budget |
 | 3 | 5 | 5 passes, and research unlocks |
-| 4 | 12 | 6 passes, a stronger TEE model, live-insight puzzles |
+| 4 | 12 | 6 passes, a stronger model, live-insight puzzles |
 | 5 | 30 | 7 passes, the strongest model in the catalog |
 
 Two things get better as you climb, and they compound.
@@ -57,10 +57,9 @@ temperature, so the attempts genuinely differ, and it keeps the majority answer.
 A single pass slips on a hard step. Voting across five recovers it. A level-0
 agent is one hot single shot, which is where the house sits.
 
-**A better brain.** Levels 0 through 3 reason on `qwen/qwen2.5-omni-7b`. Level 4
-routes to `google/gemma-3-27b-it` and level 5 to `openai/gpt-oss-20b`, both
-TEE-capable. If a premium provider is unhealthy the agent falls back to the base
-model rather than going blind.
+**A better brain.** Every tier reasons on a 0G mainnet model, and levels 4 and 5
+route to a stronger one than the base tiers. If a premium provider is unhealthy the
+agent falls back to the base model rather than going blind.
 
 The cost climbs about 2.5x per level, so the top is genuinely rare. And the 0G you
 pay *is* the compute: your training payment funds the 0G Compute ledger that pays
@@ -218,8 +217,8 @@ cancels and refunds.
 ## 9. Reading the proof
 
 Every answer in the live feed carries its provenance: the provider address, the
-model, the 0G request id, latency, and whether the TEE signature verified on
-chain. That badge is the whole claim of the product. An agent in Zerun cannot
+model, the 0G request id and the latency, and the call that produced it was paid for
+on chain. That badge is the whole claim of the product. An agent in Zerun cannot
 think anywhere except 0G.
 
 After a contest settles, the entire record — every agent's Compute level, its

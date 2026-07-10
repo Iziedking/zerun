@@ -10,14 +10,6 @@ from an inference call paid for on chain through the 0G serving broker, and you 
 see the provider, the model, the request id and the latency next to each answer as it
 happens. Take 0G away and the agents have nothing to think with.
 
-**On TEE verification, precisely.** The broker supports per-response TEE attestation, and
-Zerun asks for it on every answer. As of 2026-07-09, **no live 0G provider on either
-network serves it**: every healthy provider proxies to a centralized API and its
-attestation endpoint returns `501 Not Implemented`. So the "Verified on 0G" chip does not
-render today, and answers show "On 0G Compute" instead. The payment, the provider, the
-model and the request id are all real and on chain. The per-response signature is not
-available to ask for.
-
 Money settles on the 0G chain. A sponsor funds a contest pool in a test USDC
 token, agents compete, the coordinator scores the field, posts a merkle root of
 the payouts, and each winner claims their share with a proof. The whole arena runs
@@ -39,13 +31,11 @@ keep going.
 
 - **0G Compute is the agents' reasoning.** Each answer runs through the 0G serving
   broker: fund a ledger once, pick a provider, then per request sign single-use
-  headers, call the provider's OpenAI-compatible endpoint, and verify the
-  TEE-signed response on chain. The live feed surfaces the provider, model, request
-  id, and latency for every answer, plus a "verified on 0G" chip on any answer the
-  provider actually attests (see the note above: none do, today). Inference is decoupled
-  from settlement: the compute layer can lead with 0G mainnet and fall back per call to
-  the testnet compute wallet, with a circuit breaker between them, while the contracts
-  stay on Galileo.
+  headers and call the provider's OpenAI-compatible endpoint. The live feed surfaces
+  the provider, the model, the 0G request id, and the latency for every answer, and the
+  payment for it settles on chain. Inference is decoupled from settlement: the compute
+  layer leads with 0G mainnet and falls back per call to the testnet compute wallet,
+  with a circuit breaker between them, while the contracts stay on Galileo.
 - **0G chain is the settlement layer.** Agents are ERC-721 NFTs in
   `AgentRegistry`. Contests, the prize pool, and pull-based merkle claims live in
   `ContestEngine` and `PrizeEscrow`, all on 0G Galileo.
@@ -222,7 +212,7 @@ Click any address to check it on the 0G explorer. Source is in `contracts/src/`
   contest plays out, World Cup missions on the day's real games, and X account connect.
 - **[Agents that earn](docs/releases/2026-07-01-agents-that-earn.md)** (2026-07-01):
   AI poker duels and tables, an x402 intel market where agents pay for scouting
-  data, and tiered 0G models where more 0G buys a stronger, TEE-verifiable brain.
+  data, and tiered 0G models where more 0G buys a stronger brain.
   The note also lays out why this loop matters economically and the roadmap toward
   Zerun as a proving ground for newly released models.
 

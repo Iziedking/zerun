@@ -39,7 +39,7 @@ const TIERS = [
   { level: "1", cost: "0.8 0G", buys: "3 reasoning passes, majority vote." },
   { level: "2", cost: "2 0G", buys: "4 passes, a bigger token budget." },
   { level: "3", cost: "5 0G", buys: "5 passes, and research unlocks." },
-  { level: "4", cost: "12 0G", buys: "6 passes, a stronger TEE model, live insight." },
+  { level: "4", cost: "12 0G", buys: "6 passes, a stronger model, live insight." },
   { level: "5", cost: "30 0G", buys: "7 passes, the strongest model in the catalog." },
 ];
 
@@ -172,7 +172,7 @@ export default function DocsPage() {
             agent answers each item several times at a moderate temperature, so the attempts genuinely
             differ, and it keeps the majority. A single pass slips on a hard step; voting across five
             recovers it. <strong className="text-ink">A better brain:</strong> the top tiers route to a
-            stronger, TEE-capable model, and fall back to the base model rather than going blind.
+            stronger model, and fall back to the base model rather than going blind.
           </p>
 
           <div className="mt-5 overflow-x-auto">
@@ -251,15 +251,8 @@ export default function DocsPage() {
               <p className="mt-3 font-body text-[15px] leading-relaxed text-ink-2">
                 There is exactly one function in the backend through which an agent answer can be produced,
                 and it resolves to a 0G Compute broker call. The result carries the provider address, the
-                model, the 0G request id, the latency, and the TEE verification verdict. All five are stored
-                with the answer and shown next to it in the live feed.
-              </p>
-              <p className="mt-3 font-body text-[14px] leading-relaxed text-ink-3">
-                On verification, precisely: the payment, the provider, the model and the request id are on
-                chain and checkable. The per-response TEE signature is not — every live 0G provider today
-                proxies to a centralized API and declines to attest, so answers read &ldquo;On 0G
-                Compute&rdquo; rather than &ldquo;Verified on 0G&rdquo;. We would rather show you the gap
-                than paper over it.
+                model, the 0G request id and the latency. All four are stored with the answer and shown
+                next to it in the live feed, and the call that produced it was paid for on chain.
               </p>
               <p className="mt-3 font-body text-[15px] leading-relaxed text-ink-2">
                 Take 0G away and the agents have nothing to think with. That is not a slogan, it is a
@@ -280,9 +273,9 @@ export default function DocsPage() {
             <Chip tone="thinking">0G Compute</Chip>
             <h3 className="mt-3 font-display text-xl text-ink">The reasoning</h3>
             <p className="mt-2 font-body text-[14px] leading-relaxed text-ink-2">
-              Fund a ledger, pick a provider, acknowledge its TEE signer. Then per request: sign single-use
-              headers, call the provider, and verify the signed response on chain. Inference is decoupled
-              from settlement, so it can lead with mainnet and fall back per call.
+              Fund a ledger, pick a provider, acknowledge its signer. Then per request: sign single-use
+              headers and call the provider. Inference is decoupled from settlement, so it leads with
+              mainnet and falls back per call.
             </p>
           </StickerCard>
 
@@ -355,8 +348,8 @@ export default function DocsPage() {
             <h3 className="mt-3 font-display text-xl text-ink">Model listing and stress tests</h3>
             <p className="mt-2 font-body text-[14px] leading-relaxed text-ink-2">
               A newly released model gets listed and run through a suite of adversarial missions. Every run
-              is a paid, attested 0G call; every score is graded against ground truth. What comes out is a
-              report nobody had to trust us for.
+              is a paid 0G call; every score is graded against ground truth. What comes out is a report
+              nobody had to trust us for.
             </p>
           </StickerCard>
 

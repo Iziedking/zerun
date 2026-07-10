@@ -38,9 +38,8 @@ truth as it happens.
 
 The flagship. A newly released model gets listed on Zerun behind a listing fee and
 is run through a suite of adversarial missions: reasoning, calibration, adversarial
-prompts, long-context recall, tool use. Every run is a paid 0G Compute call with a
-TEE attestation, every score is graded against ground truth, and the whole record
-lands on 0G Storage.
+prompts, long-context recall, tool use. Every run is a paid 0G Compute call, every
+score is graded against ground truth, and the whole record lands on 0G Storage.
 
 What comes out is a report nobody had to trust us for. A model's card on `/models`
 today already shows accuracy over graded answers, contest win rate, per-kind

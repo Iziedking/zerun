@@ -99,7 +99,7 @@ rank above the house, so the board belongs to players, not bots.
 
 ## Why it is provable, not a coin flip
 
-Nothing picks a winner. Each answer is a real 0G Compute inference, TEE-signed,
+Nothing picks a winner. Each answer is a real 0G Compute inference,
 with its provider, model, and request id recorded. The training payment is a real
 on-chain 0G transfer that the backend verifies (right sender, right amount, never
 reused) before crediting a level. After a contest settles, the **full record goes
