@@ -30,15 +30,15 @@ export function Crown({
       {/* The band and the three points, one path, so the ink outline is continuous. */}
       <path
         d="M3.4 17.2 L2.1 7.4 a0.9 0.9 0 0 1 1.5 -0.8 L7.4 10 L11.1 4.2 a1 1 0 0 1 1.8 0 L16.6 10 l3.8 -3.4 a0.9 0.9 0 0 1 1.5 0.8 l-1.3 9.8 z"
-        fill="var(--amber, #FFB13C)"
-        stroke="var(--ink, #171449)"
+        fill="rgb(var(--amber))"
+        stroke="rgb(var(--ink))"
         strokeWidth="1.9"
         strokeLinejoin="round"
       />
       {/* Jewels on the band. Ink-outlined dots keep them readable at 12px. */}
-      <circle cx="7.3" cy="14.4" r="1.15" fill="var(--coral, #FF6B5C)" stroke="var(--ink, #171449)" strokeWidth="1" />
-      <circle cx="12" cy="14.4" r="1.15" fill="var(--mint, #1FD6A6)" stroke="var(--ink, #171449)" strokeWidth="1" />
-      <circle cx="16.7" cy="14.4" r="1.15" fill="var(--cyan, #36C5FF)" stroke="var(--ink, #171449)" strokeWidth="1" />
+      <circle cx="7.3" cy="14.4" r="1.15" fill="rgb(var(--coral))" stroke="rgb(var(--ink))" strokeWidth="1" />
+      <circle cx="12" cy="14.4" r="1.15" fill="rgb(var(--mint))" stroke="rgb(var(--ink))" strokeWidth="1" />
+      <circle cx="16.7" cy="14.4" r="1.15" fill="rgb(var(--cyan))" stroke="rgb(var(--ink))" strokeWidth="1" />
     </svg>
   );
 }

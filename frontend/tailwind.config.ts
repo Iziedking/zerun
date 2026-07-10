@@ -76,6 +76,12 @@ const config: Config = {
           "25%": { transform: "rotate(-5deg)" },
           "75%": { transform: "rotate(5deg)" },
         },
+        // A star catching the light: it swells and fades rather than blinking on and off,
+        // which would strobe once several of them share a screen.
+        twinkle: {
+          "0%, 100%": { opacity: "0.2", transform: "scale(0.7) rotate(0deg)" },
+          "50%": { opacity: "1", transform: "scale(1) rotate(20deg)" },
+        },
         // The loading curtain: the Z tile drops, squashes on landing, and springs back —
         // and its shadow widens as it nears the floor, which is what sells the weight.
         "loader-bounce": {
@@ -97,6 +103,7 @@ const config: Config = {
         },
       },
       animation: {
+        twinkle: "twinkle 2.4s ease-in-out infinite",
         "pop-in": "pop-in 0.30s cubic-bezier(0.34,1.56,0.64,1) both",
         "drop-in": "drop-in 0.36s cubic-bezier(0.34,1.56,0.64,1) both",
         bob: "bob 3s ease-in-out infinite",
