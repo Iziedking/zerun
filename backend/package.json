@@ -23,6 +23,7 @@
     "providers:probe": "tsx src/scripts/providerProbe.ts",
     "chess:ladder": "tsx src/scripts/chessLadderCheck.ts",
     "memory:check": "tsx src/scripts/memoryCheck.ts",
+    "vote:audit": "tsx src/scripts/voteAudit.ts",
     "ledger:probe": "tsx src/scripts/ledgerProbe.ts",
     "tee:probe": "tsx src/scripts/teeProbe.ts",
     "models:bakeoff": "tsx src/scripts/modelBakeoff.ts",
