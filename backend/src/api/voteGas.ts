@@ -22,10 +22,10 @@ import { config } from "../config/index.js";
 const ENABLED = (process.env.VOTE_GAS ?? "off").toLowerCase() === "on";
 
 /** What one voter receives. A boost costs a fraction of this; the rest is slack for gas spikes. */
-const AMOUNT_OG = process.env.VOTE_GAS_AMOUNT_OG ?? "0.0001";
+const AMOUNT_OG = process.env.VOTE_GAS_AMOUNT_OG ?? "0.003";
 
-/** The whole campaign's ceiling. At 0.0001 0G a claim, 1 0G funds ten thousand voters. */
-const BUDGET_OG = process.env.VOTE_GAS_BUDGET_OG ?? "1";
+/** The whole campaign's ceiling. At 0.003 0G a claim, 3 0G funds a thousand voters. */
+const BUDGET_OG = process.env.VOTE_GAS_BUDGET_OG ?? "3";
 
 /** Mainnet, because that is where the vote lives. Falls back to the compute mainnet RPC. */
 const RPC = process.env.VOTE_GAS_RPC_URL || config.compute.mainnet.rpcUrl;
@@ -107,24 +107,34 @@ export async function claimVoteGas(address: string): Promise<ClaimResult> {
     // their one claim, and a slow send can never be paid twice.
     await query("insert into vote_gas_claims (address, amount_wei) values ($1, $2)", [address, per.toString()]);
 
+    // Broadcasting and confirming are two different things, and confusing them here would cost
+    // real money. Once `sendTransaction` returns a hash the 0G has left our wallet, so the hash
+    // is written IMMEDIATELY. Only a failure to broadcast rolls the reservation back.
+    let tx: ethers.TransactionResponse;
     try {
       const provider = new ethers.JsonRpcProvider(RPC);
       const wallet = new ethers.Wallet(SIGNER_KEY, provider);
-      const tx = await wallet.sendTransaction({ to: address, value: per });
-      // Wait for it, so the UI can say "landed" rather than "submitted". Bounded: a stuck RPC
-      // must not hold the request open forever.
+      tx = await wallet.sendTransaction({ to: address, value: per });
+    } catch (err) {
+      // Nothing was sent: give the voter their claim back.
+      await query("delete from vote_gas_claims where address = $1 and tx_hash is null", [address]).catch(() => {});
+      console.error(`vote gas: transfer to ${address} failed to broadcast:`, (err as Error).message);
+      return { ok: false, status: 502, error: "the transfer did not go through. Try again in a moment." };
+    }
+    await query("update vote_gas_claims set tx_hash = $2 where address = $1", [address, tx.hash]).catch(() => {});
+
+    // Confirmation is a nicety. If the RPC stalls we still succeeded: deleting the row here
+    // would hand this wallet a second claim for gas it has already been paid.
+    try {
       await Promise.race([
         tx.wait(1),
         new Promise((_, reject) => setTimeout(() => reject(new Error("timed out waiting for the transfer")), SEND_TIMEOUT_MS)),
       ]);
-      await query("update vote_gas_claims set tx_hash = $2 where address = $1", [address, tx.hash]);
-      console.log(`vote gas: sent ${AMOUNT_OG} 0G to ${address} (${tx.hash})`);
-      return { ok: true, txHash: tx.hash, amountOg: AMOUNT_OG };
     } catch (err) {
-      await query("delete from vote_gas_claims where address = $1 and tx_hash is null", [address]).catch(() => {});
-      console.error(`vote gas: transfer to ${address} failed:`, (err as Error).message);
-      return { ok: false, status: 502, error: "the transfer did not go through. Try again in a moment." };
+      console.warn(`vote gas: ${tx.hash} sent to ${address} but not confirmed yet:`, (err as Error).message);
     }
+    console.log(`vote gas: sent ${AMOUNT_OG} 0G to ${address} (${tx.hash})`);
+    return { ok: true, txHash: tx.hash, amountOg: AMOUNT_OG };
   } finally {
     inFlight.delete(address);
   }
