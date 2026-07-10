@@ -158,14 +158,20 @@ export default function VotePage() {
 
         <Step
           n={3}
-          title="Boost with your wallet"
+          title="Boost, do not just vote"
           locked={!signedIn}
           body={
-            <p className="font-body text-[14px] text-ink-2">
-              On the 0G page, connect the same wallet you just funded and boost your vote. The gas
-              from step 1 pays for it. A boost counts for more than a plain vote, which is the
-              whole reason we sent you the gas.
-            </p>
+            <>
+              <p className="font-body text-[14px] text-ink-2">
+                On the 0G page, connect the same wallet you funded and choose{" "}
+                <strong className="text-ink">Boost</strong>. A boost is worth two votes; a plain
+                vote is worth one. The gas from step 1 covers it either way.
+              </p>
+              <p className="mt-2 rounded-chunk border-line border-ink bg-amber/25 px-3 py-2 font-body text-[13px] font-extrabold text-ink">
+                You get one vote per wallet, and you cannot change it. Boosting once beats voting
+                twice, because voting twice is not allowed. Pick Boost the first time.
+              </p>
+            </>
           }
         />
 

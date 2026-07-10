@@ -104,13 +104,23 @@ async function main() {
 
   console.log(`\nzero cup vote audit  (contract ${CONTRACT.slice(0, 10)}…, ${votes.length} votes on chain)\n`);
 
-  // The public tally, regardless of who funded whom.
-  const tally = new Map<string, number>();
-  for (const v of byVoter.values()) tally.set(v.candidate, (tally.get(v.candidate) ?? 0) + v.weight);
-  console.log(`  weighted tally`);
-  console.log(`    Zerun      ${String(tally.get(ZERUN) ?? 0).padStart(5)}`);
-  console.log(`    opponent   ${String(tally.get(OPPONENT) ?? 0).padStart(5)}`);
-  console.log(`    voters     ${byVoter.size} wallets, ${votes.length} votes\n`);
+  // The public tally, and the plain/boost split, which is the honest lever. A boost is worth
+  // two and a plain vote one, and nobody can vote twice, so every plain voter on our side is a
+  // point we could have had if they had boosted the first time.
+  const summarise = (label: string, cand: string) => {
+    const rs = [...byVoter.values()].filter((v) => v.candidate === cand);
+    const plain = rs.filter((v) => v.weight === 1).length;
+    const boost = rs.filter((v) => v.weight >= 2).length;
+    const weight = rs.reduce((a, v) => a + v.weight, 0);
+    console.log(
+      `    ${label.padEnd(9)} ${String(weight).padStart(4)} weight   ${String(rs.length).padStart(3)} wallets   ` +
+        `${plain} plain / ${boost} boosted   (+${plain} if they had all boosted)`,
+    );
+  };
+  console.log(`  weighted tally  (${byVoter.size} wallets, ${votes.length} votes)`);
+  summarise("Zerun", ZERUN);
+  summarise("opponent", OPPONENT);
+  console.log();
 
   if (!claims.length) {
     console.log(`  no gas claimed yet. Nothing to audit.\n`);
