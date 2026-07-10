@@ -465,6 +465,11 @@ export function policyForTier(tier: number, override?: Partial<Policy>): Policy 
 
 const TIER_AWARENESS = [0, 0.15, 0.4, 0.6, 0.8, 1.0];
 
+// How much stronger a hand must be, per extra opponent, before a fully aware tier enters the
+// pot. 0.03 puts a tier-5 agent facing five opponents 0.12 above its heads-up line, roughly the
+// difference between a loose-aggressive range and a real six-max one.
+const PREFLOP_TIGHTEN_PER_OPPONENT = Number(process.env.POKER_PREFLOP_TIGHTEN ?? "0.03");
+
 export function multiwayEnabled(): boolean {
   return (process.env.POKER_MULTIWAY ?? "off").toLowerCase() === "on";
 }
@@ -493,7 +498,38 @@ export function multiwayPolicy(p: Policy, opp: number, tier: number): Policy {
   const semibluffBet = lerp(p.semibluffBet, p.semibluffBet / Math.sqrt(opp), aware);
   const semibluffRaise = lerp(p.semibluffRaise, p.semibluffRaise / Math.sqrt(opp), aware);
 
-  return { ...p, valueBet, valueRaise, cbetBluff, semibluffBet, semibluffRaise };
+  // PREFLOP, which is where the ladder actually broke.
+  //
+  // `decidePreflop` scores a hand with `preflopStrength(hole)`, a STATIC rating that does not
+  // know how many players are behind. The POLICIES table loosens every entry threshold as the
+  // tier rises, because heads-up that is right. Six-handed it is backwards, and tier 4 opens
+  // the widest range in the table into five opponents.
+  //
+  // Measured six-handed, 3000 hands x 6 sessions, chips/100:
+  //   L2 +803   L3 +523   L5 +397   L4 +15   L1 -517   L0 -1221
+  // The paid tiers were losing to a tier-2 agent because they entered more pots.
+  //
+  // So each opponent beyond the first raises the bar to enter, scaled by the same tier
+  // awareness: a rookie still splashes around, the apex plays a real six-max range.
+  const extra = Math.max(0, opp - 1);
+  const tighten = aware * PREFLOP_TIGHTEN_PER_OPPONENT * extra;
+  const pfOpenRaise = Math.min(0.9, p.pfOpenRaise + tighten);
+  const pfOpenCall = Math.min(0.9, p.pfOpenCall + tighten);
+  const pfBigCall = Math.min(0.95, p.pfBigCall + tighten * 0.6);
+  const pfOptionRaise = Math.min(0.95, p.pfOptionRaise + tighten * 0.5);
+
+  return {
+    ...p,
+    valueBet,
+    valueRaise,
+    cbetBluff,
+    semibluffBet,
+    semibluffRaise,
+    pfOpenRaise,
+    pfOpenCall,
+    pfBigCall,
+    pfOptionRaise,
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -542,7 +578,9 @@ function giveUp(legal: Legal, why: string): StrategyDecision {
 }
 
 export function decideStrategy(input: StrategyInput): StrategyDecision {
-  const p = policyForTier(input.tier, input.policyOverride);
+  // Correct for the size of the field ONCE, here, so preflop and postflop see the same policy.
+  const base = policyForTier(input.tier, input.policyOverride);
+  const p = multiwayPolicy(base, Math.max(1, Math.floor(input.opponents ?? 1)), input.tier);
   const { hole, board, legal } = input;
   const rng = mulberry32(seedFrom([...hole, ...board], (input.seed ?? 0) | 0));
   const pot = input.pot;
@@ -621,10 +659,12 @@ function decidePostflop(
 ): StrategyDecision {
   const { hole, board, legal } = input;
   const draw = drawStrength(hole, board);
-  // Postflop is where the live-opponent count is known and meaningful, so this is where the
-  // heads-up-tuned thresholds get corrected for the size of the field. Preflop `opponents` is
-  // the whole table rather than the players who will actually see a flop, so it is left alone.
-  const p = multiwayPolicy(basePolicy, Math.max(1, Math.floor(input.opponents ?? 1)), input.tier);
+  // The multiway correction is applied once, in decideStrategy, for BOTH streets. It used to
+  // live only here, on the theory that preflop `opponents` counts players who may still fold
+  // rather than players who will see a flop. That theory cost the paid tiers the ladder: a
+  // tier-4 agent opened its widest range into five opponents and then played the flop
+  // impeccably. Entering the pot is the decision that mattered.
+  const p = basePolicy;
   // Beating the whole field, not just one player: at a full table a hand needs far more
   // equity to bet or call, so this is what stops the higher tiers value-betting into five
   // players and bleeding chips.

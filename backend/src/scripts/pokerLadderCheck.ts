@@ -130,7 +130,10 @@ function sixHanded(hands: number, reps: number) {
   // number that happens to be true of one shuffle.
   const samples: number[][] = [];
   for (let r = 0; r < reps; r++) {
-    const net = tableSession(tiers, hands, r * 1_000_003);
+    // SEED shifts the whole block of sessions, so two invocations with different SEEDs are
+    // independent samples. Without it every run replayed the same decks and looked reproducible
+    // when it was merely identical -- three "different" seeds returned byte-identical tables.
+    const net = tableSession(tiers, hands, SEED_OFFSET + r * 1_000_003);
     samples.push(net.map((c) => (c / hands) * 100));
     process.stdout.write(`  session ${r + 1}/${reps} done\n`);
   }
