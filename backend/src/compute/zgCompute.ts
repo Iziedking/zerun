@@ -699,7 +699,19 @@ const testnetNetwork = makeNetwork({
   label: "testnet",
   minIntervalMs: TESTNET_MIN_INTERVAL_MS,
   rpcUrl: config.chain.rpcUrl,
-  signerKey: config.signerKey,
+  // A SEPARATE key from the deployer, when one is provided, and it matters more than it looks.
+  //
+  // Testnet compute and the arena's contracts live on the same chain (16602). The coordinator
+  // serializes its own writes and hands out explicit sequential nonces, but the 0G serving
+  // broker signs with `ethers` and manages its own nonce counter. Point both at the same
+  // account and you have two independent counters on one nonce space: the broker funds a
+  // ledger, the coordinator posts a score root with a nonce the broker already consumed, and
+  // the chain rejects it as `nonce too low`. The contest is then resettled from its stored
+  // root by the watchdog -- correct payouts, but the settle path never completes.
+  //
+  // Mainnet compute is immune because it is a different chain, hence a different nonce space.
+  // Set COMPUTE_PRIVATE_KEY to a second funded testnet key to end the collision for good.
+  signerKey: process.env.COMPUTE_PRIVATE_KEY || config.signerKey,
   ledgerOg: config.compute.ledgerOg,
   ledgerMaxOg: config.compute.ledgerMaxOg,
   perProviderOg: config.compute.perProviderOg,
