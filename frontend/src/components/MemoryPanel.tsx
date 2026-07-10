@@ -5,7 +5,7 @@ import { useQueries } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { shortId } from "@/lib/format";
 import type { AgentMemoryResponse, MemoryKind } from "@/lib/types";
-import { Chip, StickerCard, ThoughtBubble, cx } from "./zerun";
+import { Chip, Pager, StickerCard, ThoughtBubble } from "./zerun";
 
 // An agent's memory: the 0G-authored self-summary it carries into its next contest, the
 // record it was drawn from, and the 0G Storage anchor that proves it was produced on 0G.
@@ -93,64 +93,8 @@ export function MemoryPanel({ agentId }: { agentId: number }) {
         <MemoryBody data={current} />
       </div>
 
-      {many && <Pager page={page} total={withMemory.length} onGo={go} />}
+      {many && <Pager page={page} total={withMemory.length} onGo={go} noun="memory" nouns="memories" count={withMemory.length} />}
     </StickerCard>
-  );
-}
-
-/**
- * The footer of the deck: where you are on the left, where you can go on the right. It reads
- * as a sentence rather than as a widget, and the count tells you how many memories exist
- * before you have clicked anything.
- */
-function Pager({ page, total, onGo }: { page: number; total: number; onGo: (d: number) => void }) {
-  return (
-    <div className="mt-5 flex items-center justify-between gap-3 border-t-line border-ink/10 pt-4">
-      <span className="font-body text-[12px] font-extrabold uppercase tracking-[0.06em] text-ink-3">
-        Page {page + 1} of {total} · {total} {total === 1 ? "memory" : "memories"}
-      </span>
-      <div className="flex shrink-0 items-center gap-2">
-        <ArrowButton dir="back" onClick={() => onGo(-1)} disabled={page === 0} />
-        <ArrowButton dir="forward" onClick={() => onGo(1)} disabled={page === total - 1} />
-      </div>
-    </div>
-  );
-}
-
-function ArrowButton({ dir, onClick, disabled }: { dir: "back" | "forward"; onClick: () => void; disabled: boolean }) {
-  const back = dir === "back";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={back ? "Previous memory" : "Next memory"}
-      className={cx(
-        "grid h-10 w-10 place-items-center rounded-pill border-line border-ink text-ink",
-        // Same squish as PopButton: it pushes into the page, shadow and all.
-        "transition-[transform,box-shadow,opacity] duration-150 ease-spring",
-        disabled
-          ? "cursor-not-allowed bg-cloud-2 opacity-40 shadow-pop-press"
-          : cx(
-              "bg-cloud shadow-pop",
-              "hover:-translate-x-px hover:-translate-y-px hover:shadow-pop-lg",
-              "active:translate-x-[2px] active:translate-y-[2px] active:shadow-pop-press",
-            ),
-        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet",
-      )}
-    >
-      {/* A fat, round-capped chevron: the same ink stroke as everything else on the page. */}
-      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden className={back ? "" : "rotate-180"}>
-        <path
-          d="M10.5 2.5 L4.5 8 l6 5.5"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
   );
 }
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { WsPokerSnapshot, WsX402Payload } from "@/lib/types";
-import { agentVariant, Chip, SkinnedAgent, StickerCard, ThoughtBubble, cx } from "./zerun";
+import { agentVariant, Chip, Pager, SkinnedAgent, StickerCard, ThoughtBubble, cx } from "./zerun";
 import { ExplorerLink } from "./ExplorerLink";
 
 const RED = new Set(["h", "d"]);
@@ -315,8 +315,27 @@ export function PokerTable({ snapshot }: { snapshot: WsPokerSnapshot }) {
 
 // The x402 data payments (poker dossiers or World Cup intel), each verifiable on the
 // 0G explorer.
+// A World Cup contest buys intel on every market, twice over, so this list runs to dozens of
+// rows and pushed the rest of the page off the screen. Six at a time, newest first.
+const X402_PER_PAGE = 6;
+
 export function X402Feed({ payments }: { payments: WsX402Payload[] }) {
+  const [page, setPage] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(payments.length / X402_PER_PAGE));
+
+  // This is a LIVE feed: new payments arrive at the head while somebody is reading page three.
+  // Snap back to the first page when that happens, rather than leaving them staring at rows
+  // that have quietly shifted under them. Page one is where the new row is anyway.
+  const seen = useRef(payments.length);
+  useEffect(() => {
+    if (payments.length > seen.current) setPage(0);
+    seen.current = payments.length;
+  }, [payments.length]);
+
   if (!payments.length) return null;
+  const start = Math.min(page, totalPages - 1) * X402_PER_PAGE;
+  const rows = payments.slice(start, start + X402_PER_PAGE);
+
   return (
     <StickerCard className="p-4">
       <div className="mb-2 flex items-center gap-2">
@@ -324,9 +343,9 @@ export function X402Feed({ payments }: { payments: WsX402Payload[] }) {
         <Chip tone="won">x402</Chip>
       </div>
       <ul className="space-y-2">
-        {payments.map((p, i) => (
+        {rows.map((p, i) => (
           <li
-            key={`${p.txHash}-${i}`}
+            key={`${p.txHash}-${start + i}`}
             className="flex flex-wrap items-center justify-between gap-2 rounded-chunk border-line border-ink/15 bg-cloud-2 px-3 py-2"
           >
             <span className="font-body text-[13px] text-ink-2">
@@ -342,6 +361,13 @@ export function X402Feed({ payments }: { payments: WsX402Payload[] }) {
           </li>
         ))}
       </ul>
+      <Pager
+        page={Math.min(page, totalPages - 1)}
+        total={totalPages}
+        onGo={(d) => setPage((x) => Math.min(totalPages - 1, Math.max(0, x + d)))}
+        noun="payment"
+        count={payments.length}
+      />
     </StickerCard>
   );
 }

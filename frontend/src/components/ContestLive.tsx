@@ -278,7 +278,9 @@ export function ContestLive({
       if (isNewGame && !mutedRef.current) playChessGameEnd();
       setBracket(msg.payload);
     } else if (msg.type === "x402") {
-      setPayments((prev) => [msg.payload, ...prev].slice(0, 20));
+      // 20 was sized for an unpaginated list that had to fit on the page. The feed is paged
+      // now, so keep enough history that a World Cup contest's intel buys are all readable.
+      setPayments((prev) => [msg.payload, ...prev].slice(0, 60));
     }
   }, [kind, highlight]);
 
