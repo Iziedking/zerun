@@ -24,17 +24,23 @@ const SIGN_IN_URL = "https://0g.ai/arena/community/zero-cup";
 // The quarter-final ballot: the page with Zerun on it.
 const VOTE_URL = "https://0g.ai/arena/community/zero-cup/quarter-finals-zegon-vs-zerun";
 
-// Boosting needs a wallet, and most people here do not have one. These are the two we point them
-// at: both are free, both have a phone app, both open our page and 0G's inside them. One tap.
+// Boosting needs a wallet, and most people here do not have one. These are the ones we point them
+// at: all free, all with a phone app, all able to open our page and 0G's inside them. One tap.
+const METAMASK_URL = "https://metamask.io/download/";
 const RABBY_URL = "https://rabby.io/";
 const OKX_WALLET_URL = "https://www.okx.com/download";
+
+// A compact wallet chip: small and quiet, since three of them sit in a row and they are the
+// fallback for people without a wallet, not the main action.
+const WALLET_CHIP =
+  "inline-flex min-h-[40px] items-center justify-center rounded-chunk border-line border-ink bg-cloud px-2 text-center font-body text-[13px] font-extrabold text-ink shadow-pop-press transition-[transform,box-shadow] duration-150 ease-spring hover:-translate-y-px hover:shadow-pop";
 
 export default function VotePage() {
   const { address, isConnected } = useAccount();
   const [status, setStatus] = useState<VoteGasStatus | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [signedIn, setSignedIn] = useState(false);
+  const [voted, setVoted] = useState(false);
 
   const refresh = useCallback(() => {
     api
@@ -61,6 +67,10 @@ export default function VotePage() {
 
   const gasDone = Boolean(status?.claimed);
   const faucetOpen = Boolean(status?.enabled) && (status?.remainingClaims ?? 0) > 0;
+  // Ready to boost once there is a connected wallet with the fee covered — either we funded it, or
+  // the free credit has run out and they will cover the fee themselves. Either way, do not strand
+  // them behind a dry faucet.
+  const walletReady = isConnected && (gasDone || !faucetOpen);
   // The contract lets a wallet vote exactly once. If this one already has, the flow is moot.
   const alreadyVoted = isConnected && Boolean(status?.alreadyVoted);
 
@@ -74,8 +84,8 @@ export default function VotePage() {
           Vote for Zerun
         </h1>
         <p className="mx-auto mt-2 max-w-md font-body text-[15px] font-bold text-ink-2">
-          We reached the quarter-finals of the 2026 0G Zero Cup. Boost your vote for Zerun in three
-          quick steps. The small fee is on us.
+          We reached the quarter-finals of the 2026 0G Zero Cup. Vote for Zerun in seconds with no
+          wallet, then double it if you can. The fee for that is on us.
         </p>
         <div className="mt-3 flex justify-center gap-2">
           <Chip tone="won">quarter-finals</Chip>
@@ -89,34 +99,86 @@ export default function VotePage() {
         <AlreadyVoted />
       ) : (
         <div className="mt-8 space-y-4">
+          {/* Step 1 — the plain vote. Free, no wallet, and it banks a point right away. On 0G a
+              plain vote can be upgraded to a boost later, so locking it in now has no downside:
+              worst case we keep this vote, best case we double it in step 3. */}
           <Step
             n={1}
-            title="Get a wallet"
-            done={isConnected && gasDone}
+            title="Vote now, it is free"
+            done={voted}
+            body={
+              <>
+                <p className="font-body text-[14px] text-ink-2">
+                  Two quick taps, both on 0G. First sign in with Google or X, then open the ballot
+                  and pick Zerun. That is your vote, banked with no wallet and no fee. You can make it
+                  count double in a minute.
+                </p>
+                <div className="mt-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-pill border-line border-ink bg-cloud font-display text-[13px] text-ink shadow-pop-press" aria-hidden>
+                      A
+                    </span>
+                    <a
+                      href={SIGN_IN_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={popButtonClass("secondary", "md", "w-full")}
+                    >
+                      Sign in on 0G
+                    </a>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-pill border-line border-ink bg-cloud font-display text-[13px] text-ink shadow-pop-press" aria-hidden>
+                      B
+                    </span>
+                    <a
+                      href={VOTE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={popButtonClass("primary", "md", "w-full")}
+                    >
+                      Open the ballot and pick Zerun
+                    </a>
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      checked={voted}
+                      onChange={(e) => setVoted(e.target.checked)}
+                      className="h-5 w-5 rounded-md border-2 border-ink accent-violet"
+                    />
+                    <span className="font-body text-[13px] font-extrabold text-ink-2">
+                      Done, I voted for Zerun
+                    </span>
+                  </label>
+                </div>
+              </>
+            }
+          />
+
+          {/* Step 2 — the wallet and the credit that pays the boost fee, to double the vote above. */}
+          <Step
+            n={2}
+            title="Claim voting credit"
+            done={walletReady}
+            locked={!voted}
             body={
               !isConnected ? (
                 <>
                   <p className="font-body text-[14px] text-ink-2">
-                    To boost your vote you need a wallet: a free app that holds your vote. Most
-                    people here are getting their first one, and it takes a minute.
+                    To double your vote you need a wallet: a free app that holds it. Most people here
+                    are getting their first one, and it takes a minute.
                   </p>
                   <p className="mt-3 font-body text-[13px] font-extrabold text-ink">New here? Install one free:</p>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                    <a
-                      href={RABBY_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={popButtonClass("secondary", "md", "w-full")}
-                    >
-                      Get Rabby
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    <a href={METAMASK_URL} target="_blank" rel="noopener noreferrer" className={WALLET_CHIP}>
+                      MetaMask
                     </a>
-                    <a
-                      href={OKX_WALLET_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={popButtonClass("secondary", "md", "w-full")}
-                    >
-                      Get OKX Wallet
+                    <a href={RABBY_URL} target="_blank" rel="noopener noreferrer" className={WALLET_CHIP}>
+                      Rabby
+                    </a>
+                    <a href={OKX_WALLET_URL} target="_blank" rel="noopener noreferrer" className={WALLET_CHIP}>
+                      OKX
                     </a>
                   </div>
                   <p className="mt-4 font-body text-[13px] font-extrabold text-ink">
@@ -128,7 +190,7 @@ export default function VotePage() {
                 </>
               ) : gasDone ? (
                 <p className="font-body text-[14px] font-extrabold text-ink">
-                  Wallet ready and your free credit landed. You are set to boost.{" "}
+                  Voting credit is in your wallet. You are set to double your vote.{" "}
                   {status?.txHash && (
                     <span className="font-mono text-[12px] font-bold text-ink-3">
                       {shortId(status.txHash, 8, 6)}
@@ -138,8 +200,8 @@ export default function VotePage() {
               ) : (
                 <>
                   <p className="font-body text-[14px] text-ink-2">
-                    Wallet connected. Boosting has a tiny fee, so we drop a little credit into your
-                    wallet to cover it. Free, once, and yours to keep.
+                    Wallet connected. Boosting has a tiny fee, so we drop your voting credit in to
+                    cover it. Free, once, and yours to keep.
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <PopButton
@@ -147,7 +209,7 @@ export default function VotePage() {
                       disabled={claiming || !faucetOpen}
                       className="w-full sm:w-auto"
                     >
-                      {claiming ? "Sending…" : "Get my free credit"}
+                      {claiming ? "Sending…" : "Claim voting credit"}
                     </PopButton>
                     {claiming && <Spinner />}
                     {!faucetOpen && (
@@ -167,57 +229,20 @@ export default function VotePage() {
           />
 
           <Step
-            n={2}
-            title="Sign in on 0G"
-            done={signedIn}
-            locked={!gasDone}
-            body={
-              <>
-                <p className="font-body text-[14px] text-ink-2">
-                  0G needs to know a vote came from a person. Open the Zero Cup page and sign in with
-                  Google or X <strong className="text-ink">in this same browser</strong>, then come
-                  back and tick the box.
-                </p>
-                <div className="mt-3 space-y-3">
-                  <a
-                    href={SIGN_IN_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={popButtonClass("secondary", "md", "w-full sm:w-auto")}
-                  >
-                    Open 0G and sign in
-                  </a>
-                  <label className="flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={signedIn}
-                      onChange={(e) => setSignedIn(e.target.checked)}
-                      className="h-5 w-5 rounded-md border-2 border-ink accent-violet"
-                    />
-                    <span className="font-body text-[13px] font-extrabold text-ink-2">
-                      Done, I am signed in
-                    </span>
-                  </label>
-                </div>
-              </>
-            }
-          />
-
-          <Step
             n={3}
-            title="Boost for Zerun"
-            locked={!signedIn}
+            title="Double it: boost Zerun"
+            locked={!walletReady}
             final
             body={
               <>
                 <p className="font-body text-[14px] text-ink-2">
-                  This is the finish. On 0G, connect the same wallet, pick Zerun, and choose{" "}
-                  <strong className="text-ink">Boost</strong>. A boost counts as two votes, and the
-                  free credit from step 1 pays for it.
+                  This lifts the vote you already cast from one to two. On 0G, connect your wallet and
+                  choose <strong className="text-ink">Boost</strong> on Zerun. The voting credit from
+                  step 2 pays the fee.
                 </p>
                 <p className="mt-2 rounded-chunk border-line border-ink bg-amber/25 px-3 py-2 font-body text-[13px] font-extrabold text-ink">
-                  You get one vote per wallet, and you cannot change it later. Pick Boost the first
-                  time so it counts double. A normal vote counts once and cannot be topped up.
+                  A wallet can boost once, and it is final. Your vote from step 1 is already counting;
+                  this just doubles it. Make sure the boost lands on Zerun.
                 </p>
                 <div className="mt-4 flex items-center gap-3 rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3 shadow-pop-press">
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-chunk border-line border-ink bg-violet font-display text-xl text-white shadow-pop-press">
@@ -274,12 +299,12 @@ function AlreadyVoted() {
           <Agent variant="mint" mood="happy" size={84} name="Zerun" />
         </div>
         <div className="mt-3 flex justify-center">
-          <Chip tone="won">already voted</Chip>
+          <Chip tone="won">already boosted</Chip>
         </div>
-        <h2 className="mt-3 font-display text-2xl text-ink">This wallet has voted. Thank you.</h2>
+        <h2 className="mt-3 font-display text-2xl text-ink">This wallet has boosted. Thank you.</h2>
         <p className="mx-auto mt-2 max-w-md font-body text-[14px] font-bold text-ink-2">
-          A wallet can vote once and only once, so there is nothing more to do here with this one.
-          The score moves from here on with new people, not new clicks.
+          A wallet can boost once, so there is nothing more to do here with this one. The score moves
+          from here on with new people, not new clicks.
         </p>
         <p className="mx-auto mt-3 max-w-md font-body text-[14px] text-ink-2">
           The biggest help now is bringing one friend who has not voted yet.
