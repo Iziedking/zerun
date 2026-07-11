@@ -60,9 +60,10 @@ export function WelcomeTour() {
   const [i, setI] = useState(0);
 
   // The landing page ("/") is a marketing page, not the app; the tour belongs inside
-  // the app. Show nothing on the landing page, and auto-open the first time the visitor
-  // steps into the app (e.g. lands on /arena after "Enter the arena").
-  const inApp = pathname !== "/";
+  // the app. The vote page ("/vote") is a standalone voting flow reached from social,
+  // where an arena tour ("claim an agent, train it") only confuses people who came to
+  // vote — so it is excluded too. Everywhere else, auto-open once on the first visit.
+  const inApp = pathname !== "/" && pathname !== "/vote";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
