@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { useAccount, useBalance, useChainId } from "wagmi";
-import { zeroGGalileo, FAUCET_URL } from "@/lib/chain";
+import { useAccount, useBalance, useChainId, useSwitchChain } from "wagmi";
+import { zeroGGalileo, FAUCET_URL, addAndSwitchZeroG } from "@/lib/chain";
+import { friendlyError } from "@/lib/errors";
 import { useAuth } from "@/lib/useAuth";
 import { Agent } from "./zerun/Agent";
 import { StickerCard } from "./zerun/StickerCard";
@@ -18,10 +19,35 @@ import { Spinner } from "./ui";
 export function PostConnectModal() {
   const router = useRouter();
   const pathname = usePathname();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
   const wrong = isConnected && chainId !== zeroGGalileo.id;
+  const { switchChainAsync } = useSwitchChain();
   const { signedIn, signing, signIn, error } = useAuth();
+
+  const [switching, setSwitching] = useState(false);
+  const [chainErr, setChainErr] = useState<string | null>(null);
+
+  // Put the wallet on 0G. Try wagmi's switch first; if the wallet refuses (it does not know the
+  // chain), fall back to a raw add-then-switch so mobile wallets stop stalling here.
+  const ensureChain = useCallback(async () => {
+    setSwitching(true);
+    setChainErr(null);
+    try {
+      await switchChainAsync({ chainId: zeroGGalileo.id });
+    } catch {
+      try {
+        const provider = (await connector?.getProvider?.()) as
+          | { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }
+          | undefined;
+        if (provider) await addAndSwitchZeroG(provider);
+      } catch (err) {
+        setChainErr(friendlyError(err, "Could not add the 0G network. Open your wallet, add it, then come back."));
+      }
+    } finally {
+      setSwitching(false);
+    }
+  }, [switchChainAsync, connector]);
 
   // The vote route is a public onboarding flow, not the app. A voter connects a wallet only so the
   // faucet can send credit; forcing them to sign in and switch chains here is the exact wall that
@@ -37,23 +63,43 @@ export function PostConnectModal() {
 
   const [engaged, setEngaged] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [autoAdded, setAutoAdded] = useState(false);
 
   // A new wallet resets the flow.
   useEffect(() => {
     setEngaged(false);
     setDismissed(false);
+    setAutoAdded(false);
+    setChainErr(null);
   }, [address]);
 
-  // Engage only when a freshly connected wallet still needs sign-in or gas, so a
-  // returning, ready operator never sees the popup.
+  // Engage when a freshly connected wallet still needs the chain, sign-in, or gas, so a returning,
+  // ready operator never sees the popup.
   useEffect(() => {
-    if (isConnected && !wrong && (!signedIn || noGas) && !dismissed) setEngaged(true);
+    if (isConnected && (wrong || !signedIn || noGas) && !dismissed) setEngaged(true);
   }, [isConnected, wrong, signedIn, noGas, dismissed]);
 
-  const open = engaged && !dismissed && isConnected && !wrong && !suppressed;
+  const open = engaged && !dismissed && isConnected && !suppressed;
+
+  const step: "chain" | "signin" | "gas" | "done" = wrong
+    ? "chain"
+    : !signedIn
+      ? "signin"
+      : noGas
+        ? "gas"
+        : "done";
+
+  // Auto-add 0G the first time we land on the chain step, so most wallets never see a manual
+  // switch. One attempt per wallet; if it is rejected the button below is the manual retry.
+  useEffect(() => {
+    if (open && step === "chain" && !autoAdded && !switching) {
+      setAutoAdded(true);
+      void ensureChain();
+    }
+  }, [open, step, autoAdded, switching, ensureChain]);
+
   if (!open) return null;
 
-  const step: "signin" | "gas" | "done" = !signedIn ? "signin" : noGas ? "gas" : "done";
   const close = () => setDismissed(true);
 
   return (
@@ -76,6 +122,28 @@ export function PostConnectModal() {
             size={112}
           />
         </div>
+
+        {step === "chain" && (
+          <>
+            <h2 className="mt-4 font-display text-2xl text-ink">Add the 0G network</h2>
+            <p className="mt-2 font-body text-[15px] leading-relaxed text-ink-2">
+              Your wallet needs the 0G network to go on. We add it for you, just approve the prompt
+              in your wallet. If you do not see it, tap the button.
+            </p>
+            {chainErr && <p className="mt-3 font-body text-[14px] font-bold text-coral">{chainErr}</p>}
+            <div className="mt-5 flex justify-center">
+              <PopButton
+                type="button"
+                size="lg"
+                onClick={() => void ensureChain()}
+                disabled={switching}
+                icon={switching ? <Spinner /> : undefined}
+              >
+                {switching ? "Adding…" : "Add 0G network"}
+              </PopButton>
+            </div>
+          </>
+        )}
 
         {step === "signin" && (
           <>

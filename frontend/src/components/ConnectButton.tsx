@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAccount, useBalance, useChainId, useDisconnect, useSwitchChain } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { zeroGGalileo, FAUCET_URL } from "@/lib/chain";
+import { zeroGGalileo, FAUCET_URL, addAndSwitchZeroG } from "@/lib/chain";
 import { shortAddr } from "@/lib/format";
 import { useAuth } from "@/lib/useAuth";
 import { Spinner } from "./ui";
@@ -15,7 +15,7 @@ import { PopButton } from "./zerun/PopButton";
 // ours and unchanged.
 export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boolean }) {
   const router = useRouter();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
   const { openConnectModal } = useConnectModal();
   const { disconnect } = useDisconnect();
@@ -26,17 +26,25 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
 
   const wrongChain = isConnected && chainId !== zeroGGalileo.id;
 
-  // wagmi adds the chain to the wallet if it does not know it, then switches.
+  // Try wagmi's switch first; if the wallet refuses because it does not know the chain, fall back
+  // to a raw add-then-switch so mobile wallets that will not switch to an unknown chain still land.
   const handleSwitch = useCallback(async () => {
     setBusy(true);
     try {
-      await switchChainAsync({ chainId: zeroGGalileo.id });
+      try {
+        await switchChainAsync({ chainId: zeroGGalileo.id });
+      } catch {
+        const provider = (await connector?.getProvider?.()) as
+          | { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }
+          | undefined;
+        if (provider) await addAndSwitchZeroG(provider);
+      }
     } catch {
       /* ignore; the operator can tap again */
     } finally {
       setBusy(false);
     }
-  }, [switchChainAsync]);
+  }, [switchChainAsync, connector]);
 
   useEffect(() => {
     if (routeOnConnect && isConnected && !wrongChain && signedIn && !hasRouted) {

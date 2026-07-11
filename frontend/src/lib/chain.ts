@@ -32,3 +32,24 @@ export const addChainParams = {
   rpcUrls: ["https://evmrpc-testnet.0g.ai"],
   blockExplorerUrls: ["https://chainscan-galileo.0g.ai"],
 } as const;
+
+type Eip1193 = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+
+/**
+ * Put the wallet on 0G, adding the network first if it does not have it. Many mobile wallets will
+ * not switch to a chain they do not already know and simply reject a bare wallet_switchEthereumChain,
+ * which is where onboarding stalls. So we add first (with full params) and then switch. Adding a
+ * chain that already exists is a no-op in well-behaved wallets; a user rejection (4001) stops us.
+ */
+export async function addAndSwitchZeroG(provider: Eip1193): Promise<void> {
+  try {
+    await provider.request({ method: "wallet_addEthereumChain", params: [addChainParams] });
+  } catch (err) {
+    if ((err as { code?: number })?.code === 4001) throw err; // user said no
+    // otherwise the wallet likely already has it; fall through to the switch
+  }
+  await provider.request({
+    method: "wallet_switchEthereumChain",
+    params: [{ chainId: addChainParams.chainId }],
+  });
+}
