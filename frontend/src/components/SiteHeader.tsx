@@ -21,6 +21,8 @@ export function SiteHeader() {
   // The landing is a marketing page: only the wordmark shows. Everything else
   // (nav, compute badge, balance, music, connect) lives inside the app.
   const isLanding = pathname === "/";
+  // The vote route runs on 0G mainnet, so the arena's testnet balance nudge does not apply there.
+  const isVote = pathname === "/vote";
 
   const nav = [
     { href: "/arena", label: "Arena" },
@@ -72,7 +74,7 @@ export function SiteHeader() {
           </div>
         ) : (
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {isConnected && <BalancePill className="hidden md:inline-flex" />}
+            {isConnected && !isVote && <BalancePill className="hidden md:inline-flex" />}
             {isConnected && <NotificationBell />}
             <ThemeToggle />
             <MusicPlayer className="grid" />

@@ -1,10 +1,16 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAccount, useBalance, useChainId, useDisconnect, useSwitchChain } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { zeroGGalileo, FAUCET_URL, addAndSwitchZeroG } from "@/lib/chain";
+import {
+  zeroGGalileo,
+  zeroGMainnet,
+  FAUCET_URL,
+  addAndSwitchZeroG,
+  addAndSwitchZeroGMainnet,
+} from "@/lib/chain";
 import { shortAddr } from "@/lib/format";
 import { useAuth } from "@/lib/useAuth";
 import { Spinner } from "./ui";
@@ -15,6 +21,7 @@ import { PopButton } from "./zerun/PopButton";
 // ours and unchanged.
 export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boolean }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { address, isConnected, connector } = useAccount();
   const chainId = useChainId();
   const { openConnectModal } = useConnectModal();
@@ -24,7 +31,11 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
   const [busy, setBusy] = useState(false);
   const [hasRouted, setHasRouted] = useState(false);
 
-  const wrongChain = isConnected && chainId !== zeroGGalileo.id;
+  // The vote route lives on 0G mainnet and needs no sign-in; the rest of the app is the arena on
+  // the testnet. The expected chain follows the route.
+  const isVote = pathname === "/vote";
+  const expected = isVote ? zeroGMainnet : zeroGGalileo;
+  const wrongChain = isConnected && chainId !== expected.id;
 
   // Try wagmi's switch first; if the wallet refuses because it does not know the chain, fall back
   // to a raw add-then-switch so mobile wallets that will not switch to an unknown chain still land.
@@ -32,19 +43,19 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
     setBusy(true);
     try {
       try {
-        await switchChainAsync({ chainId: zeroGGalileo.id });
+        await switchChainAsync({ chainId: expected.id });
       } catch {
         const provider = (await connector?.getProvider?.()) as
           | { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> }
           | undefined;
-        if (provider) await addAndSwitchZeroG(provider);
+        if (provider) await (isVote ? addAndSwitchZeroGMainnet : addAndSwitchZeroG)(provider);
       }
     } catch {
       /* ignore; the operator can tap again */
     } finally {
       setBusy(false);
     }
-  }, [switchChainAsync, connector]);
+  }, [switchChainAsync, connector, expected.id, isVote]);
 
   useEffect(() => {
     if (routeOnConnect && isConnected && !wrongChain && signedIn && !hasRouted) {
@@ -65,6 +76,21 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
     );
   }
 
+  // On the vote route a connected wallet is all we need: no chain switch, no sign-in signature.
+  if (isVote) {
+    return (
+      <ConnectedChip
+        address={address!}
+        chainId={zeroGMainnet.id}
+        showFaucet={false}
+        onDisconnect={() => {
+          signOut();
+          disconnect();
+        }}
+      />
+    );
+  }
+
   if (wrongChain) {
     return (
       <PopButton
@@ -74,7 +100,7 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
         disabled={busy}
         icon={busy ? <Spinner /> : undefined}
       >
-        Switch to 0G Galileo
+        Switch to {expected.name}
       </PopButton>
     );
   }
@@ -106,12 +132,16 @@ export function ConnectButton({ routeOnConnect = false }: { routeOnConnect?: boo
 function ConnectedChip({
   address,
   onDisconnect,
+  chainId = zeroGGalileo.id,
+  showFaucet = true,
 }: {
   address: string;
   onDisconnect: () => void;
+  chainId?: typeof zeroGGalileo.id | typeof zeroGMainnet.id;
+  showFaucet?: boolean;
 }) {
-  const { data } = useBalance({ address: address as `0x${string}`, chainId: zeroGGalileo.id });
-  const zero = data ? data.value === 0n : false;
+  const { data } = useBalance({ address: address as `0x${string}`, chainId });
+  const zero = showFaucet && (data ? data.value === 0n : false);
 
   return (
     <div className="flex items-center gap-2">
