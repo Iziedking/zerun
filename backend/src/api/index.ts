@@ -33,6 +33,7 @@ import { runChessContest } from "../coordinator/runChessContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { standingsFor } from "../coordinator/standings.js";
 import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
+import { chessLadder, currentChessSeason } from "../runners/chess/ratings.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
 import { getAgentMemory, memoryEnabled, memoryLift, memoryQueueDepth } from "../runners/agentMemory.js";
 import { agentAddress } from "../runners/agentWallet.js";
@@ -818,6 +819,16 @@ app.get("/api/contests/:id/standings", async (c) => {
 app.get("/api/poker/ladder", async (c) => {
   const season = c.req.query("season") || currentPokerSeason();
   const ladder = await pokerLadder(season);
+  return c.json({ season, ladder });
+});
+
+// The community chess competition ladder: uploaded agents (and house benchmarks) ranked by
+// conservative TrueSkill. `?uploads=1` returns the prize board — real player submissions only,
+// the top of which win the event.
+app.get("/api/chess/ladder", async (c) => {
+  const season = c.req.query("season") || currentChessSeason();
+  const onlyUploads = c.req.query("uploads") === "1";
+  const ladder = await chessLadder(season, 200, onlyUploads);
   return c.json({ season, ladder });
 });
 

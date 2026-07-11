@@ -3,6 +3,7 @@ import { config } from "./config/index.js";
 import { app } from "./api/index.js";
 import { attachWebSocket } from "./coordinator/ws.js";
 import { startAutopilot, autopilotEnabled } from "./coordinator/autopilot.js";
+import { startChessLadder } from "./coordinator/chessLadderRunner.js";
 import { computeMode } from "./compute/client.js";
 import { deploymentReady } from "./chain/contracts.js";
 
@@ -21,3 +22,7 @@ attachWebSocket(server as unknown as Parameters<typeof attachWebSocket>[0]);
 
 // Self-driving arena: opens and settles contests on a cadence when enabled.
 startAutopilot();
+
+// The community chess ladder matchmaker (house self-play until uploads open). No-op unless
+// CHESS_LADDER=on, so it is safe to wire here and flip on when the event goes live.
+startChessLadder();
