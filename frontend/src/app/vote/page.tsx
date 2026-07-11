@@ -58,6 +58,10 @@ export default function VotePage() {
 
   const gasDone = Boolean(status?.claimed);
   const faucetOpen = Boolean(status?.enabled) && (status?.remainingClaims ?? 0) > 0;
+  // The contract lets a wallet vote exactly once. If this one already has, the whole flow is
+  // moot: it cannot claim, cannot boost, cannot change its vote. Say so plainly instead of
+  // walking them to a booth that will turn them away.
+  const alreadyVoted = isConnected && Boolean(status?.alreadyVoted);
 
   return (
     <main className="mx-auto w-full max-w-3xl px-4 py-10 sm:py-14">
@@ -80,6 +84,9 @@ export default function VotePage() {
         </div>
       </header>
 
+      {alreadyVoted ? (
+        <AlreadyVoted />
+      ) : (
       <div className="mt-10 space-y-4">
         <Step
           n={1}
@@ -163,9 +170,9 @@ export default function VotePage() {
           body={
             <>
               <p className="font-body text-[14px] text-ink-2">
-                On the 0G page, connect the same wallet you funded and choose{" "}
-                <strong className="text-ink">Boost</strong>. A boost is worth two votes; a plain
-                vote is worth one. The gas from step 1 covers it either way.
+                A plain vote counts once. A <strong className="text-ink">Boost</strong> counts
+                twice, and the gas from step 1 already covers it. So a plain vote is only half the
+                vote you came to give, and you cannot come back for the other half.
               </p>
               <p className="mt-2 rounded-chunk border-line border-ink bg-amber/25 px-3 py-2 font-body text-[13px] font-extrabold text-ink">
                 You get one vote per wallet, and you cannot change it. Boosting once beats voting
@@ -177,12 +184,13 @@ export default function VotePage() {
 
         <Step
           n={4}
-          title="Pick Zerun"
+          title="Boost for Zerun"
           locked={!signedIn}
           body={
             <>
               <p className="font-body text-[14px] text-ink-2">
-                This is us on the ballot. Representing Portugal, by Invincibles.
+                This is us on the ballot. Representing Portugal, by Invincibles. Open it, pick
+                Zerun, and choose <strong className="text-ink">Boost</strong> to finish.
               </p>
               <div className="mt-3 flex items-center gap-3 rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3 shadow-pop-press">
                 <span className="grid h-11 w-11 shrink-0 place-items-center rounded-chunk border-line border-ink bg-violet font-display text-xl text-white shadow-pop-press">
@@ -201,19 +209,53 @@ export default function VotePage() {
               </div>
               <div className="mt-4">
                 <a href={VOTE_URL} target="_blank" rel="noopener noreferrer">
-                  <PopButton>Go vote for Zerun</PopButton>
+                  <PopButton>Boost Zerun on 0G</PopButton>
                 </a>
               </div>
             </>
           }
         />
       </div>
+      )}
 
       <p className="mt-8 text-center font-body text-[12px] text-ink-3">
         Gas is sent from Zerun&apos;s own wallet on 0G mainnet. One claim per wallet. We never ask
         for a signature, a seed phrase, or an approval to take anything.
       </p>
     </main>
+  );
+}
+
+/**
+ * Shown when the connected wallet has already voted. There is nothing left for it to do here, so
+ * this thanks the voter and points them at the one thing that still moves the score: a new person.
+ */
+function AlreadyVoted() {
+  return (
+    <div className="mt-10">
+      <StickerCard className="p-6 text-center">
+        <div className="mx-auto w-fit motion-safe:animate-pop-in">
+          <Agent variant="mint" mood="happy" size={84} name="Zerun" />
+        </div>
+        <div className="mt-3 flex justify-center">
+          <Chip tone="won">already voted</Chip>
+        </div>
+        <h2 className="mt-3 font-display text-2xl text-ink">This wallet has voted. Thank you.</h2>
+        <p className="mx-auto mt-2 max-w-md font-body text-[14px] font-bold text-ink-2">
+          A wallet can vote once and only once, so there is nothing more to do here with this one.
+          The score moves from here on with new people, not new clicks.
+        </p>
+        <p className="mx-auto mt-3 max-w-md font-body text-[14px] text-ink-2">
+          The biggest help now is bringing one friend who has not voted yet, and telling them to
+          choose <strong className="text-ink">Boost</strong>, which counts twice.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-center gap-3">
+          <a href={VOTE_URL} target="_blank" rel="noopener noreferrer">
+            <PopButton variant="secondary">See the ballot</PopButton>
+          </a>
+        </div>
+      </StickerCard>
+    </div>
   );
 }
 

@@ -21,6 +21,19 @@ import { config } from "../config/index.js";
 
 const ENABLED = (process.env.VOTE_GAS ?? "off").toLowerCase() === "on";
 
+// The Zero Cup vote contract on 0G mainnet, and the one call that matters.
+//   castVote(bytes32 candidateId, uint256 weight)   selector 0xb4b0713e
+// A wallet may vote exactly once: a second castVote reverts with an already-voted guard
+// (custom error 0xb037ef51). We use that fact below as a fundability oracle — see canStillVote.
+const CONTRACT = process.env.ZERO_CUP_CONTRACT ?? "0x46bB4fFd3F61d59126ca1814B7c57FFF1db0a65B";
+const VOTE_SELECTOR = "0xb4b0713e";
+const ZERUN_CANDIDATE = process.env.ZERO_CUP_ZERUN ?? "0xcca28a9fddc8ecbee7b1bb4b6b2ee4968e8d1b63182d1989ea2607d20d425f4c";
+
+// Refuse to fund a wallet that has already voted. It literally cannot vote again, so the gas is
+// wasted on it — that is the single biggest leak, since re-claimers and the opposition's own
+// voters all land here. On by default; flip off if the RPC oracle ever misbehaves.
+const SKIP_VOTED = (process.env.VOTE_GAS_SKIP_VOTED ?? "on").toLowerCase() === "on";
+
 /** What one voter receives. A boost costs a fraction of this; the rest is slack for gas spikes. */
 const AMOUNT_OG = process.env.VOTE_GAS_AMOUNT_OG ?? "0.003";
 
@@ -40,10 +53,52 @@ export interface VoteGasStatus {
   txHash: string | null;
   /** Claims still fundable under the campaign budget. 0 means the faucet has closed. */
   remainingClaims: number;
+  /** This wallet has already voted and can never vote again. The whole flow is moot for it. */
+  alreadyVoted: boolean;
 }
 
 export function voteGasConfigured(): boolean {
   return ENABLED && Boolean(RPC && SIGNER_KEY);
+}
+
+const pad32 = (hex: string) => hex.replace(/^0x/, "").padStart(64, "0");
+
+// A short-lived cache so polling the page (or two endpoints on one request) does not fire an
+// eth_call at 0G's RPC every time. Vote state only ever flips once, from "can" to "cannot".
+const oracleCache = new Map<string, { canVote: boolean; at: number }>();
+const ORACLE_TTL_MS = Number(process.env.VOTE_GAS_ORACLE_TTL_MS ?? "30000");
+
+/**
+ * Can this wallet still cast a vote? Simulate castVote(Zerun, boost) with eth_call — no gas, no
+ * transaction, nothing sent.
+ *   - success  -> the wallet has not voted and the poll is open: true (worth funding).
+ *   - revert   -> the already-voted guard fired (or the poll closed): false (do not fund).
+ *   - RPC/network error -> unknown: null. We FAIL OPEN, because blocking a real new voter over a
+ *     flaky RPC costs a vote, while funding one extra dead wallet costs a fraction of a cent.
+ */
+async function canStillVote(address: string): Promise<boolean | null> {
+  if (!RPC) return null;
+  const key = address.toLowerCase();
+  const hit = oracleCache.get(key);
+  if (hit && Date.now() - hit.at < ORACLE_TTL_MS) return hit.canVote;
+
+  const data = VOTE_SELECTOR + pad32(ZERUN_CANDIDATE) + pad32("0x2");
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC);
+    await provider.call({ from: address, to: CONTRACT, data });
+    oracleCache.set(key, { canVote: true, at: Date.now() });
+    return true;
+  } catch (err) {
+    const e = err as { code?: string; message?: string };
+    // A revert means the node executed the call and the contract rejected it — the definite
+    // "cannot vote" signal. A transport failure is not a revert and must not lock anyone out.
+    const isRevert = e?.code === "CALL_EXCEPTION" || /execution reverted|revert/i.test(e?.message ?? "");
+    if (isRevert) {
+      oracleCache.set(key, { canVote: false, at: Date.now() });
+      return false;
+    }
+    return null;
+  }
 }
 
 const amountWei = () => ethers.parseEther(AMOUNT_OG);
@@ -73,12 +128,15 @@ export async function voteGasStatus(address: string): Promise<VoteGasStatus> {
   const left = budgetWei() - (await spentWei());
   const per = amountWei();
   const claim = isAddress(address) ? await claimOf(address) : null;
+  // Only worth an RPC round-trip once there is a real wallet to ask about.
+  const canVote = isAddress(address) ? await canStillVote(address) : null;
   return {
     enabled: voteGasConfigured(),
     amountOg: AMOUNT_OG,
     claimed: Boolean(claim),
     txHash: claim?.tx_hash ?? null,
     remainingClaims: left > 0n ? Number(left / per) : 0,
+    alreadyVoted: canVote === false,
   };
 }
 
@@ -98,6 +156,17 @@ export async function claimVoteGas(address: string): Promise<ClaimResult> {
     if (existing) {
       return { ok: false, status: 409, error: "this wallet has already claimed. One claim per wallet." };
     }
+
+    // Do not fund a wallet that can no longer vote. A revert from the oracle is a certain "already
+    // voted"; an unknown (RPC down) fails open, so a flaky node never blocks a genuine new voter.
+    if (SKIP_VOTED && (await canStillVote(address)) === false) {
+      return {
+        ok: false,
+        status: 409,
+        error: "this wallet has already voted, so it cannot vote again. Please save the gas for a new voter.",
+      };
+    }
+
     const per = amountWei();
     if ((await spentWei()) + per > budgetWei()) {
       return { ok: false, status: 503, error: "the gas faucet has run dry. Thanks for voting anyway." };

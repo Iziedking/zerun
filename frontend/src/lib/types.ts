@@ -460,4 +460,6 @@ export interface VoteGasStatus {
   claimed: boolean;
   txHash: string | null;
   remainingClaims: number;
+  /** This wallet has already voted and can never vote again. */
+  alreadyVoted: boolean;
 }
