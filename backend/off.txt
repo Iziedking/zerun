@@ -1,0 +1,27 @@
+
+six-handed table: one agent per tier, cash game, button rotating
+8 independent session(s) of 3000 hands (a multiple of 6 keeps positions equal)
+
+  session 1/8 done
+  session 2/8 done
+  session 3/8 done
+  session 4/8 done
+  session 5/8 done
+  session 6/8 done
+  session 7/8 done
+  session 8/8 done
+
+  tier   chips/100      +/- se        min        max
+  L2        658.6     214.2      -42.6     1811.3
+  L3        399.9     159.0     -421.0      977.3
+  L5        356.8     122.3     -248.4      750.4
+  L4        237.6     220.7     -662.8     1349.7
+  L1       -316.2     181.0    -1157.9      341.2
+  L0      -1336.7     198.2    -2078.9     -503.8
+
+ordering check (is each tier's mean above every lower tier's?):
+  L3 earns less than L2: 399.9 vs 658.6   (within noise; more sessions needed)
+  L4 earns less than L2: 237.6 vs 658.6   (within noise; more sessions needed)
+  L4 earns less than L3: 237.6 vs 399.9   (within noise; more sessions needed)
+  L5 earns less than L2: 356.8 vs 658.6   (within noise; more sessions needed)
+  L5 earns less than L3: 356.8 vs 399.9   (within noise; more sessions needed)
