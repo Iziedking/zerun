@@ -28,6 +28,10 @@ const VOTE_URL = "https://0g.ai/arena/community/zero-cup/quarter-finals-zegon-vs
 const METAMASK_URL = "https://metamask.io/download/";
 const RABBY_URL = "https://rabby.io/";
 const OKX_WALLET_URL = "https://www.okx.com/download";
+// On a phone the generic download page does not load, so we send people straight to the store for
+// their OS. OKX is the smoothest wallet on mobile, so it is what we recommend there.
+const OKX_IOS_URL = "https://apps.apple.com/us/app/okx-buy-bitcoin-btc-crypto/id1327268470";
+const OKX_ANDROID_URL = "https://play.google.com/store/apps/details?id=com.okinc.okex.gp";
 
 // A compact wallet chip: small and quiet, since three of them sit in a row and they are the
 // fallback for people without a wallet, not the main action.
@@ -49,6 +53,8 @@ export default function VotePage() {
   const [error, setError] = useState<string | null>(null);
   const [voted, setVoted] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
+  const [showOkxStores, setShowOkxStores] = useState(false);
+  const isMobile = useIsMobile();
 
   const refresh = useCallback(() => {
     api
@@ -187,36 +193,45 @@ export default function VotePage() {
             locked={!voted}
             body={
               !isConnected ? (
-                <>
-                  <p className="font-body text-[14px] text-ink-2">
-                    To double your vote you need a wallet: a free app that holds it. Most people here
-                    are getting their first one, and it takes a minute.
-                  </p>
-                  <p className="mt-3 font-body text-[13px] font-extrabold text-ink">New here? Install one free:</p>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    <a href={METAMASK_URL} target="_blank" rel="noopener noreferrer" className={WALLET_CHIP}>
-                      MetaMask
-                    </a>
-                    <a href={RABBY_URL} target="_blank" rel="noopener noreferrer" className={WALLET_CHIP}>
-                      Rabby
-                    </a>
-                    <a href={OKX_WALLET_URL} target="_blank" rel="noopener noreferrer" className={WALLET_CHIP}>
-                      OKX
-                    </a>
-                  </div>
-                  <p className="mt-4 font-body text-[13px] font-extrabold text-ink">
-                    Already have a wallet? Connect it:
-                  </p>
-                  <div className="mt-2">
-                    <PopButton
-                      onClick={() => openConnectModal?.()}
-                      disabled={!openConnectModal}
-                      className="w-full sm:w-auto"
-                    >
-                      Connect wallet
-                    </PopButton>
-                  </div>
-                </>
+                isMobile ? (
+                  <MobileWalletInstall
+                    showOkxStores={showOkxStores}
+                    onGetOkx={() => setShowOkxStores(true)}
+                    onConnect={() => openConnectModal?.()}
+                    connectReady={Boolean(openConnectModal)}
+                  />
+                ) : (
+                  <>
+                    <p className="font-body text-[14px] text-ink-2">
+                      To double your vote you need a wallet: a free app that holds it. Most people here
+                      are getting their first one, and it takes a minute.
+                    </p>
+                    <p className="mt-3 font-body text-[13px] font-extrabold text-ink">New here? Install one free:</p>
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      <a href={METAMASK_URL} target="_blank" rel="noopener noreferrer" className={WALLET_CHIP}>
+                        MetaMask
+                      </a>
+                      <a href={RABBY_URL} target="_blank" rel="noopener noreferrer" className={WALLET_CHIP}>
+                        Rabby
+                      </a>
+                      <a href={OKX_WALLET_URL} target="_blank" rel="noopener noreferrer" className={WALLET_CHIP}>
+                        OKX
+                      </a>
+                    </div>
+                    <p className="mt-4 font-body text-[13px] font-extrabold text-ink">
+                      Already have a wallet? Connect it:
+                    </p>
+                    <div className="mt-2">
+                      <PopButton
+                        onClick={() => openConnectModal?.()}
+                        disabled={!openConnectModal}
+                        className="w-full sm:w-auto"
+                      >
+                        Connect wallet
+                      </PopButton>
+                    </div>
+                  </>
+                )
               ) : gasDone ? (
                 <>
                   <p className="font-body text-[14px] font-extrabold text-ink">
@@ -277,6 +292,104 @@ export default function VotePage() {
         recovery phrase or for permission to move anything you hold.
       </p>
     </main>
+  );
+}
+
+/**
+ * True on phone-width viewports. Starts false (desktop) and corrects on mount, so PC keeps its
+ * full layout and only phones get the OKX-first install flow.
+ */
+function useIsMobile(): boolean {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 640px)");
+    const update = () => setMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return mobile;
+}
+
+/**
+ * The phone install flow. OKX is recommended because it is the smoothest wallet on mobile, and
+ * tapping it reveals per-OS store links, since OKX's generic download page will not load on a
+ * phone. Other wallets stay as a quiet fallback for people who already have a preference.
+ */
+function MobileWalletInstall({
+  showOkxStores,
+  onGetOkx,
+  onConnect,
+  connectReady,
+}: {
+  showOkxStores: boolean;
+  onGetOkx: () => void;
+  onConnect: () => void;
+  connectReady: boolean;
+}) {
+  return (
+    <>
+      <p className="font-body text-[14px] text-ink-2">
+        To double your vote you need a wallet, a free app that holds it. On a phone, OKX is the
+        smoothest, and it only takes a minute.
+      </p>
+
+      <div className="mt-3 rounded-chunk border-line border-ink bg-cloud-2 p-4 shadow-pop-press">
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-display text-lg text-ink">OKX Wallet</span>
+          <Chip tone="won">best on phones</Chip>
+        </div>
+        {!showOkxStores ? (
+          <PopButton onClick={onGetOkx} className="mt-3 w-full">
+            Get OKX Wallet
+          </PopButton>
+        ) : (
+          <div className="mt-3">
+            <p className="font-body text-[12px] font-extrabold text-ink-2">Pick your phone:</p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <a
+                href={OKX_IOS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={popButtonClass("primary", "md", "w-full")}
+              >
+                iPhone
+              </a>
+              <a
+                href={OKX_ANDROID_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={popButtonClass("primary", "md", "w-full")}
+              >
+                Android
+              </a>
+            </div>
+            <p className="mt-3 font-body text-[12px] leading-relaxed text-ink-3">
+              After it installs, open the OKX app, find its browser, and go to zerun.site there.
+              Then Connect wallet works in one tap.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <p className="mt-4 font-body text-[13px] font-extrabold text-ink">Already have a wallet? Connect it:</p>
+      <div className="mt-2">
+        <PopButton onClick={onConnect} disabled={!connectReady} className="w-full">
+          Connect wallet
+        </PopButton>
+      </div>
+
+      <p className="mt-3 text-center font-body text-[12px] text-ink-3">
+        Prefer another?{" "}
+        <a href={METAMASK_URL} target="_blank" rel="noopener noreferrer" className="font-extrabold text-ink underline">
+          MetaMask
+        </a>{" "}
+        or{" "}
+        <a href={RABBY_URL} target="_blank" rel="noopener noreferrer" className="font-extrabold text-ink underline">
+          Rabby
+        </a>
+      </p>
+    </>
   );
 }
 
