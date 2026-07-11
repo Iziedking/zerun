@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useAccount, useBalance, useChainId } from "wagmi";
 import { zeroGGalileo, FAUCET_URL } from "@/lib/chain";
 import { useAuth } from "@/lib/useAuth";
@@ -17,10 +17,16 @@ import { Spinner } from "./ui";
 // wallet that still needs one of those, and is dismissible.
 export function PostConnectModal() {
   const router = useRouter();
+  const pathname = usePathname();
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
   const wrong = isConnected && chainId !== zeroGGalileo.id;
   const { signedIn, signing, signIn, error } = useAuth();
+
+  // The vote route is a public onboarding flow, not the app. A voter connects a wallet only so the
+  // faucet can send credit; forcing them to sign in and switch chains here is the exact wall that
+  // blocks mobile wallets. Never pop this modal on that route.
+  const suppressed = pathname === "/vote";
 
   const { data: bal } = useBalance({
     address,
@@ -44,7 +50,7 @@ export function PostConnectModal() {
     if (isConnected && !wrong && (!signedIn || noGas) && !dismissed) setEngaged(true);
   }, [isConnected, wrong, signedIn, noGas, dismissed]);
 
-  const open = engaged && !dismissed && isConnected && !wrong;
+  const open = engaged && !dismissed && isConnected && !wrong && !suppressed;
   if (!open) return null;
 
   const step: "signin" | "gas" | "done" = !signedIn ? "signin" : noGas ? "gas" : "done";

@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
 import { shortId } from "@/lib/format";
 import type { VoteGasStatus } from "@/lib/types";
-import { ConnectButton } from "@/components/ConnectButton";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { Agent, Chip, PopButton, StickerCard, cx } from "@/components/zerun";
 import { popButtonClass } from "@/components/zerun/PopButton";
 import { Spinner } from "@/components/ui";
@@ -37,6 +37,10 @@ const WALLET_CHIP =
 
 export default function VotePage() {
   const { address, isConnected } = useAccount();
+  // The vote route is not the app. All the faucet needs is a connected address to send credit to,
+  // so we open the wallet picker and stop there: no chain switch, no sign-in signature. The whole
+  // "prove it is you" onboarding lives elsewhere and is suppressed on this page.
+  const { openConnectModal } = useConnectModal();
   const [status, setStatus] = useState<VoteGasStatus | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,7 +189,13 @@ export default function VotePage() {
                     Already have a wallet? Connect it:
                   </p>
                   <div className="mt-2">
-                    <ConnectButton />
+                    <PopButton
+                      onClick={() => openConnectModal?.()}
+                      disabled={!openConnectModal}
+                      className="w-full sm:w-auto"
+                    >
+                      Connect wallet
+                    </PopButton>
                   </div>
                 </>
               ) : gasDone ? (
