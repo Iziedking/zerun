@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 import { api } from "@/lib/api";
 import { friendlyError } from "@/lib/errors";
-import { shortId } from "@/lib/format";
 import type { VoteGasStatus } from "@/lib/types";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { Agent, Chip, PopButton, StickerCard, cx } from "@/components/zerun";
@@ -35,6 +34,10 @@ const OKX_WALLET_URL = "https://www.okx.com/download";
 const WALLET_CHIP =
   "inline-flex min-h-[40px] items-center justify-center rounded-chunk border-line border-ink bg-cloud px-2 text-center font-body text-[13px] font-extrabold text-ink shadow-pop-press transition-[transform,box-shadow] duration-150 ease-spring hover:-translate-y-px hover:shadow-pop";
 
+// How long we hold on the "taking you to boost" card before sending the tab to 0G. Enough for the
+// credit transfer to propagate so the wallet has the fee ready when they arrive to boost.
+const REDIRECT_MS = 3500;
+
 export default function VotePage() {
   const { address, isConnected } = useAccount();
   // The vote route is not the app. All the faucet needs is a connected address to send credit to,
@@ -45,6 +48,7 @@ export default function VotePage() {
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [voted, setVoted] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const refresh = useCallback(() => {
     api
@@ -62,12 +66,25 @@ export default function VotePage() {
     try {
       await api.claimVoteGas(address);
       refresh();
+      // Credit is on its way. Hand them straight to the boost page instead of asking for another
+      // tap: the whole point of this route is to get them to the ballot with a funded wallet.
+      setRedirecting(true);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
       setClaiming(false);
     }
   }, [address, refresh]);
+
+  // Once the credit is sent, hold on the hand-off card for a beat, then send the tab to 0G's
+  // boost page. A same-tab navigation (not a popup) so no mobile blocker can eat it.
+  useEffect(() => {
+    if (!redirecting) return;
+    const t = setTimeout(() => {
+      window.location.href = VOTE_URL;
+    }, REDIRECT_MS);
+    return () => clearTimeout(t);
+  }, [redirecting]);
 
   const gasDone = Boolean(status?.claimed);
   const faucetOpen = Boolean(status?.enabled) && (status?.remainingClaims ?? 0) > 0;
@@ -101,6 +118,8 @@ export default function VotePage() {
 
       {alreadyVoted ? (
         <AlreadyVoted />
+      ) : redirecting ? (
+        <Redirecting />
       ) : (
         <div className="mt-8 space-y-4">
           {/* Step 1 — the plain vote. Free, no wallet, and it banks a point right away. On 0G a
@@ -199,91 +218,55 @@ export default function VotePage() {
                   </div>
                 </>
               ) : gasDone ? (
-                <p className="font-body text-[14px] font-extrabold text-ink">
-                  Voting credit is in your wallet. You are set to double your vote.{" "}
-                  {status?.txHash && (
-                    <span className="font-mono text-[12px] font-bold text-ink-3">
-                      {shortId(status.txHash, 8, 6)}
-                    </span>
-                  )}
-                </p>
+                <>
+                  <p className="font-body text-[14px] font-extrabold text-ink">
+                    Voting credit is in your wallet. Now boost Zerun to double your vote.
+                  </p>
+                  <div className="mt-3">
+                    <a
+                      href={VOTE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={popButtonClass("primary", "md", "w-full sm:w-auto")}
+                    >
+                      Boost Zerun on 0G
+                    </a>
+                  </div>
+                </>
+              ) : !faucetOpen ? (
+                <>
+                  <p className="font-body text-[14px] text-ink-2">
+                    The free credit is {status?.enabled ? "used up" : "paused"} right now, but you can
+                    still boost with your own. It costs only a tiny fee.
+                  </p>
+                  <div className="mt-3">
+                    <a
+                      href={VOTE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={popButtonClass("primary", "md", "w-full sm:w-auto")}
+                    >
+                      Boost Zerun on 0G
+                    </a>
+                  </div>
+                </>
               ) : (
                 <>
                   <p className="font-body text-[14px] text-ink-2">
                     Wallet connected. Boosting has a tiny fee, so we drop your voting credit in to
-                    cover it. Free, once, and yours to keep.
+                    cover it and then take you straight to the boost. Free, once, and yours to keep.
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <PopButton
-                      onClick={claim}
-                      disabled={claiming || !faucetOpen}
-                      className="w-full sm:w-auto"
-                    >
-                      {claiming ? "Sending…" : "Claim voting credit"}
+                    <PopButton onClick={claim} disabled={claiming} className="w-full sm:w-auto">
+                      {claiming ? "Sending…" : "Claim credit and boost"}
                     </PopButton>
                     {claiming && <Spinner />}
-                    {!faucetOpen && (
-                      <span className="font-body text-[13px] text-ink-3">
-                        {status?.enabled
-                          ? "The free credit has run out, but you can still boost with your own."
-                          : "The free credit is paused right now, but you can still boost with your own."}
-                      </span>
-                    )}
                   </div>
                   {error && (
                     <p className="mt-2 font-body text-[13px] font-bold text-coral">{error}</p>
                   )}
                 </>
               )
-            }
-          />
-
-          <Step
-            n={3}
-            title="Double it: boost Zerun"
-            locked={!walletReady}
-            final
-            body={
-              <>
-                <p className="font-body text-[14px] text-ink-2">
-                  This lifts the vote you already cast from one to two. On 0G, connect your wallet and
-                  choose <strong className="text-ink">Boost</strong> on Zerun. The voting credit from
-                  step 2 pays the fee.
-                </p>
-                <p className="mt-2 rounded-chunk border-line border-ink bg-amber/25 px-3 py-2 font-body text-[13px] font-extrabold text-ink">
-                  A wallet can boost once, and it is final. Your vote from step 1 is already counting;
-                  this just doubles it. Make sure the boost lands on Zerun.
-                </p>
-                <div className="mt-4 flex items-center gap-3 rounded-chunk border-line border-ink bg-cloud-2 px-4 py-3 shadow-pop-press">
-                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-chunk border-line border-ink bg-violet font-display text-xl text-white shadow-pop-press">
-                    Z
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block font-display text-lg leading-tight text-ink">Zerun</span>
-                    <span className="block font-body text-[12px] font-bold text-ink-2">
-                      by Invincibles
-                    </span>
-                  </span>
-                  <span className="ml-auto text-right">
-                    <span className="block font-body text-[10px] font-extrabold uppercase tracking-[0.06em] text-ink-3">
-                      representing
-                    </span>
-                    <span className="block font-display text-[15px] leading-tight text-ink">
-                      Portugal
-                    </span>
-                  </span>
-                </div>
-                <div className="mt-4">
-                  <a
-                    href={VOTE_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={popButtonClass("primary", "lg", "w-full")}
-                  >
-                    Boost Zerun on 0G
-                  </a>
-                </div>
-              </>
             }
           />
         </div>
@@ -294,6 +277,40 @@ export default function VotePage() {
         recovery phrase or for permission to move anything you hold.
       </p>
     </main>
+  );
+}
+
+/**
+ * The hand-off after credit is claimed: hold for a beat, then the tab navigates to 0G's boost
+ * page on its own. The "Go now" link is a manual fallback if the auto-redirect is slow.
+ */
+function Redirecting() {
+  return (
+    <div className="mt-8">
+      <StickerCard className="p-6 text-center ring-4 ring-violet/30">
+        <div className="mx-auto w-fit motion-safe:animate-pop-in">
+          <Agent variant="violet" mood="happy" size={84} name="Zerun" />
+        </div>
+        <div className="mt-3 flex justify-center">
+          <Chip tone="live" pulse>
+            credit sent
+          </Chip>
+        </div>
+        <h2 className="mt-3 font-display text-2xl text-ink">Taking you to boost Zerun</h2>
+        <p className="mx-auto mt-2 max-w-md font-body text-[14px] font-bold text-ink-2">
+          Your voting credit is on the way. Hang on a second, then pick{" "}
+          <strong className="text-ink">Boost</strong> on Zerun to double your vote.
+        </p>
+        <p className="mt-4 inline-flex items-center justify-center gap-2 font-body text-[13px] text-ink-3">
+          <Spinner /> redirecting
+        </p>
+        <div className="mt-4">
+          <a href={VOTE_URL} className={popButtonClass("primary", "md", "w-full sm:w-auto")}>
+            Go now
+          </a>
+        </div>
+      </StickerCard>
+    </div>
   );
 }
 
