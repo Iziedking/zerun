@@ -138,6 +138,42 @@ create index if not exists poker_ratings_season_idx on poker_ratings (season, ((
 delete from poker_ratings r using agents_meta m
   where m.agent_id = r.agent_id and coalesce(m.is_house, false) = true;
 
+-- ── Zero Cup community chess competition ──────────────────────────────────────────────────
+-- Uploaded chess agents on a continuous TrueSkill ladder (a dev.fun-style event). A competition
+-- agent is NOT a Zerun NFT agent: it is a code submission by an operator, or a house "engine"
+-- stand-in that fills the ladder before public uploads open. Kept in its own tables so the
+-- submission, sandbox, and ladder concerns never touch the on-chain agent registry.
+create table if not exists chess_agents (
+  id          bigserial primary key,
+  owner       text,                             -- submitter wallet (lowercased); null for house stand-ins
+  name        text not null,
+  kind        text not null default 'upload',   -- 'upload' (player code) | 'engine' (house stand-in)
+  tier        int,                              -- engine stand-ins only: which TierEngine (0..5)
+  status      text not null default 'active',   -- active | rejected | disabled
+  code_root   text,                             -- 0G Storage root / path of the submitted file (uploads)
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create index if not exists chess_agents_status_idx on chess_agents (status);
+
+-- TrueSkill ratings per competition agent per chess season, updated after every refereed game.
+-- The public ladder ranks by the conservative rating (mu - 3*sigma). Engine stand-ins ARE rated
+-- (the early field is house self-play, and they are a benchmark to beat), but the PRIZE board
+-- filters to real uploads with an owner — see chessLadder(onlyUploads).
+create table if not exists chess_ratings (
+  season      text not null,
+  agent_id    bigint not null references chess_agents(id) on delete cascade,
+  mu          double precision not null default 25.0,
+  sigma       double precision not null default 8.3333333,
+  games       int not null default 0,
+  wins        int not null default 0,
+  draws       int not null default 0,
+  losses      int not null default 0,
+  updated_at  timestamptz not null default now(),
+  primary key (season, agent_id)
+);
+create index if not exists chess_ratings_season_idx on chess_ratings (season, ((mu - 3 * sigma)) desc);
+
 -- The 0G-authored strategy policy an agent used for a contest, anchored on 0G Storage.
 -- The policy override (a bounded tuning of the deterministic engine) is produced by a
 -- 0G Compute call and uploaded to 0G Storage, so "the agent's strategy was authored on

@@ -1,5 +1,5 @@
 import { query } from "../../db/pool.js";
-import { defaultRating, updateOneVsOne, type Rating } from "./trueskill.js";
+import { defaultRating, updateOneVsOne, type Rating } from "../trueskill.js";
 
 // Persistence for the poker TrueSkill ladder. Every finished match updates the
 // ratings of the agents that played, so the season leaderboard (mu - 3*sigma) reflects
