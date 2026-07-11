@@ -2,6 +2,13 @@
 FROM node:22-slim
 
 WORKDIR /app
+
+# python3 runs the uploaded chess agents; bubblewrap isolates them (no network, rlimits, non-root).
+# Both are needed by the chess competition sandbox (src/runners/chess/sandbox.ts + sandbox-run.sh).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 bubblewrap ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 RUN npm install -g pnpm@11.0.8
 
 # Install dependencies first for better layer caching. Skip native build scripts

@@ -1,6 +1,8 @@
+import { readFile } from "node:fs/promises";
 import { query } from "../db/pool.js";
 import { playRefereedGame } from "./chessMatch.js";
 import { engineMover, type Mover } from "../runners/chess/movers.js";
+import { sandboxMover } from "../runners/chess/sandbox.js";
 import { recordChessResult, recordChessDraw, currentChessSeason } from "../runners/chess/ratings.js";
 import { conservative } from "../runners/trueskill.js";
 
@@ -45,6 +47,7 @@ interface LadderAgent {
   name: string;
   kind: string;
   tier: number | null;
+  codeRoot: string | null;
   cons: number; // conservative rating
   games: number;
 }
@@ -55,11 +58,12 @@ async function activeAgents(season: string): Promise<LadderAgent[]> {
     name: string;
     kind: string;
     tier: number | null;
+    code_root: string | null;
     mu: number;
     sigma: number;
     games: number;
   }>(
-    `select a.id, a.name, a.kind, a.tier,
+    `select a.id, a.name, a.kind, a.tier, a.code_root,
             coalesce(r.mu, 25.0) as mu, coalesce(r.sigma, 8.3333333) as sigma,
             coalesce(r.games, 0) as games
        from chess_agents a
@@ -72,18 +76,32 @@ async function activeAgents(season: string): Promise<LadderAgent[]> {
     name: r.name,
     kind: r.kind,
     tier: r.tier === null ? null : Number(r.tier),
+    codeRoot: r.code_root,
     cons: conservative({ mu: Number(r.mu), sigma: Number(r.sigma) }),
     games: Number(r.games),
   }));
 }
 
-// Build the mover for an agent. Today only house engines exist; an uploaded agent will resolve to
-// the sandbox mover here (Phase 2), behind the same `Mover` type.
-function moverFor(a: LadderAgent): Mover {
-  if (a.kind === "engine") return engineMover(a.tier ?? 0);
-  // Placeholder until the sandbox lands: an unbuilt upload plays as a tier-0 engine so it never
-  // crashes the loop. Phase 2 replaces this with sandboxMover(a).
-  return engineMover(0);
+// Load an uploaded agent's source. Phase 2: `code_root` is a filesystem path to the agent file (so
+// the sandbox can be exercised end to end by dropping a file and a chess_agents row on the box).
+// Phase 3 will fetch it from 0G Storage by root hash; the sandbox mover is unchanged either way.
+async function loadAgentCode(codeRoot: string): Promise<string | null> {
+  try {
+    return await readFile(codeRoot, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+// Build the mover for an agent. An engine stand-in wraps the tiered engine; an uploaded agent whose
+// code loads wraps the sandbox — behind the same `Mover` type, so the referee never learns which is
+// which. An upload with no loadable code falls back to a tier-0 engine so it never breaks the loop.
+async function buildMover(a: LadderAgent): Promise<Mover> {
+  if (a.kind === "upload" && a.codeRoot) {
+    const code = await loadAgentCode(a.codeRoot);
+    if (code) return sandboxMover({ id: a.id, code, tier: a.tier ?? undefined });
+  }
+  return engineMover(a.tier ?? 0);
 }
 
 export interface LadderGameSummary {
@@ -115,8 +133,8 @@ export async function playOneLadderGame(): Promise<LadderGameSummary | null> {
   }
 
   const aWhite = Math.random() < 0.5;
-  const white = moverFor(aWhite ? a : b);
-  const black = moverFor(aWhite ? b : a);
+  const white = await buildMover(aWhite ? a : b);
+  const black = await buildMover(aWhite ? b : a);
   const result = await playRefereedGame(white, black);
 
   if (result.winner === null) {
