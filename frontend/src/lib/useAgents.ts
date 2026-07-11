@@ -66,6 +66,15 @@ export function usePokerLadder(season?: string) {
   });
 }
 
+export function useChessLadder(season?: string, uploads = false) {
+  return useQuery({
+    queryKey: ["chess-ladder", season ?? "current", uploads],
+    queryFn: () => api.chessLadder(season, uploads),
+    staleTime: 15_000,
+    refetchInterval: 20_000,
+  });
+}
+
 // agentId -> owner's X profile image. One shared, cached query for the whole app, so
 // every SkinnedAgent can look up its avatar without its own request.
 export function useAgentAvatars() {

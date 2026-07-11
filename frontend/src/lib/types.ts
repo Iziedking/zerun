@@ -239,6 +239,24 @@ export interface PokerLadderRow {
   wins: number;
 }
 
+// One agent's row on the community chess competition ladder. `rating` is the conservative
+// TrueSkill score (mu - 3*sigma). `kind` is 'upload' (a player's submitted agent) or 'engine'
+// (a house benchmark that fills the board before uploads open); `tier` is set for engines only.
+export interface ChessLadderRow {
+  agentId: number;
+  agentName: string;
+  owner: string | null;
+  kind: string;
+  tier: number | null;
+  mu: number;
+  sigma: number;
+  rating: number;
+  games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+}
+
 // One 0G Compute model's aggregated performance, for the model studies page.
 // `accuracy` is over graded answers only (Solver/Analyst); null when a model has
 // answered but never on a graded contest.

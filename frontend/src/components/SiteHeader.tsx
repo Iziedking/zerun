@@ -26,6 +26,7 @@ export function SiteHeader() {
 
   const nav = [
     { href: "/arena", label: "Arena" },
+    { href: "/chess", label: "Chess" },
     { href: "/ladder", label: "Ladder" },
     { href: "/leaderboard", label: "Leaderboard" },
     { href: "/models", label: "Models" },

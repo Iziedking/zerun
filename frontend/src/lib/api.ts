@@ -13,6 +13,7 @@ import type {
   ModelStat,
   OperatorProfile,
   PokerLadderRow,
+  ChessLadderRow,
   AgentMemoryResponse,
   AgentWallet,
   MemoryKind,
@@ -87,6 +88,13 @@ export const api = {
     req<{ season: string; ladder: PokerLadderRow[] }>(
       `/api/poker/ladder${season ? `?season=${encodeURIComponent(season)}` : ""}`,
     ),
+  chessLadder: (season?: string, uploads = false) => {
+    const qs = new URLSearchParams();
+    if (season) qs.set("season", season);
+    if (uploads) qs.set("uploads", "1");
+    const s = qs.toString();
+    return req<{ season: string; ladder: ChessLadderRow[] }>(`/api/chess/ladder${s ? `?${s}` : ""}`);
+  },
   agentMemory: (agentId: number, kind: MemoryKind = "general") =>
     req<AgentMemoryResponse>(`/api/agents/${agentId}/memory?kind=${kind}`),
   agentWallet: (agentId: number) => req<AgentWallet>(`/api/agents/${agentId}/wallet`),
