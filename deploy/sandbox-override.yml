@@ -1,0 +1,22 @@
+# Extra container settings the chess-agent sandbox needs, kept OUT of the main compose so nothing
+# else (e.g. the Caddy/telt network wiring) is disturbed. The deploy applies both files:
+#
+#   docker compose -f deploy/docker-compose.prod.yml -f deploy/sandbox-override.yml up -d --build
+#
+# bubblewrap builds the agent isolation with Linux namespaces + a fresh /proc mount. Docker's
+# defaults block that, so for the backend container only we relax:
+#   seccomp=unconfined      allow the namespace syscalls (unshare/clone)
+#   apparmor=unconfined     allow bwrap's mounts (tmpfs, binds)
+#   systempaths=unconfined  unmask /proc and /sys so bwrap can mount a clean proc
+#
+# The host must also allow unprivileged user namespaces (Ubuntu 24.04 disables them by default):
+#   sysctl kernel.apparmor_restrict_unprivileged_userns=0   (persisted in /etc/sysctl.d/ on the box)
+#
+# These relax the BACKEND container so it can SANDBOX untrusted code; the agents themselves stay
+# fully boxed inside bwrap (no network, rlimits, non-root, ephemeral fs).
+services:
+  backend:
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
