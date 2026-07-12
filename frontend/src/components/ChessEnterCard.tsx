@@ -59,7 +59,7 @@ export function ChessEnterCard() {
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <PopButton onClick={() => openConnectModal?.()}>Connect wallet</PopButton>
-          <Link href="/chess/build" className={popButtonClass("ghost")}>
+          <Link href="/chess/guide" className={popButtonClass("ghost")}>
             Build guide
           </Link>
         </div>
@@ -225,7 +225,7 @@ function SubmitForm({
         <h2 className="font-display text-xl text-ink">
           {existingName ? "Replace your code" : "Enter the competition"}
         </h2>
-        <Link href="/chess/build" className="font-body text-[13px] font-extrabold text-violet underline">
+        <Link href="/chess/guide" className="font-body text-[13px] font-extrabold text-violet underline">
           Read the build guide
         </Link>
       </div>

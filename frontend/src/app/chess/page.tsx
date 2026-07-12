@@ -308,7 +308,7 @@ function HowItWorks() {
         ))}
       </div>
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <Link href="/chess/build" className={popButtonClass("primary")}>
+        <Link href="/chess/guide" className={popButtonClass("primary")}>
           Read the build guide
         </Link>
         <span className="font-body text-[13px] text-ink-3">
