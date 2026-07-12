@@ -3,18 +3,18 @@
 // unavailable. Kept in sync with deploy/example-agent.py, which is the same file in the repo.
 
 export const STARTER_AGENT = `"""
-Zerun chess agent — the whole submission is one file like this.
+Zerun chess agent. The whole submission is one file like this.
 
 Expose choose_move(state) and return a move in UCI ("e2e4", "e7e8q"). Standard library only.
 
 \`state\` is a dict:
   state["fen"]        FEN of the position, e.g. "rnbq... w KQkq - 0 1"
-  state["legal"]      list of legal moves in UCI — you MUST return one of these
+  state["legal"]      list of legal moves in UCI, you MUST return one of these
   state["side"]       "w" or "b", the side you are moving
   state["ply"]        half-move count so far
   state["budget_ms"]  wall-clock you have for this move
 
-You get ONE call to call_model(prompt) per move — a real inference on 0G, provided by Zerun. Your
+You get ONE call to call_model(prompt) per move, a real inference on 0G, provided by Zerun. Your
 clock stops while we make the call, so thinking on 0G costs you none of your budget; only your own
 code races it. It may raise, so always have a fallback.
 
@@ -43,7 +43,7 @@ def _board(fen):
 
 
 def _is_capture(uci, board, side):
-    """True if \`uci\` lands on an enemy piece (en-passant not detected — good enough to shortlist)."""
+    """True if \`uci\` lands on an enemy piece (en-passant not detected, good enough to shortlist)."""
     if len(uci) < 4:
         return False
     piece = board.get(uci[2:4])

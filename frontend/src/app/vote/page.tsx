@@ -93,7 +93,7 @@ export default function VotePage() {
   }, [redirecting]);
 
   // A returning voter who still holds enough gas from an earlier round needs no credit. Once they
-  // have marked step 1 done and connected such a wallet, there is nothing to claim — send them
+  // have marked step 1 done and connected such a wallet, there is nothing to claim, so send them
   // straight to the ballot. This is what turns a re-vote into two taps instead of the whole flow.
   const hasEnoughGas = isConnected && Boolean(status?.hasEnoughGas);
   const alreadyVoted = isConnected && Boolean(status?.alreadyVoted);
@@ -103,7 +103,7 @@ export default function VotePage() {
 
   const gasDone = Boolean(status?.claimed) || hasEnoughGas;
   const faucetOpen = Boolean(status?.enabled) && (status?.remainingClaims ?? 0) > 0;
-  // Ready to boost once there is a connected wallet with the fee covered — we funded it, it already
+  // Ready to boost once there is a connected wallet with the fee covered: we funded it, it already
   // holds gas, or the free credit has run out and they will cover the fee themselves. Either way,
   // do not strand them behind a dry faucet.
   const walletReady = isConnected && (gasDone || !faucetOpen);
@@ -137,7 +137,7 @@ export default function VotePage() {
         <div className="mt-8 space-y-4">
           <ReturningVoterNote />
 
-          {/* Step 1 — the plain vote. Free, no wallet, and it banks a point right away. On 0G a
+          {/* Step 1, the plain vote. Free, no wallet, and it banks a point right away. On 0G a
               plain vote can be upgraded to a boost later, so locking it in now has no downside:
               worst case we keep this vote, best case we double it in step 3. */}
           <Step
@@ -194,7 +194,7 @@ export default function VotePage() {
             }
           />
 
-          {/* Step 2 — the wallet and the credit that pays the boost fee, to double the vote above. */}
+          {/* Step 2, the wallet and the credit that pays the boost fee, to double the vote above. */}
           <Step
             n={2}
             title="Claim voting credit"
@@ -246,7 +246,7 @@ export default function VotePage() {
                 // them to the ballot (the auto-redirect fires the moment step 1 is marked done).
                 <>
                   <p className="font-body text-[14px] font-extrabold text-ink">
-                    This wallet already has gas to boost. No credit needed — we are taking you
+                    This wallet already has gas to boost. No credit needed, so we are taking you
                     straight to the ballot.
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -344,7 +344,7 @@ function useIsMobile(): boolean {
 
 /**
  * The returning-voter note. 0G binds each account to ONE wallet for the whole Zero Cup, but it does
- * not show you which wallet that is — so a semi-final voter who used a wallet last round has to
+ * not show you which wallet that is, so a semi-final voter who used a wallet last round has to
  * find it themselves. This says, honestly, what to do: same account, same wallet, and the practical
  * tell (it is the wallet already holding a little 0G). A different wallet starts a separate vote
  * that does not add to the earlier one.
@@ -365,8 +365,8 @@ function ReturningVoterNote() {
             0G ties your vote to one wallet for the whole Zero Cup, and it does not show you which
             one. So sign in with the <strong className="text-ink">same Google or X</strong> you used
             before, and boost from the <strong className="text-ink">same wallet</strong>. It is the
-            wallet app you connected here last time — the one already holding a little 0G is almost
-            always it. A different wallet starts a fresh vote that will not add to your earlier one.
+            wallet app you connected here last time, and the one already holding a little 0G is
+            almost always it. A different wallet starts a fresh vote that will not add to your earlier one.
           </p>
         </div>
       </div>
