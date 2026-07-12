@@ -48,9 +48,10 @@ export function SiteHeader() {
               wallet pill), so on phones show just the Z tile and bring the word back
               at sm+. The marketing landing has room, so it keeps the full wordmark. */}
           <Wordmark wordClassName={isLanding ? "" : "hidden sm:inline-block"} />
-          {/* Desktop / tablet nav */}
+          {/* Desktop / tablet nav. With six sections plus Profile it can outgrow the bar on a
+              laptop, so it scrolls instead of clipping the last item (Profile) out of sight. */}
           {!isLanding && isConnected && (
-            <nav className="hidden items-center gap-2 sm:flex">
+            <nav className="hidden min-w-0 items-center gap-2 overflow-x-auto sm:flex [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
@@ -75,7 +76,7 @@ export function SiteHeader() {
           </div>
         ) : (
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {isConnected && !isVote && <BalancePill className="hidden md:inline-flex" />}
+            {isConnected && !isVote && <BalancePill className="hidden lg:inline-flex" />}
             {isConnected && <NotificationBell />}
             <ThemeToggle />
             <MusicPlayer className="grid" />
