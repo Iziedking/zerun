@@ -8,6 +8,13 @@
 todo.md
 todo-*.md
 
+# Host-specific compose overrides. These carry infra that belongs to one box (for
+# example the shared-Caddy network wiring), not the repo. Keeping them untracked is
+# also what lets the CI's `git pull --ff-only` succeed: the tracked compose file
+# stays clean, and box-specific deltas live here instead of as local edits to it.
+deploy/*.override.yml
+deploy/telt-network.override.yml
+
 # Node
 node_modules/
 .pnpm-store/
