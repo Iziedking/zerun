@@ -34,6 +34,8 @@ import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { standingsFor } from "../coordinator/standings.js";
 import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
 import { chessLadder, currentChessSeason } from "../runners/chess/ratings.js";
+import { submitChessAgent, myChessAgent, uploadsOpen, SubmitError } from "../runners/chess/submissions.js";
+import { verifyChessSubmit } from "../auth/chessSubmitSig.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
 import { getAgentMemory, memoryEnabled, memoryLift, memoryQueueDepth } from "../runners/agentMemory.js";
 import { agentAddress } from "../runners/agentWallet.js";
@@ -830,6 +832,42 @@ app.get("/api/chess/ladder", async (c) => {
   const onlyUploads = c.req.query("uploads") === "1";
   const ladder = await chessLadder(season, 200, onlyUploads);
   return c.json({ season, ladder });
+});
+
+// Enter the competition: one Python file, signed by the wallet it will be credited to. The file is
+// smoke-tested inside the real sandbox (three positions, a legal move required in each) before it
+// becomes an agent, so a broken entry is rejected at the door instead of forfeiting live games.
+app.post("/api/chess/agents", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    owner?: string;
+    issuedAt?: number;
+    signature?: string;
+    name?: string;
+    code?: string;
+  };
+  const name = String(body.name ?? "").trim();
+  const code = String(body.code ?? "");
+  if (!name || !code) return c.json({ error: "a name and a code file are required" }, 400);
+
+  const auth = await verifyChessSubmit(body, name, code);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+
+  try {
+    const result = await submitChessAgent(auth.owner, name, code);
+    return c.json(result);
+  } catch (err) {
+    if (err instanceof SubmitError) return c.json({ error: err.message }, err.status);
+    console.error("chess submit failed:", (err as Error).message);
+    return c.json({ error: "the submission could not be processed, try again" }, 500);
+  }
+});
+
+// A wallet's own entry: what it submitted, and how it is doing on the board. `open` tells the UI
+// whether submissions are being accepted at all.
+app.get("/api/chess/agents/mine", async (c) => {
+  const owner = String(c.req.query("owner") ?? "").toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(owner)) return c.json({ error: "a wallet address is required" }, 400);
+  return c.json({ open: uploadsOpen(), agent: await myChessAgent(owner) });
 });
 
 // An agent's own memory: the 0G-authored self-summary it carries across contests, its

@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useChessLadder } from "@/lib/useAgents";
 import { shortAddr } from "@/lib/format";
 import type { ChessLadderRow } from "@/lib/types";
-import { Agent, agentVariant, Chip, CoinStat, PopButton, StickerCard, cx } from "@/components/zerun";
+import { ChessEnterCard } from "@/components/ChessEnterCard";
+import { Agent, agentVariant, Chip, CoinStat, StickerCard, cx } from "@/components/zerun";
+import { popButtonClass } from "@/components/zerun/PopButton";
 
 // The Zero Cup community chess competition: upload an agent, it plays everyone on a continuous
-// TrueSkill ladder, and the top five by the deadline win. Phase 1 is this board; uploads open next.
+// TrueSkill ladder, and the top five by the deadline win. Anyone can enter — the board below is
+// the live standing, and the card above it is the front door.
 
 // The event ends end-of-day July 20, 2026 (UTC). The top five uploads at that moment win.
 const ENDS_AT = Date.UTC(2026, 6, 20, 23, 59, 59);
@@ -59,6 +63,8 @@ export default function ChessCompetitionPage() {
 
       <PrizeCard />
 
+      <ChessEnterCard />
+
       {isLoading ? (
         <div className="h-64 animate-pulse rounded-chunk-lg border-line border-ink bg-cloud-2" aria-hidden />
       ) : isError ? (
@@ -88,7 +94,7 @@ export default function ChessCompetitionPage() {
               </div>
               <p className="mt-4 font-body text-[15px] text-ink-2">
                 {uploadsOnly
-                  ? "No player agents yet. Uploads open soon, and the first submissions land here."
+                  ? "No player agents yet. Be the first: submit above and you start the prize board."
                   : "The ladder is warming up. As games play out, agents climb the board here."}
               </p>
             </StickerCard>
@@ -248,7 +254,7 @@ function PrizeCard() {
   );
 }
 
-/** A short explainer of the event, and the submit CTA (opens in the next phase). */
+/** A short explainer of the event, pointing at the build guide. */
 function HowItWorks() {
   const steps = [
     {
@@ -279,9 +285,11 @@ function HowItWorks() {
         ))}
       </div>
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <PopButton disabled>Uploads open soon</PopButton>
+        <Link href="/chess/build" className={popButtonClass("primary")}>
+          Read the build guide
+        </Link>
         <span className="font-body text-[13px] text-ink-3">
-          The board is live now with Zerun benchmarks. Bring your agent when submissions open.
+          The contract is one function. The starter agent is a copy-paste away.
         </span>
       </div>
     </StickerCard>

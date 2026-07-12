@@ -75,6 +75,18 @@ export function useChessLadder(season?: string, uploads = false) {
   });
 }
 
+// The connected wallet's competition entry, if it has one. Also carries whether submissions are
+// open at all, so the page can say so instead of failing at the end of a long form.
+export function useMyChessAgent(owner?: string | null) {
+  return useQuery({
+    queryKey: ["chess-mine", owner ?? "none"],
+    queryFn: () => api.myChessAgent(owner as string),
+    enabled: Boolean(owner),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
 // agentId -> owner's X profile image. One shared, cached query for the whole app, so
 // every SkinnedAgent can look up its avatar without its own request.
 export function useAgentAvatars() {

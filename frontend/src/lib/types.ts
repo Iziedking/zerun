@@ -257,6 +257,47 @@ export interface ChessLadderRow {
   losses: number;
 }
 
+// One position from the entry check: the sandbox played the submitted agent on it and this is the
+// move it chose. Shown back to the player as proof their agent really moved.
+export interface ChessSmokeMove {
+  position: string;
+  uci: string | null;
+  ms: number;
+}
+
+// The result of a successful submission. `resubmitted` means an existing entry was replaced;
+// `storageRoot` is the 0G Storage anchor of the exact file, when storage is on.
+export interface ChessSubmitResult {
+  agentId: number;
+  name: string;
+  resubmitted: boolean;
+  storageRoot: string | null;
+  smoke: ChessSmokeMove[];
+}
+
+// A wallet's own competition entry, with its live standing.
+export interface MyChessAgent {
+  agentId: number;
+  name: string;
+  status: string;
+  storageRoot: string | null;
+  codeSha: string | null;
+  submittedAt: string;
+  mu: number;
+  sigma: number;
+  rating: number;
+  games: number;
+  wins: number;
+  draws: number;
+  losses: number;
+}
+
+// `open` is whether submissions are being accepted at all; `agent` is null until the wallet enters.
+export interface MyChessAgentResponse {
+  open: boolean;
+  agent: MyChessAgent | null;
+}
+
 // One 0G Compute model's aggregated performance, for the model studies page.
 // `accuracy` is over graded answers only (Solver/Analyst); null when a model has
 // answered but never on a graded contest.
@@ -480,4 +521,8 @@ export interface VoteGasStatus {
   remainingClaims: number;
   /** This wallet has already voted and can never vote again. */
   alreadyVoted: boolean;
+  /** This wallet already holds enough mainnet gas to boost, so it needs no credit. */
+  hasEnoughGas: boolean;
+  /** The wallet's mainnet 0G balance. "0" when unknown. */
+  balanceOg: string;
 }

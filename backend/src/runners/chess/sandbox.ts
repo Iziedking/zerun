@@ -26,6 +26,9 @@ const SANDBOX_CMD = (process.env.CHESS_SANDBOX_CMD ?? "").trim();
 const PYTHON = process.env.CHESS_SANDBOX_PYTHON ?? "python3";
 const MOVE_BUDGET_MS = Number(process.env.CHESS_SANDBOX_MOVE_MS ?? "5000");
 const KILL_GRACE_MS = Number(process.env.CHESS_SANDBOX_KILL_GRACE_MS ?? "1500");
+// How long Zerun's own 0G call may take before the move is abandoned. This is OUR latency, not the
+// agent's, so it is bounded separately from the player's thinking budget (see the clock below).
+const MODEL_TIMEOUT_MS = Number(process.env.CHESS_SANDBOX_MODEL_MS ?? "25000");
 const MAX_TOKENS = Number(process.env.CHESS_SANDBOX_MAX_TOKENS ?? "256");
 const UPLOAD_TIER = Number(process.env.CHESS_UPLOAD_TIER ?? "4");
 const DAILY_CALL_CAP = Number(process.env.CHESS_SANDBOX_DAILY_CALLS ?? "1000");
@@ -128,10 +131,36 @@ export async function runAgentMove(
     let settled = false;
     let stderr = "";
 
+    // The agent's clock measures the AGENT's thinking, and only that. When it calls call_model we
+    // stop the clock, make the 0G call on its behalf, and restart it when the answer goes back:
+    // Zerun's inference latency is not the player's time. Charging it to them would forfeit the
+    // games of every agent that uses the very inference this competition hands them — a 0G call can
+    // easily outlast a five-second move budget on its own.
+    //
+    // The pause is safe. It relaxes only the WALL clock: the agent is blocked on stdin waiting for
+    // the answer, the harness allows one call per move, the model call has its own timeout, and the
+    // sandbox's CPU rlimit still kills anything that tries to think while it waits.
+    let remaining = budgetMs + KILL_GRACE_MS;
+    let armedAt = Date.now();
+    let clock: ReturnType<typeof setTimeout> | null = null;
+    let modelClock: ReturnType<typeof setTimeout> | null = null;
+
+    const stopClock = () => {
+      if (!clock) return;
+      clearTimeout(clock);
+      clock = null;
+      remaining -= Date.now() - armedAt;
+    };
+    const startClock = () => {
+      armedAt = Date.now();
+      clock = setTimeout(() => done({ ok: false, error: "timeout" }), Math.max(1, remaining));
+    };
+
     const done = (r: SandboxResult) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (clock) clearTimeout(clock);
+      if (modelClock) clearTimeout(modelClock);
       try {
         child.kill("SIGKILL");
       } catch {
@@ -144,8 +173,6 @@ export async function runAgentMove(
       }
       resolve(r);
     };
-
-    const timer = setTimeout(() => done({ ok: false, error: "timeout" }), budgetMs + KILL_GRACE_MS);
 
     const send = (obj: unknown) => {
       try {
@@ -174,9 +201,17 @@ export async function runAgentMove(
         return; // ignore non-JSON the agent may have printed
       }
       if (msg.t === "call") {
+        stopClock();
+        modelClock = setTimeout(() => done({ ok: false, error: "model timeout" }), MODEL_TIMEOUT_MS);
         void serveCall(agentId, tier, String(msg.prompt ?? "")).then((res) => {
+          if (modelClock) {
+            clearTimeout(modelClock);
+            modelClock = null;
+          }
+          if (settled) return;
           if (res.ok) send({ t: "model", text: res.text });
           else send({ t: "model_err", msg: res.msg });
+          startClock();
         });
       } else if (msg.t === "move") {
         done({ ok: true, uci: String(msg.uci ?? "").trim() });
@@ -185,7 +220,8 @@ export async function runAgentMove(
       }
     });
 
-    // Kick it off with the position as the first line.
+    // Kick it off with the position as the first line, and start the agent's clock.
+    startClock();
     send({ t: "state", fen: state.fen, legal: state.legal, side: state.side, ply: state.ply, budget_ms: budgetMs });
   });
 }

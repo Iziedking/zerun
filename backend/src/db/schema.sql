@@ -155,6 +155,13 @@ create table if not exists chess_agents (
   updated_at  timestamptz not null default now()
 );
 create index if not exists chess_agents_status_idx on chess_agents (status);
+-- Public uploads: `code_root` is the path the runner reads the file back from, `storage_root` is
+-- the 0G Storage anchor of the exact bytes submitted, and `code_sha` is what the submitter's wallet
+-- signature committed to — so the agent that plays is provably the agent that was uploaded.
+alter table chess_agents add column if not exists storage_root text;
+alter table chess_agents add column if not exists code_sha text;
+-- One entry per wallet, so the owner lookup on submit is a point read.
+create index if not exists chess_agents_owner_idx on chess_agents (owner) where kind = 'upload';
 
 -- TrueSkill ratings per competition agent per chess season, updated after every refereed game.
 -- The public ladder ranks by the conservative rating (mu - 3*sigma). Engine stand-ins ARE rated
@@ -449,3 +456,24 @@ create table if not exists vote_gas_claims (
   created_at timestamptz not null default now()
 );
 create index if not exists vote_gas_claims_created_idx on vote_gas_claims (created_at desc);
+-- Multi-round: each Zero Cup round is a fresh vote on a new ballot, so a voter who spent their gas
+-- last round needs a new top-up this round. A wallet may now hold more than one claim. The guard
+-- against double-funding is no longer "one row per wallet" — it is the live BALANCE check in
+-- claimVoteGas (a wallet that already holds enough gas is refused). Budget is still sum(amount_wei)
+-- over all rows. Migrate off the address primary key to a surrogate id, keeping an address index.
+alter table vote_gas_claims add column if not exists id bigserial;
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+     where conrelid = 'vote_gas_claims'::regclass and contype = 'p' and conname = 'vote_gas_claims_pkey'
+  ) then
+    alter table vote_gas_claims drop constraint vote_gas_claims_pkey;
+  end if;
+  if not exists (
+    select 1 from pg_constraint where conrelid = 'vote_gas_claims'::regclass and contype = 'p'
+  ) then
+    alter table vote_gas_claims add primary key (id);
+  end if;
+end $$;
+create index if not exists vote_gas_claims_address_idx on vote_gas_claims (address);

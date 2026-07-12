@@ -37,6 +37,13 @@ const SKIP_VOTED = (process.env.VOTE_GAS_SKIP_VOTED ?? "on").toLowerCase() === "
 /** What one voter receives. A boost costs a fraction of this; the rest is slack for gas spikes. */
 const AMOUNT_OG = process.env.VOTE_GAS_AMOUNT_OG ?? "0.003";
 
+// The balance at or above which a wallet is treated as "already funded": it holds enough mainnet
+// 0G to boost, so it needs no credit — the page sends it straight to the ballot and the faucet
+// refuses it. Set well below AMOUNT_OG so a wallet we just funded reads as funded, and above a
+// single boost's gas so a genuinely empty wallet does not. This is what lets a returning voter who
+// still has last round's gas skip the claim, while one who spent it gets a fresh top-up.
+const FUNDED_THRESHOLD_OG = process.env.VOTE_GAS_FUNDED_OG ?? "0.0008";
+
 /** The whole campaign's ceiling. At 0.003 0G a claim, 3 0G funds a thousand voters. */
 const BUDGET_OG = process.env.VOTE_GAS_BUDGET_OG ?? "3";
 
@@ -55,6 +62,11 @@ export interface VoteGasStatus {
   remainingClaims: number;
   /** This wallet has already voted and can never vote again. The whole flow is moot for it. */
   alreadyVoted: boolean;
+  /** This wallet already holds enough mainnet gas to boost, so it needs no credit — the page
+   * blurs the claim and sends it straight to the ballot. */
+  hasEnoughGas: boolean;
+  /** The wallet's mainnet 0G balance, for the UI and for debugging the gate. "0" when unknown. */
+  balanceOg: string;
 }
 
 export function voteGasConfigured(): boolean {
@@ -103,6 +115,25 @@ async function canStillVote(address: string): Promise<boolean | null> {
 
 const amountWei = () => ethers.parseEther(AMOUNT_OG);
 const budgetWei = () => ethers.parseEther(BUDGET_OG);
+const fundedWei = () => ethers.parseEther(FUNDED_THRESHOLD_OG);
+
+// The wallet's live mainnet balance, briefly cached. Read alongside the vote oracle so a returning
+// voter with leftover gas is recognised and sent straight to the ballot instead of re-funded.
+const balanceCache = new Map<string, { wei: bigint; at: number }>();
+async function balanceOf(address: string): Promise<bigint | null> {
+  if (!RPC) return null;
+  const key = address.toLowerCase();
+  const hit = balanceCache.get(key);
+  if (hit && Date.now() - hit.at < ORACLE_TTL_MS) return hit.wei;
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC);
+    const wei = await provider.getBalance(address);
+    balanceCache.set(key, { wei, at: Date.now() });
+    return wei;
+  } catch {
+    return null;
+  }
+}
 
 /** Total real 0G this campaign has committed, in flight or settled. */
 async function spentWei(): Promise<bigint> {
@@ -112,9 +143,10 @@ async function spentWei(): Promise<bigint> {
   return BigInt(rows[0]?.sum ?? "0");
 }
 
+// The wallet's most recent claim, if any. Multi-row now (one per round), so take the latest.
 async function claimOf(address: string): Promise<{ tx_hash: string | null } | null> {
   const { rows } = await query<{ tx_hash: string | null }>(
-    "select tx_hash from vote_gas_claims where address = $1",
+    "select tx_hash from vote_gas_claims where address = $1 order by id desc limit 1",
     [address],
   );
   return rows[0] ?? null;
@@ -128,8 +160,9 @@ export async function voteGasStatus(address: string): Promise<VoteGasStatus> {
   const left = budgetWei() - (await spentWei());
   const per = amountWei();
   const claim = isAddress(address) ? await claimOf(address) : null;
-  // Only worth an RPC round-trip once there is a real wallet to ask about.
+  // Only worth the RPC round-trips once there is a real wallet to ask about.
   const canVote = isAddress(address) ? await canStillVote(address) : null;
+  const bal = isAddress(address) ? await balanceOf(address) : null;
   return {
     enabled: voteGasConfigured(),
     amountOg: AMOUNT_OG,
@@ -137,6 +170,8 @@ export async function voteGasStatus(address: string): Promise<VoteGasStatus> {
     txHash: claim?.tx_hash ?? null,
     remainingClaims: left > 0n ? Number(left / per) : 0,
     alreadyVoted: canVote === false,
+    hasEnoughGas: bal !== null && bal >= fundedWei(),
+    balanceOg: bal !== null ? ethers.formatEther(bal) : "0",
   };
 }
 
@@ -152,9 +187,16 @@ export async function claimVoteGas(address: string): Promise<ClaimResult> {
   if (inFlight.has(address)) return { ok: false, status: 429, error: "a claim is already in progress for this wallet" };
   inFlight.add(address);
   try {
-    const existing = await claimOf(address);
-    if (existing) {
-      return { ok: false, status: 409, error: "this wallet has already claimed. One claim per wallet." };
+    // The anti-double-fund guard is the live balance, not the claim history: a wallet that already
+    // holds enough gas to boost is refused (it needs nothing, and the page will send it to the
+    // ballot), while a returning voter who spent last round's gas is allowed a fresh top-up.
+    const bal = await balanceOf(address);
+    if (bal !== null && bal >= fundedWei()) {
+      return {
+        ok: false,
+        status: 409,
+        error: "this wallet already has enough gas to boost. Head to the ballot and boost Zerun.",
+      };
     }
 
     // Do not fund a wallet that can no longer vote. A revert from the oracle is a certain "already
@@ -172,9 +214,13 @@ export async function claimVoteGas(address: string): Promise<ClaimResult> {
       return { ok: false, status: 503, error: "the gas faucet has run dry. Thanks for voting anyway." };
     }
 
-    // Reserve first. If the send throws we delete this row, so a failure never costs the voter
-    // their one claim, and a slow send can never be paid twice.
-    await query("insert into vote_gas_claims (address, amount_wei) values ($1, $2)", [address, per.toString()]);
+    // Reserve first, as its own row. If the send throws we delete THIS row (by id), so a failure
+    // never costs the voter their claim, and a slow send can never be paid twice.
+    const { rows: reserved } = await query<{ id: string }>(
+      "insert into vote_gas_claims (address, amount_wei) values ($1, $2) returning id",
+      [address, per.toString()],
+    );
+    const claimId = reserved[0]!.id;
 
     // Broadcasting and confirming are two different things, and confusing them here would cost
     // real money. Once `sendTransaction` returns a hash the 0G has left our wallet, so the hash
@@ -185,12 +231,14 @@ export async function claimVoteGas(address: string): Promise<ClaimResult> {
       const wallet = new ethers.Wallet(SIGNER_KEY, provider);
       tx = await wallet.sendTransaction({ to: address, value: per });
     } catch (err) {
-      // Nothing was sent: give the voter their claim back.
-      await query("delete from vote_gas_claims where address = $1 and tx_hash is null", [address]).catch(() => {});
+      // Nothing was sent: delete exactly this reservation, so the voter keeps any prior claim.
+      await query("delete from vote_gas_claims where id = $1 and tx_hash is null", [claimId]).catch(() => {});
       console.error(`vote gas: transfer to ${address} failed to broadcast:`, (err as Error).message);
       return { ok: false, status: 502, error: "the transfer did not go through. Try again in a moment." };
     }
-    await query("update vote_gas_claims set tx_hash = $2 where address = $1", [address, tx.hash]).catch(() => {});
+    await query("update vote_gas_claims set tx_hash = $2 where id = $1", [claimId, tx.hash]).catch(() => {});
+    // The wallet is funded now; drop the cached balance so the next status read reflects it.
+    balanceCache.delete(address.toLowerCase());
 
     // Confirmation is a nicety. If the RPC stalls we still succeeded: deleting the row here
     // would hand this wallet a second claim for gas it has already been paid.

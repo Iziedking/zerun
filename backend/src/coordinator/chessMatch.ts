@@ -45,8 +45,14 @@ export interface MatchResult {
 
 export interface MatchOptions {
   maxPly?: number;
-  /** Per-move wall-clock budget handed to each mover, and enforced as a backstop timeout. */
+  /** Per-move thinking budget handed to each mover. This is the clock a player races: their own
+   * code's time. It is NOT the referee's timeout — see moveGraceMs. */
   moveBudgetMs?: number;
+  /** Extra wall clock the referee allows on top of moveBudgetMs before it gives up on a mover.
+   * An uploaded agent gets one 0G inference per move, made by Zerun on its behalf, and that call
+   * can outlast the thinking budget by itself. The sandbox does not charge it to the agent, so the
+   * referee must not either — its timeout is only a backstop against a mover that never returns. */
+  moveGraceMs?: number;
   /** Centipawn edge (white POV) needed for the adjudication tiebreak to name a winner. */
   adjMargin?: number;
   /** Seeded RNG for reproducibility; defaults to Math.random. */
@@ -57,6 +63,7 @@ export interface MatchOptions {
 
 const DEFAULT_MAX_PLY = Number(process.env.CHESS_LADDER_MAX_PLY ?? "160");
 const DEFAULT_MOVE_MS = Number(process.env.CHESS_LADDER_MOVE_MS ?? "5000");
+const DEFAULT_MOVE_GRACE_MS = Number(process.env.CHESS_LADDER_MOVE_GRACE_MS ?? "30000");
 const DEFAULT_ADJ = Number(process.env.CHESS_ADJUDICATION_MARGIN ?? "100");
 
 /** The legal move matching a UCI string, or null if it is illegal or unparseable. */
@@ -101,6 +108,7 @@ function decideOnClock(pos: Position, plies: number, adjMargin: number): MatchRe
 export async function playRefereedGame(white: Mover, black: Mover, opts: MatchOptions = {}): Promise<MatchResult> {
   const maxPly = opts.maxPly ?? DEFAULT_MAX_PLY;
   const moveMs = opts.moveBudgetMs ?? DEFAULT_MOVE_MS;
+  const graceMs = opts.moveGraceMs ?? DEFAULT_MOVE_GRACE_MS;
   const adjMargin = opts.adjMargin ?? DEFAULT_ADJ;
   const rand = opts.rand ?? Math.random;
 
@@ -129,7 +137,10 @@ export async function playRefereedGame(white: Mover, black: Mover, opts: MatchOp
 
     let uci: string;
     try {
-      uci = await withTimeout(mover(pos, ctx), moveMs);
+      // The mover is told its thinking budget (ctx.deadlineMs) and enforces it itself — a sandboxed
+      // agent is killed on its own clock. This timeout is the backstop for a mover that never comes
+      // back at all, so it allows for the 0G call Zerun makes on the agent's behalf as well.
+      uci = await withTimeout(mover(pos, ctx), moveMs + graceMs);
     } catch {
       // Crash or blown clock: the side to move forfeits.
       return { winner: side === "w" ? "b" : "w", how: "forfeit", forfeit: side, plies: ply, finalFen: toFEN(pos) };

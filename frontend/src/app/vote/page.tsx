@@ -20,8 +20,8 @@ import { Spinner } from "@/components/ui";
 
 // Where 0G puts the Google and X sign-in.
 const SIGN_IN_URL = "https://0g.ai/arena/community/zero-cup";
-// The quarter-final ballot: the page with Zerun on it.
-const VOTE_URL = "https://0g.ai/arena/community/zero-cup/quarter-finals-zegon-vs-zerun";
+// The semi-final ballot: the page with Zerun on it (AskZero vs Zerun).
+const VOTE_URL = "https://0g.ai/arena/community/zero-cup/semi-finals-askzero-vs-zerun";
 
 // Boosting needs a wallet, and most people here do not have one. These are the ones we point them
 // at: all free, all with a phone app, all able to open our page and 0G's inside them. One tap.
@@ -92,14 +92,21 @@ export default function VotePage() {
     return () => clearTimeout(t);
   }, [redirecting]);
 
-  const gasDone = Boolean(status?.claimed);
-  const faucetOpen = Boolean(status?.enabled) && (status?.remainingClaims ?? 0) > 0;
-  // Ready to boost once there is a connected wallet with the fee covered — either we funded it, or
-  // the free credit has run out and they will cover the fee themselves. Either way, do not strand
-  // them behind a dry faucet.
-  const walletReady = isConnected && (gasDone || !faucetOpen);
-  // The contract lets a wallet vote exactly once. If this one already has, the flow is moot.
+  // A returning voter who still holds enough gas from an earlier round needs no credit. Once they
+  // have marked step 1 done and connected such a wallet, there is nothing to claim — send them
+  // straight to the ballot. This is what turns a re-vote into two taps instead of the whole flow.
+  const hasEnoughGas = isConnected && Boolean(status?.hasEnoughGas);
   const alreadyVoted = isConnected && Boolean(status?.alreadyVoted);
+  useEffect(() => {
+    if (voted && hasEnoughGas && !alreadyVoted && !redirecting) setRedirecting(true);
+  }, [voted, hasEnoughGas, alreadyVoted, redirecting]);
+
+  const gasDone = Boolean(status?.claimed) || hasEnoughGas;
+  const faucetOpen = Boolean(status?.enabled) && (status?.remainingClaims ?? 0) > 0;
+  // Ready to boost once there is a connected wallet with the fee covered — we funded it, it already
+  // holds gas, or the free credit has run out and they will cover the fee themselves. Either way,
+  // do not strand them behind a dry faucet.
+  const walletReady = isConnected && (gasDone || !faucetOpen);
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-14">
@@ -111,11 +118,11 @@ export default function VotePage() {
           Vote for Zerun
         </h1>
         <p className="mx-auto mt-2 max-w-md font-body text-[15px] font-bold text-ink-2">
-          We reached the quarter-finals of the 2026 0G Zero Cup. Vote for Zerun in seconds with no
+          We reached the semi-finals of the 2026 0G Zero Cup. Vote for Zerun in seconds with no
           wallet, then double it if you can. The fee for that is on us.
         </p>
         <div className="mt-3 flex justify-center gap-2">
-          <Chip tone="won">quarter-finals</Chip>
+          <Chip tone="won">semi-finals</Chip>
           <Chip tone="live" pulse>
             voting open
           </Chip>
@@ -128,6 +135,8 @@ export default function VotePage() {
         <Redirecting />
       ) : (
         <div className="mt-8 space-y-4">
+          <ReturningVoterNote />
+
           {/* Step 1 — the plain vote. Free, no wallet, and it banks a point right away. On 0G a
               plain vote can be upgraded to a boost later, so locking it in now has no downside:
               worst case we keep this vote, best case we double it in step 3. */}
@@ -232,6 +241,28 @@ export default function VotePage() {
                     </div>
                   </>
                 )
+              ) : hasEnoughGas ? (
+                // Already funded from an earlier round: nothing to claim. Blur the claim and hand
+                // them to the ballot (the auto-redirect fires the moment step 1 is marked done).
+                <>
+                  <p className="font-body text-[14px] font-extrabold text-ink">
+                    This wallet already has gas to boost. No credit needed — we are taking you
+                    straight to the ballot.
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <PopButton disabled className="pointer-events-none w-full blur-[1px] sm:w-auto">
+                      Claim credit and boost
+                    </PopButton>
+                    <a
+                      href={VOTE_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={popButtonClass("primary", "md", "w-full sm:w-auto")}
+                    >
+                      Boost Zerun on 0G
+                    </a>
+                  </div>
+                </>
               ) : gasDone ? (
                 <>
                   <p className="font-body text-[14px] font-extrabold text-ink">
@@ -309,6 +340,38 @@ function useIsMobile(): boolean {
     return () => mq.removeEventListener("change", update);
   }, []);
   return mobile;
+}
+
+/**
+ * The returning-voter note. 0G binds each account to ONE wallet for the whole Zero Cup, but it does
+ * not show you which wallet that is — so a semi-final voter who used a wallet last round has to
+ * find it themselves. This says, honestly, what to do: same account, same wallet, and the practical
+ * tell (it is the wallet already holding a little 0G). A different wallet starts a separate vote
+ * that does not add to the earlier one.
+ */
+function ReturningVoterNote() {
+  return (
+    <StickerCard className="border-amber/60 bg-amber/10 p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-chunk border-line border-ink bg-amber text-lg shadow-pop-press" aria-hidden>
+          ↩︎
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-display text-lg text-ink">Voted in an earlier round?</h2>
+            <Chip tone="won">boost from the same wallet</Chip>
+          </div>
+          <p className="mt-1 font-body text-[13px] leading-relaxed text-ink-2">
+            0G ties your vote to one wallet for the whole Zero Cup, and it does not show you which
+            one. So sign in with the <strong className="text-ink">same Google or X</strong> you used
+            before, and boost from the <strong className="text-ink">same wallet</strong>. It is the
+            wallet app you connected here last time — the one already holding a little 0G is almost
+            always it. A different wallet starts a fresh vote that will not add to your earlier one.
+          </p>
+        </div>
+      </div>
+    </StickerCard>
+  );
 }
 
 /**

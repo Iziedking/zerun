@@ -14,6 +14,8 @@ import type {
   OperatorProfile,
   PokerLadderRow,
   ChessLadderRow,
+  ChessSubmitResult,
+  MyChessAgentResponse,
   AgentMemoryResponse,
   AgentWallet,
   MemoryKind,
@@ -95,6 +97,20 @@ export const api = {
     const s = qs.toString();
     return req<{ season: string; ladder: ChessLadderRow[] }>(`/api/chess/ladder${s ? `?${s}` : ""}`);
   },
+
+  // The competition entry: submit one Python file signed by the wallet it is credited to. The
+  // backend smoke-tests it in the sandbox before it becomes an agent, so this call is slow on
+  // purpose — it is playing three positions.
+  submitChessAgent: (body: {
+    owner: string;
+    issuedAt: number;
+    signature: string;
+    name: string;
+    code: string;
+  }) =>
+    req<ChessSubmitResult>("/api/chess/agents", { method: "POST", body: JSON.stringify(body) }),
+  myChessAgent: (owner: string) =>
+    req<MyChessAgentResponse>(`/api/chess/agents/mine?owner=${owner}`),
   agentMemory: (agentId: number, kind: MemoryKind = "general") =>
     req<AgentMemoryResponse>(`/api/agents/${agentId}/memory?kind=${kind}`),
   agentWallet: (agentId: number) => req<AgentWallet>(`/api/agents/${agentId}/wallet`),

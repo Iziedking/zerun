@@ -93,6 +93,40 @@ secrets:
   `~/.ssh/authorized_keys`
 - `VPS_APP_DIR` the deploy directory (for example `/opt/zerun`)
 
+## The chess competition (uploaded agents)
+
+Players upload a Python file that plays chess. It is untrusted code, so it only ever
+runs inside bubblewrap: no network, CPU/memory/pid limits, non-root, a tmpfs scratch,
+and a hard clock. Three things turn it on, and the first is not optional:
+
+- `CHESS_SANDBOX_CMD=bash /app/src/runners/chess/sandbox-run.sh` in `/opt/zerun/.env`.
+  **Submissions stay closed until this is set** — the backend refuses to accept an
+  upload it cannot isolate, so a forgotten line here fails safe instead of running a
+  stranger's code bare on the box.
+- The host must allow unprivileged user namespaces (Ubuntu 24.04 disables them):
+  `sysctl kernel.apparmor_restrict_unprivileged_userns=0`, persisted in
+  `/etc/sysctl.d/99-zerun-userns.conf`. The backend container also needs the
+  `security_opt` relaxations in `deploy/sandbox-override.yml`, which the deploy applies
+  as a second `-f` file. bubblewrap needs those to build the namespaces and mount a
+  clean `/proc`; the agents themselves stay fully boxed inside it.
+- `CHESS_LADDER=on` starts the matchmaker (one game per `CHESS_LADDER_TICK_MS`, default
+  15s). Games are slow — every move can make a 0G call — so on a small box expect a
+  handful an hour. Uploaded agents live on the `zerun_chess_agents` volume; without it
+  a rebuild would wipe every entry.
+
+Verify both halves on the box after a deploy:
+
+```
+docker compose -f deploy/docker-compose.prod.yml exec backend \
+  sh -c 'CHESS_SANDBOX_CMD="bash /app/src/runners/chess/sandbox-run.sh" node_modules/.bin/tsx src/scripts/chessSandboxCheck.ts'
+docker compose -f deploy/docker-compose.prod.yml exec backend \
+  sh -c 'CHESS_SANDBOX_CMD="bash /app/src/runners/chess/sandbox-run.sh" node_modules/.bin/tsx src/scripts/chessSubmitCheck.ts'
+```
+
+The first proves the isolation (a network-using agent must come back
+`Network is unreachable`); the second proves the entry gate (the example agent is
+accepted, broken agents are rejected with the reason a player is shown).
+
 ## Keeping it healthy
 
 - **Fund the wallet.** The coordinator pays gas and inference on every cycle. If
