@@ -33,7 +33,7 @@ import { runChessContest } from "../coordinator/runChessContest.js";
 import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { standingsFor } from "../coordinator/standings.js";
 import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
-import { chessLadder, currentChessSeason } from "../runners/chess/ratings.js";
+import { chessLadder, currentChessSeason, chessQualify } from "../runners/chess/ratings.js";
 import { submitChessAgent, myChessAgent, uploadsOpen, SubmitError } from "../runners/chess/submissions.js";
 import { verifyChessSubmit } from "../auth/chessSubmitSig.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
@@ -831,7 +831,7 @@ app.get("/api/chess/ladder", async (c) => {
   const season = c.req.query("season") || currentChessSeason();
   const onlyUploads = c.req.query("uploads") === "1";
   const ladder = await chessLadder(season, 200, onlyUploads);
-  return c.json({ season, ladder });
+  return c.json({ season, ladder, qualify: chessQualify() });
 });
 
 // Enter the competition: one Python file, signed by the wallet it will be credited to. The file is

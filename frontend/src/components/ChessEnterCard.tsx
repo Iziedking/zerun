@@ -14,8 +14,8 @@ import { Agent, Chip, PopButton, StickerCard, cx } from "@/components/zerun";
 import { popButtonClass } from "@/components/zerun/PopButton";
 
 // The competition front door: pick a name, hand us one Python file, sign it with your wallet, and
-// the agent joins the ladder. The submit call is slow on purpose — the backend is playing your
-// agent on three real positions inside the sandbox before it lets it on the board — so the waiting
+// the agent joins the ladder. The submit call is slow on purpose: the backend is playing your
+// agent on three real positions inside the sandbox before it lets it on the board, so the waiting
 // state says exactly that instead of spinning silently.
 
 const MAX_BYTES = 65536;
@@ -184,7 +184,7 @@ function SubmitForm({
             <p className="mt-1 font-body text-[14px] text-ink-2">
               It passed the check and starts playing within the minute. Watch it climb below.
               {result.resubmitted
-                ? " Its rating carries over, but the uncertainty resets — new code has to prove itself again."
+                ? " New code means a clean slate: your old position is cleared and it climbs again from scratch."
                 : ""}
             </p>
           </div>
@@ -301,7 +301,7 @@ function SubmitForm({
           <div className="flex items-center gap-3 rounded-chunk border-line border-ink bg-cloud-2 p-4 shadow-pop-press">
             <Agent variant="cyan" mood="thinking" size={44} name="checking your agent" />
             <p className="font-body text-[14px] text-ink-2">
-              Running your agent in the sandbox on three positions — an opening, a middlegame and an
+              Running your agent in the sandbox on three positions: an opening, a middlegame and an
               endgame. It has to return a legal move in each one. This takes a few seconds.
             </p>
           </div>
@@ -318,7 +318,7 @@ function SubmitForm({
                   : "Submit my agent"}
           </PopButton>
           <span className="font-body text-[13px] text-ink-3">
-            Signing is free — it proves the entry is yours. No gas, no fee.
+            Signing is free and just proves the entry is yours. No gas, no fee.
           </span>
         </div>
       </div>

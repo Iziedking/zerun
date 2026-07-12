@@ -255,6 +255,14 @@ export interface ChessLadderRow {
   wins: number;
   draws: number;
   losses: number;
+  qualified: boolean;
+}
+
+// The minimum an uploaded agent must reach to make the prize board: rated games played and a
+// conservative rating floor. Uploading new code resets both, so the climb starts over.
+export interface ChessQualify {
+  minGames: number;
+  minRating: number;
 }
 
 // One position from the entry check: the sandbox played the submitted agent on it and this is the

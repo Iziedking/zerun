@@ -12,6 +12,21 @@ export function currentChessSeason(): string {
   return process.env.CHESS_SEASON ?? "c1";
 }
 
+// Qualification for the prize board. A fresh upload starts with no rating, so to be in the running
+// an agent has to earn its place: play at least this many rated games AND hold a conservative
+// rating above the floor. This is what stops a last-minute upload from parking at the top, and why
+// re-uploading (which wipes the rating) means starting the climb over.
+const QUALIFY_MIN_GAMES = Number(process.env.CHESS_QUALIFY_MIN_GAMES ?? "10");
+const QUALIFY_MIN_RATING = Number(process.env.CHESS_QUALIFY_MIN_RATING ?? "0");
+
+export function chessQualify(): { minGames: number; minRating: number } {
+  return { minGames: QUALIFY_MIN_GAMES, minRating: QUALIFY_MIN_RATING };
+}
+
+function isQualified(games: number, rating: number): boolean {
+  return games >= QUALIFY_MIN_GAMES && rating >= QUALIFY_MIN_RATING;
+}
+
 async function loadRating(season: string, agentId: number): Promise<Rating> {
   const { rows } = await query<{ mu: number; sigma: number }>(
     "select mu, sigma from chess_ratings where season = $1 and agent_id = $2",
@@ -78,10 +93,12 @@ export interface ChessLadderRow {
   wins: number;
   draws: number;
   losses: number;
+  qualified: boolean; // meets the prize-board minimum (games + rating)
 }
 
 // The season ladder, ranked by conservative rating (a high rating needs skill AND enough games).
-// `onlyUploads` returns the prize board: real player submissions only, the top of which win.
+// `onlyUploads` returns the prize board: real player submissions only, and only those that have
+// qualified (met the minimum games and rating), the top of which win.
 export async function chessLadder(
   season = currentChessSeason(),
   limit = 100,
@@ -109,18 +126,26 @@ export async function chessLadder(
       limit $2`,
     [season, limit, onlyUploads],
   );
-  return rows.map((r) => ({
-    agentId: Number(r.agent_id),
-    agentName: r.name,
-    owner: r.owner,
-    kind: r.kind,
-    tier: r.tier === null ? null : Number(r.tier),
-    mu: Number(r.mu),
-    sigma: Number(r.sigma),
-    rating: Number(r.mu) - 3 * Number(r.sigma),
-    games: Number(r.games),
-    wins: Number(r.wins),
-    draws: Number(r.draws),
-    losses: Number(r.losses),
-  }));
+  const mapped = rows.map((r) => {
+    const rating = Number(r.mu) - 3 * Number(r.sigma);
+    const games = Number(r.games);
+    return {
+      agentId: Number(r.agent_id),
+      agentName: r.name,
+      owner: r.owner,
+      kind: r.kind,
+      tier: r.tier === null ? null : Number(r.tier),
+      mu: Number(r.mu),
+      sigma: Number(r.sigma),
+      rating,
+      games,
+      wins: Number(r.wins),
+      draws: Number(r.draws),
+      losses: Number(r.losses),
+      qualified: isQualified(games, rating),
+    };
+  });
+  // The prize board shows qualified players only. The full board keeps everyone, tagging who has
+  // qualified, so a climbing player can see how close they are.
+  return onlyUploads ? mapped.filter((r) => r.qualified) : mapped;
 }

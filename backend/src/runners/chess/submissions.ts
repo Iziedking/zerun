@@ -6,7 +6,6 @@ import { codeSha } from "../../auth/chessSubmitSig.js";
 import { parseFEN, legalMoves, moveToUci, START_FEN } from "./engine.js";
 import { storageConfigured, uploadBytes } from "../../storage/zgStorage.js";
 import { currentChessSeason } from "./ratings.js";
-import { defaultRating } from "../trueskill.js";
 
 // Public submissions for the community chess competition: a player uploads one Python file, we
 // prove it actually plays chess, and it joins the ladder.
@@ -147,7 +146,7 @@ export async function submitChessAgent(owner: string, rawName: string, code: str
     throw new SubmitError(`The file is ${(bytes / 1024).toFixed(1)} KB. The limit is ${MAX_BYTES / 1024} KB.`);
   }
   if (!/\bdef\s+choose_move\s*\(/.test(code)) {
-    throw new SubmitError('The file must define choose_move(state) — that is the function we call for every move.');
+    throw new SubmitError('The file must define choose_move(state), the function we call for every move.');
   }
 
   // Someone else's name is confusing on a public board, and so is a duplicate.
@@ -185,12 +184,10 @@ export async function submitChessAgent(owner: string, rawName: string, code: str
         where id = $1`,
       [agentId, name, path, sha, storageRoot],
     );
-    // Reset the uncertainty, keep the skill: a new file has to re-prove itself on the board.
-    await query("update chess_ratings set sigma = $3, updated_at = now() where season = $1 and agent_id = $2", [
-      currentChessSeason(),
-      agentId,
-      defaultRating().sigma,
-    ]);
+    // A new upload is a clean slate. Wipe the rating so the position resets to nothing and the
+    // agent has to earn its place again from scratch. Deleting the row drops it off the board (the
+    // ladder only shows agents with games) until its fresh code has played.
+    await query("delete from chess_ratings where season = $1 and agent_id = $2", [currentChessSeason(), agentId]);
     return { agentId, name, resubmitted: true, storageRoot, smoke: report.moves };
   }
 

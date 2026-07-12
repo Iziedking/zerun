@@ -14,6 +14,7 @@ import type {
   OperatorProfile,
   PokerLadderRow,
   ChessLadderRow,
+  ChessQualify,
   ChessSubmitResult,
   MyChessAgentResponse,
   AgentMemoryResponse,
@@ -95,7 +96,9 @@ export const api = {
     if (season) qs.set("season", season);
     if (uploads) qs.set("uploads", "1");
     const s = qs.toString();
-    return req<{ season: string; ladder: ChessLadderRow[] }>(`/api/chess/ladder${s ? `?${s}` : ""}`);
+    return req<{ season: string; ladder: ChessLadderRow[]; qualify: ChessQualify }>(
+      `/api/chess/ladder${s ? `?${s}` : ""}`,
+    );
   },
 
   // The competition entry: submit one Python file signed by the wallet it is credited to. The

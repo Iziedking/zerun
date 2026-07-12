@@ -11,13 +11,13 @@ import { Agent, agentVariant, Chip, CoinStat, StickerCard, cx } from "@/componen
 import { popButtonClass } from "@/components/zerun/PopButton";
 
 // The Zero Cup community chess competition: upload an agent, it plays everyone on a continuous
-// TrueSkill ladder, and the top five by the deadline win. Anyone can enter — the board below is
+// TrueSkill ladder, and the top five by the deadline win. Anyone can enter. The board below is
 // the live standing, and the card above it is the front door.
 
 // The event ends end-of-day July 20, 2026 (UTC). The top five uploads at that moment win.
 const ENDS_AT = Date.UTC(2026, 6, 20, 23, 59, 59);
 
-// The prize is a hidden gift until we are sure of the Zero Cup win — flip this to reveal it.
+// The prize is a hidden gift until we are sure of the Zero Cup win. Flip this to reveal it.
 const PRIZE_REVEALED = false;
 const PRIZE_LINE = "100 USDC each to the top 5 players";
 
@@ -32,6 +32,7 @@ export default function ChessCompetitionPage() {
   const { data, isLoading, isError } = useChessLadder(undefined, uploadsOnly);
   const ladder = data?.ladder ?? [];
   const season = data?.season ?? "c1";
+  const qualify = data?.qualify ?? { minGames: 10, minRating: 0 };
 
   const games = ladder.reduce((s, r) => s + r.games, 0);
   const players = ladder.filter((r) => r.kind === "upload").length;
@@ -51,11 +52,12 @@ export default function ChessCompetitionPage() {
             Zero Cup Chess
           </h1>
           <p className="mt-2 max-w-2xl font-body text-[15px] text-ink-2">
-            Build a chess agent, upload it once, and it plays every other agent around the clock,
+            Build a chess agent, upload it, and it plays every other agent around the clock,
             thinking on 0G as it goes. Win by checkmate, or by the better position when the clock
             runs out. Every result moves you on the ladder, which ranks by conservative TrueSkill:
             skill minus the doubt, so the top needs both a strong record and enough games to prove
-            it. Season <span className="font-display text-ink">{season}</span>.
+            it. Re-upload whenever you like, but a new upload resets your position and you climb
+            again. Season <span className="font-display text-ink">{season}</span>.
           </p>
         </div>
         <Countdown />
@@ -94,7 +96,7 @@ export default function ChessCompetitionPage() {
               </div>
               <p className="mt-4 font-body text-[15px] text-ink-2">
                 {uploadsOnly
-                  ? "No player agents yet. Be the first: submit above and you start the prize board."
+                  ? `No qualified players yet. Qualifying takes ${qualify.minGames} rated games, and the first to get there start the prize board.`
                   : "The ladder is warming up. As games play out, agents climb the board here."}
               </p>
             </StickerCard>
@@ -102,7 +104,7 @@ export default function ChessCompetitionPage() {
             <StickerCard className="overflow-hidden p-0">
               <ul>
                 {ladder.map((r, i) => (
-                  <LadderRow key={r.agentId} row={r} rank={i + 1} even={i % 2 === 0} me={me} />
+                  <LadderRow key={r.agentId} row={r} rank={i + 1} even={i % 2 === 0} me={me} minGames={qualify.minGames} />
                 ))}
               </ul>
             </StickerCard>
@@ -111,7 +113,8 @@ export default function ChessCompetitionPage() {
           <p className="font-body text-[12px] text-ink-3">
             Rating is TrueSkill mu minus three sigma. Agents tagged <em>house</em> are Zerun
             benchmarks that fill the board and give you something to beat; the prize is for player
-            uploads only. Switch to <em>Players only</em> to see the board that pays.
+            uploads only. A player qualifies for the prize after {qualify.minGames} rated games, and
+            re-uploading resets that. Switch to <em>Players only</em> to see the board that pays.
           </p>
         </>
       )}
@@ -136,10 +139,24 @@ function Toggle({ label, active, onClick }: { label: string; active: boolean; on
   );
 }
 
-function LadderRow({ row, rank, even, me }: { row: ChessLadderRow; rank: number; even: boolean; me: string | null }) {
+function LadderRow({
+  row,
+  rank,
+  even,
+  me,
+  minGames,
+}: {
+  row: ChessLadderRow;
+  rank: number;
+  even: boolean;
+  me: string | null;
+  minGames: number;
+}) {
   const isHouse = row.kind === "engine";
   const mine = !isHouse && row.owner !== null && row.owner.toLowerCase() === me;
   const winRate = row.games > 0 ? Math.round((row.wins / row.games) * 100) : 0;
+  // A player who has not yet qualified shows how many rated games are left to get there.
+  const gamesLeft = Math.max(0, minGames - row.games);
   return (
     <li
       className={cx(
@@ -170,6 +187,12 @@ function LadderRow({ row, rank, even, me }: { row: ChessLadderRow; rank: number;
           ) : (
             <Chip tone="neutral">player</Chip>
           )}
+          {!isHouse &&
+            (row.qualified ? (
+              <Chip tone="live">qualified</Chip>
+            ) : (
+              <Chip tone="neutral">{gamesLeft} to qualify</Chip>
+            ))}
         </div>
         <span className="font-mono text-[11px] text-ink-3">
           {isHouse ? "Zerun benchmark" : row.owner ? shortAddr(row.owner) : "player"} · {row.games} games ·{" "}
@@ -262,12 +285,12 @@ function HowItWorks() {
       body: "Write one file that chooses a move. It gets a real 0G inference call in-game from us, so it can think, not just calculate. Your logic, your skill, and no two agents are alike.",
     },
     {
-      title: "Upload it once",
-      body: "Submit it and it joins the ladder. It plays every other agent around the clock, on a real board, refereed by Zerun's engine.",
+      title: "Upload and re-upload",
+      body: "Submit it and it joins the ladder, playing every other agent around the clock on a real board refereed by Zerun's engine. Improve it and re-upload any time, but a new upload resets your position and you climb again.",
     },
     {
-      title: "Climb and win",
-      body: "Win by checkmate, or by the better position if time beats you. Each win lifts your rating. The top five when the season closes take the gift.",
+      title: "Qualify, climb, win",
+      body: "Win by checkmate, or by the better position if time beats you. Play enough rated games to qualify, then keep climbing. The top five qualified players when the season closes take the gift.",
     },
   ];
   return (
