@@ -101,12 +101,12 @@ export default function VotePage() {
     if (voted && hasEnoughGas && !alreadyVoted && !redirecting) setRedirecting(true);
   }, [voted, hasEnoughGas, alreadyVoted, redirecting]);
 
-  const gasDone = Boolean(status?.claimed) || hasEnoughGas;
   const faucetOpen = Boolean(status?.enabled) && (status?.remainingClaims ?? 0) > 0;
-  // Ready to boost once there is a connected wallet with the fee covered: we funded it, it already
-  // holds gas, or the free credit has run out and they will cover the fee themselves. Either way,
-  // do not strand them behind a dry faucet.
-  const walletReady = isConnected && (gasDone || !faucetOpen);
+  // Ready to boost once the connected wallet actually has the fee covered: it holds enough gas
+  // (whether from now or an earlier round), or the free credit has run out and it covers the tiny
+  // fee itself. This is deliberately NOT "has it ever claimed": a wallet that claimed before but is
+  // short after a gas spike still needs a top-up, so it keeps the claim button and can reclaim.
+  const walletReady = isConnected && (hasEnoughGas || !faucetOpen);
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-14">
@@ -263,22 +263,6 @@ export default function VotePage() {
                     </a>
                   </div>
                 </>
-              ) : gasDone ? (
-                <>
-                  <p className="font-body text-[14px] font-extrabold text-ink">
-                    Voting credit is in your wallet. Now boost Zerun to double your vote.
-                  </p>
-                  <div className="mt-3">
-                    <a
-                      href={VOTE_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={popButtonClass("primary", "md", "w-full sm:w-auto")}
-                    >
-                      Boost Zerun on 0G
-                    </a>
-                  </div>
-                </>
               ) : !faucetOpen ? (
                 <>
                   <p className="font-body text-[14px] text-ink-2">
@@ -300,7 +284,7 @@ export default function VotePage() {
                 <>
                   <p className="font-body text-[14px] text-ink-2">
                     Wallet connected. Boosting has a tiny fee, so we drop your voting credit in to
-                    cover it and then take you straight to the boost. Free, once, and yours to keep.
+                    cover it and then take you straight to the boost. It is on us.
                   </p>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <PopButton onClick={claim} disabled={claiming} className="w-full sm:w-auto">
