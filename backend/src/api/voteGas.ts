@@ -34,17 +34,27 @@ const ZERUN_CANDIDATE = process.env.ZERO_CUP_ZERUN ?? "0xcca28a9fddc8ecbee7b1bb4
 // voters all land here. On by default; flip off if the RPC oracle ever misbehaves.
 const SKIP_VOTED = (process.env.VOTE_GAS_SKIP_VOTED ?? "on").toLowerCase() === "on";
 
-/** What one voter receives. A boost costs a fraction of this; the rest is slack for gas spikes. */
+/** What one voter receives. A boost costs a fraction of this; the rest is slack for gas spikes.
+ * When gas spikes, raise this so one claim still covers a boost. */
 const AMOUNT_OG = process.env.VOTE_GAS_AMOUNT_OG ?? "0.003";
 
 // The balance at or above which a wallet is treated as "already funded": it holds enough mainnet
-// 0G to boost, so it needs no credit — the page sends it straight to the ballot and the faucet
+// 0G to boost, so it needs no credit, the page sends it straight to the ballot and the faucet
 // refuses it. Set well below AMOUNT_OG so a wallet we just funded reads as funded, and above a
 // single boost's gas so a genuinely empty wallet does not. This is what lets a returning voter who
 // still has last round's gas skip the claim, while one who spent it gets a fresh top-up.
 const FUNDED_THRESHOLD_OG = process.env.VOTE_GAS_FUNDED_OG ?? "0.0008";
 
-/** The whole campaign's ceiling. At 0.003 0G a claim, 3 0G funds a thousand voters. */
+// Reopen switch. When gas spikes, the amount people claimed earlier can stop being enough for a
+// boost, yet those wallets are refused because their old balance still clears the funded line above.
+// Turn this ON to reopen top-ups for everyone: a wallet counts as funded only once it holds a FULL
+// claim's worth (AMOUNT_OG), so anyone below that, including earlier claimers, can claim again and
+// be topped up to the new amount. Turn it OFF to go back to the tight funded line. Pair it with a
+// higher VOTE_GAS_AMOUNT_OG (to cover the spike) and VOTE_GAS_BUDGET_OG (the extra claims cost more).
+const REOPEN = (process.env.VOTE_GAS_REOPEN ?? "off").toLowerCase() === "on";
+
+/** The whole campaign's ceiling. At 0.003 0G a claim, 3 0G funds a thousand voters. Raise it when
+ * you reopen top-ups, since re-claims spend from the same pool. */
 const BUDGET_OG = process.env.VOTE_GAS_BUDGET_OG ?? "3";
 
 /** Mainnet, because that is where the vote lives. Falls back to the compute mainnet RPC. */
@@ -115,7 +125,11 @@ async function canStillVote(address: string): Promise<boolean | null> {
 
 const amountWei = () => ethers.parseEther(AMOUNT_OG);
 const budgetWei = () => ethers.parseEther(BUDGET_OG);
-const fundedWei = () => ethers.parseEther(FUNDED_THRESHOLD_OG);
+// The balance at or above which a wallet is "funded" and needs no credit. Normally the tight
+// threshold; with the reopen switch on, a full claim's worth, so earlier claimers below it can top
+// up after a gas spike. Both the status read and the claim gate use this, so the UI and the faucet
+// always agree on who still needs gas.
+const fundedFloorWei = () => (REOPEN ? amountWei() : ethers.parseEther(FUNDED_THRESHOLD_OG));
 
 // The wallet's live mainnet balance, briefly cached. Read alongside the vote oracle so a returning
 // voter with leftover gas is recognised and sent straight to the ballot instead of re-funded.
@@ -170,7 +184,7 @@ export async function voteGasStatus(address: string): Promise<VoteGasStatus> {
     txHash: claim?.tx_hash ?? null,
     remainingClaims: left > 0n ? Number(left / per) : 0,
     alreadyVoted: canVote === false,
-    hasEnoughGas: bal !== null && bal >= fundedWei(),
+    hasEnoughGas: bal !== null && bal >= fundedFloorWei(),
     balanceOg: bal !== null ? ethers.formatEther(bal) : "0",
   };
 }
@@ -189,9 +203,10 @@ export async function claimVoteGas(address: string): Promise<ClaimResult> {
   try {
     // The anti-double-fund guard is the live balance, not the claim history: a wallet that already
     // holds enough gas to boost is refused (it needs nothing, and the page will send it to the
-    // ballot), while a returning voter who spent last round's gas is allowed a fresh top-up.
+    // ballot), while a returning voter who spent last round's gas, or is short after a spike with
+    // the reopen switch on, is allowed a fresh top-up.
     const bal = await balanceOf(address);
-    if (bal !== null && bal >= fundedWei()) {
+    if (bal !== null && bal >= fundedFloorWei()) {
       return {
         ok: false,
         status: 409,
