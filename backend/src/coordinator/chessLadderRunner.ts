@@ -3,6 +3,7 @@ import { query } from "../db/pool.js";
 import { playRefereedGame } from "./chessMatch.js";
 import { engineMover, type Mover } from "../runners/chess/movers.js";
 import { sandboxMover } from "../runners/chess/sandbox.js";
+import { modelMover } from "../runners/chess/modelMover.js";
 import { recordChessResult, recordChessDraw, currentChessSeason } from "../runners/chess/ratings.js";
 import { conservative } from "../runners/trueskill.js";
 
@@ -42,12 +43,44 @@ export async function seedHouseEngines(): Promise<number> {
   return created;
 }
 
+// Model-driven house showcase agents: they reason on 0G Compute (the engine shortlists, a 0G model
+// chooses), so different 0G models visibly play chess on the ladder. Gated by CHESS_SHOWCASE
+// because each of their moves is a real mainnet 0G call. Kept small on purpose. When the flag is
+// off, any that exist are disabled so they stop playing and stop spending.
+const SHOWCASE_ON = (process.env.CHESS_SHOWCASE ?? "off").toLowerCase() === "on";
+const SHOWCASE_AGENTS: { name: string; tier: number }[] = [
+  { name: "Nova", tier: 4 },
+  { name: "Quasar", tier: 5 },
+];
+
+export async function seedShowcaseAgents(): Promise<number> {
+  if (!SHOWCASE_ON) {
+    // Off: stop any showcase agents so the ladder does not keep spending 0G on them.
+    await query("update chess_agents set status = 'disabled' where model_driven = true and status = 'active'");
+    return 0;
+  }
+  let created = 0;
+  for (const a of SHOWCASE_AGENTS) {
+    const { rowCount } = await query(
+      `insert into chess_agents (owner, name, kind, tier, status, model_driven)
+         select null, $1, 'engine', $2, 'active', true
+       where not exists (select 1 from chess_agents where kind = 'engine' and name = $1)`,
+      [a.name, a.tier],
+    );
+    created += rowCount ?? 0;
+  }
+  // Reactivate any that were disabled when the flag was previously off.
+  await query("update chess_agents set status = 'active' where model_driven = true and status = 'disabled'");
+  return created;
+}
+
 interface LadderAgent {
   id: number;
   name: string;
   kind: string;
   tier: number | null;
   codeRoot: string | null;
+  modelDriven: boolean;
   cons: number; // conservative rating
   games: number;
 }
@@ -59,11 +92,12 @@ async function activeAgents(season: string): Promise<LadderAgent[]> {
     kind: string;
     tier: number | null;
     code_root: string | null;
+    model_driven: boolean | null;
     mu: number;
     sigma: number;
     games: number;
   }>(
-    `select a.id, a.name, a.kind, a.tier, a.code_root,
+    `select a.id, a.name, a.kind, a.tier, a.code_root, a.model_driven,
             coalesce(r.mu, 25.0) as mu, coalesce(r.sigma, 8.3333333) as sigma,
             coalesce(r.games, 0) as games
        from chess_agents a
@@ -77,6 +111,7 @@ async function activeAgents(season: string): Promise<LadderAgent[]> {
     kind: r.kind,
     tier: r.tier === null ? null : Number(r.tier),
     codeRoot: r.code_root,
+    modelDriven: Boolean(r.model_driven),
     cons: conservative({ mu: Number(r.mu), sigma: Number(r.sigma) }),
     games: Number(r.games),
   }));
@@ -101,6 +136,9 @@ async function buildMover(a: LadderAgent): Promise<Mover> {
     const code = await loadAgentCode(a.codeRoot);
     if (code) return sandboxMover({ id: a.id, code, tier: a.tier ?? undefined });
   }
+  // A model-driven house showcase agent reasons on 0G (engine shortlist, model picks), so different
+  // 0G models are seen playing chess. Everything else is the free negamax stand-in.
+  if (a.modelDriven) return modelMover({ id: a.id, tier: a.tier ?? 4 });
   return engineMover(a.tier ?? 0);
 }
 
@@ -171,6 +209,7 @@ export function startChessLadder(): void {
     running = true;
     try {
       await seedHouseEngines();
+      await seedShowcaseAgents();
       await playOneLadderGame();
     } catch (err) {
       console.error("chess ladder tick failed:", (err as Error).message);

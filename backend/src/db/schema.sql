@@ -160,6 +160,10 @@ create index if not exists chess_agents_status_idx on chess_agents (status);
 -- signature committed to — so the agent that plays is provably the agent that was uploaded.
 alter table chess_agents add column if not exists storage_root text;
 alter table chess_agents add column if not exists code_sha text;
+-- A model-driven house showcase agent: kind 'engine' (house, never prize-eligible), but instead of
+-- pure negamax it lets 0G Compute choose among the engine's top candidates, escalating across the
+-- model pool, so different 0G models visibly play chess on the ladder. Gated by CHESS_SHOWCASE.
+alter table chess_agents add column if not exists model_driven boolean not null default false;
 -- One entry per wallet, so the owner lookup on submit is a point read.
 create index if not exists chess_agents_owner_idx on chess_agents (owner) where kind = 'upload';
 
