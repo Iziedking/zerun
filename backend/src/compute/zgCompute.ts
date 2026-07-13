@@ -686,7 +686,27 @@ function makeNetwork(net: NetworkConfig) {
     return Boolean(net.signerKey && net.rpcUrl);
   }
 
-  return { label: net.label, ensureLedger, ensureReady, listProviders, resolveCandidates, computeChat, logTierRouting, configured };
+  // A read-only look at the ledger's AVAILABLE balance, for a spend guard. Never funds; returns
+  // null if it cannot read, so a caller can fail open rather than pause on a flaky RPC.
+  async function ledgerAvailable(): Promise<number | null> {
+    try {
+      return await ledgerBalanceOg(await getBroker());
+    } catch {
+      return null;
+    }
+  }
+
+  return {
+    label: net.label,
+    ensureLedger,
+    ensureReady,
+    listProviders,
+    resolveCandidates,
+    computeChat,
+    logTierRouting,
+    configured,
+    ledgerAvailable,
+  };
 }
 
 type Network = ReturnType<typeof makeNetwork>;
@@ -741,6 +761,12 @@ function networks(): Network[] {
 
 export function mainnetComputeEnabled(): boolean {
   return mainnetEnabled;
+}
+
+// The mainnet ledger's available 0G, read-only (no funding). null when mainnet is off or the read
+// fails. Used by the chess spend guard to pause paid play before the ledger runs dry.
+export async function mainnetLedgerOg(): Promise<number | null> {
+  return mainnetNetwork ? mainnetNetwork.ledgerAvailable() : null;
 }
 
 // Circuit breaker for the mainnet leg. Without it, a SUSTAINED mainnet outage would make

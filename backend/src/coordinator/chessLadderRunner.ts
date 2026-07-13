@@ -6,6 +6,7 @@ import { sandboxMover } from "../runners/chess/sandbox.js";
 import { modelMover } from "../runners/chess/modelMover.js";
 import { recordChessResult, recordChessDraw, currentChessSeason } from "../runners/chess/ratings.js";
 import { conservative } from "../runners/trueskill.js";
+import { mainnetComputeEnabled, mainnetLedgerOg } from "../compute/zgCompute.js";
 
 // The matchmaker for the community chess ladder. It keeps the board alive by continuously pairing
 // active agents — closest rating, fewest games first — and playing one refereed game per tick,
@@ -17,6 +18,33 @@ import { conservative } from "../runners/trueskill.js";
 
 const ENABLED = (process.env.CHESS_LADDER ?? "off").toLowerCase() === "on";
 const TICK_MS = Number(process.env.CHESS_LADDER_TICK_MS ?? "15000");
+
+// Spend guard: when the mainnet 0G ledger drops below this floor, the 0G-spending agents (uploaded
+// entries and the model-driven showcase) are paused, and only the free negamax house field keeps
+// playing. It resumes on its own when the ledger is topped up. This is what lets the competition
+// run unattended without ever overspending; the floor leaves headroom for the arena's own 0G use.
+const LEDGER_FLOOR_OG = Number(process.env.CHESS_LEDGER_FLOOR_OG ?? "2");
+const LEDGER_CHECK_MS = Number(process.env.CHESS_LEDGER_CHECK_MS ?? "60000");
+let ledgerGuard = { spendersOk: true, at: 0 };
+
+// May the 0G-spending agents play right now? Cached, and fails OPEN on a read error so a flaky RPC
+// never wrongly halts the competition. Testnet-only deployments always allow (no real spend).
+async function spendersAllowed(): Promise<boolean> {
+  if (!mainnetComputeEnabled()) return true;
+  const now = Date.now();
+  if (now - ledgerGuard.at < LEDGER_CHECK_MS) return ledgerGuard.spendersOk;
+  const bal = await mainnetLedgerOg();
+  const ok = bal === null ? true : bal >= LEDGER_FLOOR_OG;
+  if (ok !== ledgerGuard.spendersOk) {
+    console.log(
+      ok
+        ? `chess ladder: 0G ledger recovered (${bal} 0G), resuming uploaded and showcase agents`
+        : `chess ladder: 0G ledger ${bal} 0G is below the ${LEDGER_FLOOR_OG} 0G floor, pausing uploaded and showcase agents; the free house field plays on`,
+    );
+  }
+  ledgerGuard = { spendersOk: ok, at: now };
+  return ok;
+}
 
 // The house benchmark roster: one engine per tier, so the ladder shows a real strength gradient
 // from the first game. Names match Zerun's house style; the tier is the only thing that differs.
@@ -153,7 +181,12 @@ export interface LadderGameSummary {
 // Play one ladder game: the agent with the fewest games gets a match against its nearest rating.
 export async function playOneLadderGame(): Promise<LadderGameSummary | null> {
   const season = currentChessSeason();
-  const agents = await activeAgents(season);
+  let agents = await activeAgents(season);
+  // When the 0G ledger is low, pause the paid agents (uploads + showcase) and let the free house
+  // field carry the board. Paused agents simply do not get new games, so their ratings are intact.
+  if (!(await spendersAllowed())) {
+    agents = agents.filter((a) => !(a.kind === "upload" || a.modelDriven));
+  }
   if (agents.length < 2) return null;
 
   // Fewest games first breaks the field in evenly; ties broken arbitrarily by id order.
