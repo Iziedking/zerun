@@ -8,6 +8,45 @@ All notable changes to Zerun are recorded here. The format follows
 
 ### Added
 
+- **A community chess competition.** Anyone uploads one Python file that exposes
+  `choose_move(state)`, and it plays every other agent on a continuous TrueSkill ladder,
+  around the clock, on a real board refereed by Zerun's engine. Win by checkmate, or by the
+  better position when the clock runs out; the top players by the deadline win. It runs
+  alongside the arena as a joinable event, with its own board, upload flow, and build guide at
+  `/chess` and `/chess/guide`.
+- **A sandbox for untrusted agents.** An uploaded agent runs under bubblewrap with no network,
+  capped CPU, memory, and process count, a non-root user, an ephemeral filesystem, and a hard
+  wall-clock kill. It has no network of its own; a metered `call_model` bridge relays one 0G
+  inference per move out through the host, so Zerun always owns the inference (one call per
+  move, a daily per-agent cap) and a hostile agent can only ever spend its own budget, never
+  reach the box or the wallet.
+- **A submission gate that rejects broken agents at the door.** An entry is one file, signed by
+  the wallet it is credited to, with the signature committing to the file's SHA-256 so a
+  captured signature cannot be replayed with different code. Before it joins the board it is
+  smoke-tested in the real sandbox on three positions (an opening, a middlegame, an endgame) and
+  only becomes active if it returns a legal move in each, so a crashing, hanging, or
+  illegal-moving agent is turned away instead of forfeiting live games. Uploads stay closed
+  unless the isolation wrapper is configured, so a stranger's code is never run unsandboxed.
+- **Re-upload freely, and a qualification minimum keeps the top honest.** A wallet holds one
+  entry; re-uploading replaces the code and resets its position, so a fixed agent re-earns its
+  place from scratch. To reach the prize board an agent must first qualify by playing a minimum
+  number of rated games, which stops a last-minute upload from parking at the top.
+- **The move clock measures the agent, not the 0G call.** An agent's per-move budget stops while
+  Zerun services its `call_model` and restarts when the answer returns, so thinking on 0G costs
+  the player none of its time and only its own code races the clock. Without this a single 0G
+  inference could outlast the whole move budget and forfeit the game.
+- **The different 0G models are visibly in play.** The premium tiers reason on 0G mainnet, and
+  house agents occasionally reach for a pool of stronger models (qwen3-vl, deepseek, MiniMax-M3)
+  on hard tasks across solver, poker, chess, and World Cup, so the model leaderboard fills across
+  every model without a large bill. Model-driven house showcase agents reason on 0G for chess as
+  well, where the free negamax field makes no call. The 0G model and its network, mainnet or
+  testnet, now show as a chip on every answer in the live feed and strip.
+- **Watch any game.** Click an agent on the ladder to watch its game: live and move by move if it
+  is playing now, or a replay of its most recent game with play, pause, and step controls.
+- **A spend guard that runs unattended.** When the mainnet 0G ledger drops below a floor, the
+  matchmaker pauses the paid agents (uploads and the showcase) and lets the free house field
+  carry the board, and they rejoin on their own once the ledger is topped up, so the competition
+  can run the full event without ever overspending.
 - **Memory for poker and chess, and a market that prices it.** An agent now keeps a
   separate memory per kind, each built from that kind's own signal: correct/wrong for
   Solver and Analyst, chips and season rating for poker, bracket placements for chess. A
