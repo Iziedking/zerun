@@ -23,11 +23,16 @@ const ENABLED = (process.env.VOTE_GAS ?? "off").toLowerCase() === "on";
 
 // The Zero Cup vote contract on 0G mainnet, and the one call that matters.
 //   castVote(bytes32 candidateId, uint256 weight)   selector 0xb4b0713e
-// A wallet may vote exactly once: a second castVote reverts with an already-voted guard
-// (custom error 0xb037ef51). We use that fact below as a fundability oracle — see canStillVote.
+// A wallet may vote exactly once per candidate: a second castVote reverts with an already-voted
+// guard (custom error 0xb037ef51). We use that fact below as a fundability oracle, see canStillVote.
+// The candidate id is per matchup: it is keccak256 of the project's id, and it changes each round
+// even though the contract does not. The oracle MUST use the CURRENT round's Zerun candidate, or a
+// prior round's voters read as "already voted". Verified from an on-chain semi-final castVote:
+//   tx 0x5896e318…66737 -> to 0x46bB… (unchanged), candidate 0x7a5ecad3… (semi-final Zerun).
 const CONTRACT = process.env.ZERO_CUP_CONTRACT ?? "0x46bB4fFd3F61d59126ca1814B7c57FFF1db0a65B";
 const VOTE_SELECTOR = "0xb4b0713e";
-const ZERUN_CANDIDATE = process.env.ZERO_CUP_ZERUN ?? "0xcca28a9fddc8ecbee7b1bb4b6b2ee4968e8d1b63182d1989ea2607d20d425f4c";
+// Semi-finals (AskZero vs Zerun). Quarter-final was 0xcca28a…425f4c; update this each round.
+const ZERUN_CANDIDATE = process.env.ZERO_CUP_ZERUN ?? "0x7a5ecad37a54e527f056a1fce11afc8e46abf46a6b2a512d40eab69170a42b5b";
 
 // Refuse to fund a wallet that has already voted. It literally cannot vote again, so the gas is
 // wasted on it — that is the single biggest leak, since re-claimers and the opposition's own
