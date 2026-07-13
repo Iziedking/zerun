@@ -12,19 +12,30 @@ export function currentChessSeason(): string {
   return process.env.CHESS_SEASON ?? "c1";
 }
 
-// Qualification for the prize board. A fresh upload starts with no rating, so to be in the running
-// an agent has to earn its place: play at least this many rated games AND hold a conservative
-// rating above the floor. This is what stops a last-minute upload from parking at the top, and why
-// re-uploading (which wipes the rating) means starting the climb over.
+// Qualification for the prize board. To be in the running an agent has to earn its place:
+//   - play at least CHESS_QUALIFY_MIN_GAMES rated games (a floor, not a race: games are serialized
+//     and shared across the field, so this stays reachable even as the field grows),
+//   - hold a conservative rating above CHESS_QUALIFY_MIN_RATING,
+//   - and have been on the board at least CHESS_QUALIFY_MIN_AGE_HOURS (tenure). This is the real
+//     latecomer gate: a last-day entry cannot have days of tenure no matter how fast it plays, and
+//     it does not depend on field size the way a raw game count does.
+// Re-uploading wipes the rating (climb over) but keeps the agent's original entry time, so tenure
+// is not reset by improving your code.
 const QUALIFY_MIN_GAMES = Number(process.env.CHESS_QUALIFY_MIN_GAMES ?? "10");
 const QUALIFY_MIN_RATING = Number(process.env.CHESS_QUALIFY_MIN_RATING ?? "0");
+const QUALIFY_MIN_AGE_HOURS = Number(process.env.CHESS_QUALIFY_MIN_AGE_HOURS ?? "0");
 
-export function chessQualify(): { minGames: number; minRating: number } {
-  return { minGames: QUALIFY_MIN_GAMES, minRating: QUALIFY_MIN_RATING };
+export function chessQualify(): { minGames: number; minRating: number; minAgeHours: number } {
+  return { minGames: QUALIFY_MIN_GAMES, minRating: QUALIFY_MIN_RATING, minAgeHours: QUALIFY_MIN_AGE_HOURS };
 }
 
-function isQualified(games: number, rating: number): boolean {
-  return games >= QUALIFY_MIN_GAMES && rating >= QUALIFY_MIN_RATING;
+function isQualified(games: number, rating: number, createdAtMs: number): boolean {
+  if (games < QUALIFY_MIN_GAMES || rating < QUALIFY_MIN_RATING) return false;
+  if (QUALIFY_MIN_AGE_HOURS > 0 && createdAtMs) {
+    const ageHours = (Date.now() - createdAtMs) / 3_600_000;
+    if (ageHours < QUALIFY_MIN_AGE_HOURS) return false;
+  }
+  return true;
 }
 
 async function loadRating(season: string, agentId: number): Promise<Rating> {
@@ -87,6 +98,8 @@ export interface ChessLadderRow {
   kind: string; // 'upload' | 'engine'
   tier: number | null;
   modelDriven: boolean; // a house showcase agent that reasons on 0G (engine shortlist, model picks)
+  xHandle: string | null; // the owner's connected X handle, for the avatar and byline
+  xAvatar: string | null; // the owner's X profile image (400x400)
   mu: number;
   sigma: number;
   rating: number; // conservative mu - 3*sigma
@@ -112,6 +125,9 @@ export async function chessLadder(
     kind: string;
     tier: number | null;
     model_driven: boolean | null;
+    created_at: string | null;
+    x_handle: string | null;
+    x_avatar: string | null;
     mu: number;
     sigma: number;
     games: number;
@@ -119,9 +135,12 @@ export async function chessLadder(
     draws: number;
     losses: number;
   }>(
-    `select r.agent_id, a.name, a.owner, a.kind, a.tier, a.model_driven, r.mu, r.sigma, r.games, r.wins, r.draws, r.losses
+    `select r.agent_id, a.name, a.owner, a.kind, a.tier, a.model_driven, a.created_at::text as created_at,
+            s.x_handle, s.x_avatar,
+            r.mu, r.sigma, r.games, r.wins, r.draws, r.losses
        from chess_ratings r
        join chess_agents a on a.id = r.agent_id
+       left join social_identity s on s.wallet = a.owner
       where r.season = $1 and r.games > 0 and a.status = 'active'
         and ($3 = false or (a.kind = 'upload' and a.owner is not null))
       order by (r.mu - 3 * r.sigma) desc, r.mu desc
@@ -131,6 +150,7 @@ export async function chessLadder(
   const mapped = rows.map((r) => {
     const rating = Number(r.mu) - 3 * Number(r.sigma);
     const games = Number(r.games);
+    const createdAtMs = r.created_at ? Date.parse(r.created_at) : 0;
     return {
       agentId: Number(r.agent_id),
       agentName: r.name,
@@ -138,6 +158,8 @@ export async function chessLadder(
       kind: r.kind,
       tier: r.tier === null ? null : Number(r.tier),
       modelDriven: Boolean(r.model_driven),
+      xHandle: r.x_handle,
+      xAvatar: r.x_avatar,
       mu: Number(r.mu),
       sigma: Number(r.sigma),
       rating,
@@ -145,7 +167,7 @@ export async function chessLadder(
       wins: Number(r.wins),
       draws: Number(r.draws),
       losses: Number(r.losses),
-      qualified: isQualified(games, rating),
+      qualified: isQualified(games, rating, createdAtMs),
     };
   });
   // The prize board shows qualified players only. The full board keeps everyone, tagging who has

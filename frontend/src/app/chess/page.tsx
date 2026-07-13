@@ -34,7 +34,7 @@ export default function ChessCompetitionPage() {
   const { data, isLoading, isError } = useChessLadder(undefined, true);
   const ladder = data?.ladder ?? [];
   const season = data?.season ?? "c1";
-  const qualify = data?.qualify ?? { minGames: 10, minRating: 0 };
+  const qualify = data?.qualify ?? { minGames: 10, minRating: 0, minAgeHours: 0 };
 
   const games = ladder.reduce((s, r) => s + r.games, 0);
   const players = ladder.filter((r) => r.kind === "upload").length;
@@ -175,9 +175,21 @@ function LadderRow({
       >
         {rank}
       </span>
-      <Agent variant={agentVariant(row.agentId)} mood="idle" size={40} name={row.agentName} />
+      {row.xAvatar ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={row.xAvatar}
+          alt=""
+          className="h-10 w-10 shrink-0 rounded-chunk border-line border-ink object-cover shadow-pop-press"
+        />
+      ) : (
+        <Agent variant={agentVariant(row.agentId)} mood="idle" size={40} name={row.agentName} />
+      )}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
+          {row.xHandle && (
+            <span className="truncate font-body text-[13px] font-extrabold text-violet">@{row.xHandle}</span>
+          )}
           <span className="truncate font-display text-[16px] text-ink">{row.agentName}</span>
           {isHouse ? (
             <>

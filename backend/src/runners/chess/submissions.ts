@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { query } from "../../db/pool.js";
 import { runAgentMove } from "./sandbox.js";
 import { codeSha } from "../../auth/chessSubmitSig.js";
+import { xIdentityFor } from "../../auth/xConnect.js";
 import { parseFEN, legalMoves, moveToUci, START_FEN } from "./engine.js";
 import { storageConfigured, uploadBytes } from "../../storage/zgStorage.js";
 import { currentChessSeason } from "./ratings.js";
@@ -20,6 +21,10 @@ import { currentChessSeason } from "./ratings.js";
 // dev.fun's ladder uses, and the reason the board can be trusted late in a season.
 
 const UPLOADS_ON = (process.env.CHESS_UPLOADS ?? "on").toLowerCase() === "on";
+// Require a connected X account to enter. This is the anti-bot and anti-duplicate spine: one X
+// account maps to exactly one wallet (social_identity.unique(x_id)), so a farm of wallets cannot
+// flood the board without a matching farm of X accounts. Off only for local testing.
+const REQUIRE_X = (process.env.CHESS_REQUIRE_X ?? "on").toLowerCase() === "on";
 // The door does not open unless the isolation wrapper is configured. Accepting a stranger's Python
 // and running it unsandboxed is the one failure this whole feature exists to prevent, so it must not
 // be one forgotten .env line away — an unconfigured box reports "closed" instead of quietly running
@@ -135,6 +140,10 @@ export async function submitChessAgent(owner: string, rawName: string, code: str
     console.error("chess submit: refused — CHESS_SANDBOX_CMD is unset, so uploads would run without isolation.");
   }
   if (!uploadsOpen()) throw new SubmitError("Submissions are closed right now.", 503);
+
+  if (REQUIRE_X && !(await xIdentityFor(owner))) {
+    throw new SubmitError("Connect your X account to enter. It keeps the competition free of bot and duplicate entries.", 403);
+  }
 
   const name = rawName.trim();
   if (!NAME_RE.test(name)) {

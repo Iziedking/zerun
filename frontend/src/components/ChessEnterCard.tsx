@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useMyChessAgent } from "@/lib/useAgents";
 import { useChessSubmitAuth } from "@/lib/chessAuth";
@@ -12,6 +12,7 @@ import { STARTER_AGENT } from "@/lib/chessStarter";
 import type { ChessSubmitResult } from "@/lib/types";
 import { Agent, Chip, PopButton, StickerCard, cx } from "@/components/zerun";
 import { popButtonClass } from "@/components/zerun/PopButton";
+import { ConnectX } from "@/components/ConnectX";
 
 // The competition front door: pick a name, hand us one Python file, sign it with your wallet, and
 // the agent joins the ladder. The submit call is slow on purpose: the backend is playing your
@@ -42,6 +43,18 @@ export function ChessEnterCard() {
   const { data } = useMyChessAgent(owner);
   const mine = data?.agent ?? null;
   const open = data?.open ?? true;
+
+  // Entering requires a connected X account (anti-bot: one X maps to one wallet). Gate the form on
+  // it. If X connect is not configured on this deployment, the gate is skipped.
+  const { data: xStatus } = useQuery({ queryKey: ["x-status"], queryFn: () => api.xStatus(), staleTime: 300_000 });
+  const { data: xId } = useQuery({
+    queryKey: ["x-identity", owner ?? "none"],
+    queryFn: () => api.xIdentity(owner as string),
+    enabled: Boolean(owner),
+    staleTime: 30_000,
+  });
+  const xEnabled = xStatus?.enabled ?? false;
+  const xConnected = Boolean(xId?.identity);
 
   const [editing, setEditing] = useState(false);
   const showForm = !mine || editing;
@@ -74,6 +87,28 @@ export function ChessEnterCard() {
         <p className="mt-1 font-body text-[14px] text-ink-2">
           The board keeps playing, but no new agents are being accepted right now.
         </p>
+      </StickerCard>
+    );
+  }
+
+  // No entry, and X is required but not connected: gate on X before the form.
+  if (!mine && xEnabled && !xConnected) {
+    return (
+      <StickerCard className="p-6">
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+          <Agent variant="cyan" mood="idle" size={64} name="connect X to enter" />
+          <div className="flex-1">
+            <h2 className="font-display text-xl text-ink">Connect X to enter</h2>
+            <p className="mt-1 font-body text-[14px] text-ink-2">
+              Entering needs a connected X account, one X per wallet, so the competition stays free of
+              bots and duplicate entries. Your handle and picture show on your agent on the board. It
+              is a free signature, no gas.
+            </p>
+            <div className="mt-3">
+              <ConnectX address={owner} isMe />
+            </div>
+          </div>
+        </div>
       </StickerCard>
     );
   }

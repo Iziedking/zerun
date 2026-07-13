@@ -249,6 +249,8 @@ export interface ChessLadderRow {
   kind: string;
   tier: number | null;
   modelDriven: boolean;
+  xHandle: string | null;
+  xAvatar: string | null;
   mu: number;
   sigma: number;
   rating: number;
@@ -264,6 +266,7 @@ export interface ChessLadderRow {
 export interface ChessQualify {
   minGames: number;
   minRating: number;
+  minAgeHours: number;
 }
 
 // One position from the entry check: the sandbox played the submitted agent on it and this is the
