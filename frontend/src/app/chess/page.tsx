@@ -256,12 +256,25 @@ function Countdown() {
   );
 }
 
+/** A chunky cartoon gift, outlined in ink to match the sticker look (no emoji). */
+function GiftIcon() {
+  return (
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="4" y="10.5" width="16" height="10.5" rx="2" fill="#fff" stroke="#171449" strokeWidth="2" />
+      <rect x="3" y="7" width="18" height="4.5" rx="1.5" fill="#6C4CF1" stroke="#171449" strokeWidth="2" />
+      <line x1="12" y1="7" x2="12" y2="21" stroke="#171449" strokeWidth="2" />
+      <path d="M12 7C11 3 6.5 3.5 9 7" fill="#FF6B5C" stroke="#171449" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M12 7C13 3 17.5 3.5 15 7" fill="#FF6B5C" stroke="#171449" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /** The prize card. A hidden gift until we reveal it. */
 function PrizeCard() {
   return (
     <StickerCard className="flex flex-col items-start gap-4 p-6 sm:flex-row sm:items-center">
-      <div className="grid h-14 w-14 shrink-0 place-items-center rounded-chunk border-line border-ink bg-amber text-3xl shadow-pop-press">
-        🎁
+      <div className="grid h-14 w-14 shrink-0 place-items-center rounded-chunk border-line border-ink bg-amber shadow-pop-press">
+        <GiftIcon />
       </div>
       <div className="flex-1">
         <h2 className="font-display text-xl text-ink">

@@ -337,8 +337,11 @@ function ReturningVoterNote() {
   return (
     <StickerCard className="border-amber/60 bg-amber/10 p-4">
       <div className="flex items-start gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-chunk border-line border-ink bg-amber text-lg shadow-pop-press" aria-hidden>
-          ↩︎
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-chunk border-line border-ink bg-amber shadow-pop-press" aria-hidden>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M9 7L4 12l5 5" stroke="#171449" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M4 12h11a5 5 0 0 1 5 5v2" stroke="#171449" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -541,7 +544,13 @@ function Step({
           )}
           aria-hidden
         >
-          {done ? "✓" : n}
+          {done ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path d="M5 12.5L10 17.5L19 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            n
+          )}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
