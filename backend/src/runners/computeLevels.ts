@@ -62,11 +62,12 @@ const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
 //   glm-*              the matcher does substring matching, so "glm-5" also swallows
 //                      "glm-5.1", "glm-5.2", and "GLM-5-FP8".
 //
-// EVERY tier now reaches mainnet, so every tier lists a mainnet model first. Testnet's only
-// healthy provider is rate-limited to 10 requests/min and answers in ~3.8s; mainnet took 45
-// back-to-back calls at ~1.3s (src/scripts/rateProbe.ts). One 0G call is one chess ply, so
-// testnet was the reason a duel could not reach checkmate. The testnet names stay listed
-// behind the mainnet ones as the fallback, which is what they are now.
+// Only the PREMIUM tiers (4-5) reach mainnet now (COMPUTE_MAINNET_MIN_TIER=4), so only they
+// list a mainnet model first; the base tiers list the testnet model, which is all they use.
+// Testnet's only healthy provider is rate-limited to 10 requests/min and answers in ~3.8s;
+// mainnet took 45 back-to-back calls at ~1.3s (src/scripts/rateProbe.ts). One 0G call is one
+// chess ply, so the premium tiers also get the faster network. The testnet names trail the
+// mainnet ones on levels 4-5 as the automatic fallback.
 //
 // The bill: a house agent now spends real 0G to think. At qwen3-vl's mainnet price a chess
 // ply costs a small fraction of a cent, so a full tournament is cents, not dollars — but it
@@ -97,31 +98,29 @@ const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
 // It is verbose — 374 characters to say "252" — which costs latency on the prose tasks (~8s
 // solver, ~7s forecast) but not on chess, where the prompt constrains it to a UCI move and a
 // short reason and it answers in ~1.6s.
-const MODEL_BASE_MAINNET = "qwen/qwen3-vl-30b-a3b-instruct"; // levels 0-5, mainnet
+const MODEL_BASE_MAINNET = "qwen/qwen3-vl-30b-a3b-instruct"; // level 4, mainnet
+const MODEL_PRO_MAINNET = "deepseek-v4-flash"; // level 5, mainnet (a DIFFERENT brain from level 4)
 
-// The premium lead. Kept ahead of the base model at levels 4-5 so the top tiers still route
-// to a different brain, with qwen3-vl right behind it to catch the empty answers. Watch it:
-// if the fallback rate stays high it is costing two calls to do one, and the top tiers should
-// simply lead with qwen3-vl until a premium model is properly baked off. The untried healthy
-// candidates are openai/gpt-5.4-mini, MiniMax-M3, qwen3.6-plus and glm-5.2 — each locks 1-2 0G
-// of ledger for 24h the first time it is called, so evaluate them deliberately.
-const MODEL_PRO_MAINNET = "deepseek-v4-flash"; // level 4  (was deepseek-v4-pro: empty answers)
-const MODEL_MAX_MAINNET = "deepseek-v4-flash"; // level 5  (was qwen3.7-max: too slow for chess)
-
-// Higher tiers keep their bigger compute (more self-consistency passes and a
-// bigger token budget) AND route to a stronger model, so the advantages compound:
-// more 0G invested buys both more thinking and a better brain.
-// Mainnet first, testnet behind it: a name only matches on the network that serves it.
-const BASE_MODELS = [MODEL_BASE_MAINNET, MODEL_BASE];
+// Two bands, on purpose, so the different 0G models are visibly in play at the same time:
+//   levels 0-3 reason on TESTNET (qwen2.5-omni). Free, the house field and casual competitors.
+//   level 4 leads with a MAINNET model (qwen3-vl) and level 5 with a DIFFERENT mainnet model
+//     (deepseek), so the two premium tiers run different brains you can watch side by side.
+//   each mainnet tier trails a testnet model as the automatic fallback if mainnet hiccups.
+// This split needs COMPUTE_MAINNET_MIN_TIER=4 (the default), so only levels 4-5 route to
+// mainnet and the lower tiers stay on testnet, where their model actually shows too. Set it to 0
+// to send every tier to mainnet again (then only mainnet models appear, which is what we moved
+// away from). The other measured-but-unused mainnet candidates (openai/gpt-5.4-mini, MiniMax-M3,
+// glm-5.2) can slot in as new tiers or a fresh premium once baked off with `models:bakeoff`.
+const BASE_TESTNET = [MODEL_BASE]; // levels 0-3, testnet only
 
 // `level` is filled in by computePlan, which is the only way a plan is ever handed out.
 const LEVELS: Omit<InferencePlan, "level">[] = [
-  { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "", intel: 0, models: BASE_MODELS },
-  { maxTokens: 440, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step.", intel: 0, models: BASE_MODELS },
-  { maxTokens: 620, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer.", intel: 0, models: BASE_MODELS },
-  { maxTokens: 760, temperature: 0.6, samples: 5, retries: 1, hint: " Think step by step, then check your answer.", intel: 2, models: BASE_MODELS },
-  { maxTokens: 900, temperature: 0.58, samples: 6, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 5, liveInsight: true, models: [MODEL_PRO_MAINNET, MODEL_GEMMA, ...BASE_MODELS] },
-  { maxTokens: 1024, temperature: 0.58, samples: 7, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 8, liveInsight: true, models: [MODEL_MAX_MAINNET, MODEL_GPT_OSS, ...BASE_MODELS] },
+  { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "", intel: 0, models: BASE_TESTNET },
+  { maxTokens: 440, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step.", intel: 0, models: BASE_TESTNET },
+  { maxTokens: 620, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer.", intel: 0, models: BASE_TESTNET },
+  { maxTokens: 760, temperature: 0.6, samples: 5, retries: 1, hint: " Think step by step, then check your answer.", intel: 2, models: BASE_TESTNET },
+  { maxTokens: 900, temperature: 0.58, samples: 6, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 5, liveInsight: true, models: [MODEL_BASE_MAINNET, MODEL_GEMMA, ...BASE_TESTNET] },
+  { maxTokens: 1024, temperature: 0.58, samples: 7, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 8, liveInsight: true, models: [MODEL_PRO_MAINNET, MODEL_GPT_OSS, MODEL_BASE_MAINNET, ...BASE_TESTNET] },
 ];
 
 export function computeLevelClamp(level: number): number {

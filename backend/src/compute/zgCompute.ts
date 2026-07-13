@@ -752,12 +752,14 @@ const MAINNET_COOLDOWN_MS = Number(process.env.COMPUTE_MAINNET_COOLDOWN_MS ?? "1
 let mainnetFailStreak = 0;
 let mainnetSkipUntil = 0;
 
-// The lowest Compute level allowed to reason on mainnet. Zero: every tier goes to mainnet.
-// Testnet's one healthy provider caps at 10 requests/min and answers in ~3.8s, and one 0G
-// call is one chess ply — that pacing, not the engine, is why a duel could not reach
-// checkmate. Mainnet takes ~48 req/min at ~1.3s. Raise this to put the cheap tiers back on
-// testnet (4 = premium only, 6 = nobody) if the real-0G bill ever matters more than latency.
-const MAINNET_MIN_TIER = Number(process.env.COMPUTE_MAINNET_MIN_TIER ?? "0");
+// The lowest Compute level allowed to reason on mainnet. Default 4: only the premium tiers
+// (4 and 5) go to mainnet, and levels 0-3 stay on testnet. That split is deliberate — it keeps
+// a testnet model AND the mainnet models in play at once, so the different 0G models are all
+// visibly acting instead of everything collapsing onto the mainnet catalog. Set 0 to send every
+// tier to mainnet (only mainnet models then show), or 6 to keep everyone on testnet. Testnet's
+// one healthy provider caps at 10 req/min at ~3.8s; mainnet takes ~48 req/min at ~1.3s, so the
+// premium tiers also get the faster network, which matters when one 0G call is one chess ply.
+const MAINNET_MIN_TIER = Number(process.env.COMPUTE_MAINNET_MIN_TIER ?? "4");
 
 /** Does a call at this Compute level get to use mainnet at all? */
 export function tierUsesMainnet(tier: number | undefined): boolean {
