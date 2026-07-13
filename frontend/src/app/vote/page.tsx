@@ -96,7 +96,11 @@ export default function VotePage() {
   // have marked step 1 done and connected such a wallet, there is nothing to claim, so send them
   // straight to the ballot. This is what turns a re-vote into two taps instead of the whole flow.
   const hasEnoughGas = isConnected && Boolean(status?.hasEnoughGas);
-  const alreadyVoted = isConnected && Boolean(status?.alreadyVoted);
+  // Only treat a wallet as "already boosted" when it BOTH can no longer vote AND actually holds
+  // enough gas to have done so. A wallet that is short on gas (below the live boost price) cannot
+  // have boosted, so we route it to the claim flow instead of dead-ending it on the boosted card.
+  // This also absorbs a stale vote-oracle: an underfunded returning voter is never wrongly blocked.
+  const alreadyVoted = isConnected && Boolean(status?.alreadyVoted) && hasEnoughGas;
   useEffect(() => {
     if (voted && hasEnoughGas && !alreadyVoted && !redirecting) setRedirecting(true);
   }, [voted, hasEnoughGas, alreadyVoted, redirecting]);

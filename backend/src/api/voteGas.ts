@@ -125,11 +125,42 @@ async function canStillVote(address: string): Promise<boolean | null> {
 
 const amountWei = () => ethers.parseEther(AMOUNT_OG);
 const budgetWei = () => ethers.parseEther(BUDGET_OG);
-// The balance at or above which a wallet is "funded" and needs no credit. Normally the tight
-// threshold; with the reopen switch on, a full claim's worth, so earlier claimers below it can top
-// up after a gas spike. Both the status read and the claim gate use this, so the UI and the faucet
-// always agree on who still needs gas.
+// The FIXED fallback floor, used only when the live gas price cannot be read. Normally the tight
+// threshold; with the reopen switch on, a full claim's worth.
 const fundedFloorWei = () => (REOPEN ? amountWei() : ethers.parseEther(FUNDED_THRESHOLD_OG));
+
+// The LIVE cost of a boost: the current mainnet gas price times a castVote's gas, with a margin.
+// This is what a wallet actually needs to boost, so a gas spike no longer leaves a wallet holding a
+// little 0G stranded thinking it can boost when it cannot. Env-tunable.
+const BOOST_GAS = BigInt(process.env.VOTE_BOOST_GAS ?? "120000");
+const GAS_MARGIN_PCT = BigInt(Math.round(Number(process.env.VOTE_GAS_MARGIN ?? "1.5") * 100));
+const gasPriceCache = { wei: 0n, at: 0 };
+
+async function liveBoostCostWei(): Promise<bigint | null> {
+  if (!RPC) return null;
+  const now = Date.now();
+  if (gasPriceCache.wei > 0n && now - gasPriceCache.at < ORACLE_TTL_MS) {
+    return (gasPriceCache.wei * BOOST_GAS * GAS_MARGIN_PCT) / 100n;
+  }
+  try {
+    const provider = new ethers.JsonRpcProvider(RPC);
+    const fee = await provider.getFeeData();
+    const price = fee.gasPrice ?? fee.maxFeePerGas ?? 0n;
+    if (price <= 0n) return null;
+    gasPriceCache.wei = price;
+    gasPriceCache.at = now;
+    return (price * BOOST_GAS * GAS_MARGIN_PCT) / 100n;
+  } catch {
+    return null;
+  }
+}
+
+// The balance a wallet needs to be "funded" (can boost without a claim): the live boost cost when
+// gas is readable, else the fixed floor. Both the status read and the claim gate use this, so the
+// UI and the faucet always agree on who still needs gas.
+async function requiredGasWei(): Promise<bigint> {
+  return (await liveBoostCostWei()) ?? fundedFloorWei();
+}
 
 // The wallet's live mainnet balance, briefly cached. Read alongside the vote oracle so a returning
 // voter with leftover gas is recognised and sent straight to the ballot instead of re-funded.
@@ -177,6 +208,7 @@ export async function voteGasStatus(address: string): Promise<VoteGasStatus> {
   // Only worth the RPC round-trips once there is a real wallet to ask about.
   const canVote = isAddress(address) ? await canStillVote(address) : null;
   const bal = isAddress(address) ? await balanceOf(address) : null;
+  const need = await requiredGasWei();
   return {
     enabled: voteGasConfigured(),
     amountOg: AMOUNT_OG,
@@ -184,7 +216,7 @@ export async function voteGasStatus(address: string): Promise<VoteGasStatus> {
     txHash: claim?.tx_hash ?? null,
     remainingClaims: left > 0n ? Number(left / per) : 0,
     alreadyVoted: canVote === false,
-    hasEnoughGas: bal !== null && bal >= fundedFloorWei(),
+    hasEnoughGas: bal !== null && bal >= need,
     balanceOg: bal !== null ? ethers.formatEther(bal) : "0",
   };
 }
@@ -206,7 +238,7 @@ export async function claimVoteGas(address: string): Promise<ClaimResult> {
     // ballot), while a returning voter who spent last round's gas, or is short after a spike with
     // the reopen switch on, is allowed a fresh top-up.
     const bal = await balanceOf(address);
-    if (bal !== null && bal >= fundedFloorWei()) {
+    if (bal !== null && bal >= (await requiredGasWei())) {
       return {
         ok: false,
         status: 409,
