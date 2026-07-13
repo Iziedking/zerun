@@ -29,9 +29,9 @@ const tierName = (l: number | null) => (l === null ? "" : TIER[Math.max(0, Math.
 export default function ChessCompetitionPage() {
   const { address } = useAccount();
   const me = address?.toLowerCase() ?? null;
-  const [uploadsOnly, setUploadsOnly] = useState(false);
   const [watchId, setWatchId] = useState<number | null>(null);
-  const { data, isLoading, isError } = useChessLadder(undefined, uploadsOnly);
+  // The competition ladder is strictly uploaded player agents; there is no house board to toggle to.
+  const { data, isLoading, isError } = useChessLadder(undefined, true);
   const ladder = data?.ladder ?? [];
   const season = data?.season ?? "c1";
   const qualify = data?.qualify ?? { minGames: 10, minRating: 0 };
@@ -79,16 +79,10 @@ export default function ChessCompetitionPage() {
         </StickerCard>
       ) : (
         <>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="grid flex-1 gap-4 sm:grid-cols-3">
-              <CoinStat caption="Player agents" value={String(players)} token="none" />
-              <CoinStat caption="Games played" value={games.toLocaleString()} token="none" />
-              <CoinStat caption="Top rating" value={topRating.toFixed(1)} token="star" />
-            </div>
-            <div className="flex shrink-0 rounded-pill border-line border-ink bg-cloud p-1 shadow-pop-press">
-              <Toggle label="All agents" active={!uploadsOnly} onClick={() => setUploadsOnly(false)} />
-              <Toggle label="Players only" active={uploadsOnly} onClick={() => setUploadsOnly(true)} />
-            </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <CoinStat caption="Player agents" value={String(players)} token="none" />
+            <CoinStat caption="Games played" value={games.toLocaleString()} token="none" />
+            <CoinStat caption="Top rating" value={topRating.toFixed(1)} token="star" />
           </div>
 
           {ladder.length === 0 ? (
@@ -97,9 +91,8 @@ export default function ChessCompetitionPage() {
                 <Agent variant="violet" mood="thinking" size={120} name="warming up" />
               </div>
               <p className="mt-4 font-body text-[15px] text-ink-2">
-                {uploadsOnly
-                  ? `No qualified players yet. Qualifying takes ${qualify.minGames} rated games, and the first to get there start the prize board.`
-                  : "The ladder is warming up. As games play out, agents climb the board here."}
+                No agents on the board yet. Upload one above and it starts playing within the minute,
+                and the first entries begin the ladder.
               </p>
             </StickerCard>
           ) : (
@@ -121,10 +114,10 @@ export default function ChessCompetitionPage() {
           )}
 
           <p className="font-body text-[12px] text-ink-3">
-            Rating is TrueSkill mu minus three sigma. Agents tagged <em>house</em> are Zerun
-            benchmarks that fill the board and give you something to beat; the prize is for player
-            uploads only. A player qualifies for the prize after {qualify.minGames} rated games, and
-            re-uploading resets that. Switch to <em>Players only</em> to see the board that pays.
+            Every agent here is a player upload. Rating is conservative TrueSkill, mu minus three
+            sigma, so the top needs a strong record and enough games to prove it. A player qualifies
+            for the prize after {qualify.minGames} rated games, and re-uploading resets your rating
+            and position.
           </p>
         </>
       )}
@@ -133,21 +126,6 @@ export default function ChessCompetitionPage() {
 
       {watchId != null && <LadderGameView agentId={watchId} onClose={() => setWatchId(null)} />}
     </div>
-  );
-}
-
-function Toggle({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cx(
-        "rounded-pill px-4 py-2 font-body text-[13px] font-extrabold transition",
-        active ? "bg-violet text-white shadow-pop-press" : "text-ink-2 hover:text-ink",
-      )}
-    >
-      {label}
-    </button>
   );
 }
 

@@ -19,6 +19,10 @@ import { mainnetComputeEnabled, mainnetLedgerOg } from "../compute/zgCompute.js"
 
 const ENABLED = (process.env.CHESS_LADDER ?? "off").toLowerCase() === "on";
 const TICK_MS = Number(process.env.CHESS_LADDER_TICK_MS ?? "15000");
+// The ladder is an uploaded-agent competition by default: no house benchmarks or showcase agents
+// compete on it. Set CHESS_HOUSE=on to restore the old behavior where the house field fills the
+// board and gives newcomers something to beat.
+const HOUSE_ON = (process.env.CHESS_HOUSE ?? "off").toLowerCase() === "on";
 
 // Spend guard: when the mainnet 0G ledger drops below this floor, the 0G-spending agents (uploaded
 // entries and the model-driven showcase) are paused, and only the free negamax house field keeps
@@ -227,10 +231,13 @@ export function getAgentGame(agentId: number): LiveGame | null {
 export async function playOneLadderGame(): Promise<LadderGameSummary | null> {
   const season = currentChessSeason();
   let agents = await activeAgents(season);
-  // When the 0G ledger is low, pause the paid agents (uploads + showcase) and let the free house
-  // field carry the board. Paused agents simply do not get new games, so their ratings are intact.
+  // The competition ladder is strictly for uploaded player agents. House benchmarks and showcase
+  // agents never compete on it, unless CHESS_HOUSE=on restores the old house-inclusive behavior.
+  if (!HOUSE_ON) agents = agents.filter((a) => a.kind === "upload");
+  // When the 0G ledger is low, pause paid play. With house excluded there is no free fallback, so
+  // the ladder simply pauses until the ledger is topped up; with house on, it falls back to it.
   if (!(await spendersAllowed())) {
-    agents = agents.filter((a) => !(a.kind === "upload" || a.modelDriven));
+    agents = HOUSE_ON ? agents.filter((a) => !(a.kind === "upload" || a.modelDriven)) : [];
   }
   if (agents.length < 2) return null;
 
@@ -314,12 +321,23 @@ let running = false;
 // ladder never runs two CPU-heavy games at once. Gated by CHESS_LADDER=on.
 export function startChessLadder(): void {
   if (!ENABLED || timer) return;
+  if (!HOUSE_ON) {
+    // Uploaded-agent competition: take any house benchmarks and showcase agents off the board so
+    // the ladder and leaderboard are strictly the real entrants.
+    void query("update chess_agents set status = 'disabled' where kind = 'engine' and status = 'active'")
+      .then(({ rowCount }) => {
+        if (rowCount) console.log(`chess ladder: removed ${rowCount} house agents (uploads-only competition)`);
+      })
+      .catch((err) => console.warn("chess ladder: could not disable house agents:", (err as Error).message));
+  }
   const tick = async () => {
     if (running) return;
     running = true;
     try {
-      await seedHouseEngines();
-      await seedShowcaseAgents();
+      if (HOUSE_ON) {
+        await seedHouseEngines();
+        await seedShowcaseAgents();
+      }
       await playOneLadderGame();
     } catch (err) {
       console.error("chess ladder tick failed:", (err as Error).message);
@@ -329,7 +347,9 @@ export function startChessLadder(): void {
     }
   };
   timer = setTimeout(tick, TICK_MS);
-  console.log(`chess ladder: matchmaker on, one game every ${TICK_MS} ms`);
+  console.log(
+    `chess ladder: matchmaker on (${HOUSE_ON ? "house + uploads" : "uploads only"}), one game every ${TICK_MS} ms`,
+  );
 }
 
 export function stopChessLadder(): void {
