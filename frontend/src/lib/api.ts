@@ -14,6 +14,7 @@ import type {
   OperatorProfile,
   PokerLadderRow,
   ChessLadderRow,
+  ChessLiveGame,
   ChessQualify,
   ChessSubmitResult,
   MyChessAgentResponse,
@@ -114,6 +115,10 @@ export const api = {
     req<ChessSubmitResult>("/api/chess/agents", { method: "POST", body: JSON.stringify(body) }),
   myChessAgent: (owner: string) =>
     req<MyChessAgentResponse>(`/api/chess/agents/mine?owner=${owner}`),
+
+  // The game currently on the ladder, or one agent's live-or-most-recent game to watch.
+  chessLiveGame: () => req<{ game: ChessLiveGame | null }>("/api/chess/live"),
+  chessAgentGame: (agentId: number) => req<{ game: ChessLiveGame | null }>(`/api/chess/game/${agentId}`),
   agentMemory: (agentId: number, kind: MemoryKind = "general") =>
     req<AgentMemoryResponse>(`/api/agents/${agentId}/memory?kind=${kind}`),
   agentWallet: (agentId: number) => req<AgentWallet>(`/api/agents/${agentId}/wallet`),

@@ -7,6 +7,7 @@ import { useChessLadder } from "@/lib/useAgents";
 import { shortAddr } from "@/lib/format";
 import type { ChessLadderRow } from "@/lib/types";
 import { ChessEnterCard } from "@/components/ChessEnterCard";
+import { LadderGameView } from "@/components/LadderGameView";
 import { Agent, agentVariant, Chip, CoinStat, StickerCard, cx } from "@/components/zerun";
 import { popButtonClass } from "@/components/zerun/PopButton";
 
@@ -29,6 +30,7 @@ export default function ChessCompetitionPage() {
   const { address } = useAccount();
   const me = address?.toLowerCase() ?? null;
   const [uploadsOnly, setUploadsOnly] = useState(false);
+  const [watchId, setWatchId] = useState<number | null>(null);
   const { data, isLoading, isError } = useChessLadder(undefined, uploadsOnly);
   const ladder = data?.ladder ?? [];
   const season = data?.season ?? "c1";
@@ -104,7 +106,15 @@ export default function ChessCompetitionPage() {
             <StickerCard className="overflow-hidden p-0">
               <ul>
                 {ladder.map((r, i) => (
-                  <LadderRow key={r.agentId} row={r} rank={i + 1} even={i % 2 === 0} me={me} minGames={qualify.minGames} />
+                  <LadderRow
+                    key={r.agentId}
+                    row={r}
+                    rank={i + 1}
+                    even={i % 2 === 0}
+                    me={me}
+                    minGames={qualify.minGames}
+                    onWatch={() => setWatchId(r.agentId)}
+                  />
                 ))}
               </ul>
             </StickerCard>
@@ -120,6 +130,8 @@ export default function ChessCompetitionPage() {
       )}
 
       <HowItWorks />
+
+      {watchId != null && <LadderGameView agentId={watchId} onClose={() => setWatchId(null)} />}
     </div>
   );
 }
@@ -145,12 +157,14 @@ function LadderRow({
   even,
   me,
   minGames,
+  onWatch,
 }: {
   row: ChessLadderRow;
   rank: number;
   even: boolean;
   me: string | null;
   minGames: number;
+  onWatch: () => void;
 }) {
   const isHouse = row.kind === "engine";
   const mine = !isHouse && row.owner !== null && row.owner.toLowerCase() === me;
@@ -159,8 +173,18 @@ function LadderRow({
   const gamesLeft = Math.max(0, minGames - row.games);
   return (
     <li
+      role="button"
+      tabIndex={0}
+      onClick={onWatch}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onWatch();
+        }
+      }}
+      title="Watch this agent's game"
       className={cx(
-        "flex items-center gap-3 border-ink/15 px-4 py-3",
+        "flex cursor-pointer items-center gap-3 border-ink/15 px-4 py-3 transition hover:bg-violet/10",
         rank > 1 && "border-t-line",
         mine ? "bg-violet/10" : even ? "bg-cloud" : "bg-cloud-2",
       )}

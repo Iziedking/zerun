@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { query } from "../db/pool.js";
 import { playRefereedGame } from "./chessMatch.js";
+import { START_FEN } from "../runners/chess/engine.js";
 import { engineMover, type Mover } from "../runners/chess/movers.js";
 import { sandboxMover } from "../runners/chess/sandbox.js";
 import { modelMover } from "../runners/chess/modelMover.js";
@@ -178,6 +179,50 @@ export interface LadderGameSummary {
   plies: number;
 }
 
+// A watchable game: the full move-by-move position sequence, so the frontend can follow a live
+// game or replay a finished one. Kept in memory (this process runs the games), one live game at a
+// time plus the last game each agent played, so "click an agent, watch its game" always resolves.
+export interface LiveMove {
+  ply: number;
+  uci: string;
+  fen: string; // the position AFTER this move
+  mover: "w" | "b";
+}
+export interface LiveGame {
+  whiteId: number;
+  blackId: number;
+  white: string;
+  black: string;
+  whiteKind: string; // 'upload' | 'showcase' | 'house'
+  blackKind: string;
+  startedAt: number;
+  moves: LiveMove[];
+  status: "playing" | "done";
+  winner: string | null; // agent name, or null for a draw
+  how: string | null;
+  fen: string; // current (live) or final (done) position
+}
+
+let liveGame: LiveGame | null = null;
+const lastGameByAgent = new Map<number, LiveGame>();
+
+function kindLabel(a: LadderAgent): string {
+  if (a.kind === "upload") return "upload";
+  if (a.modelDriven) return "showcase";
+  return "house";
+}
+
+/** The game currently being played, or null when the ladder is between games. */
+export function getLiveGame(): LiveGame | null {
+  return liveGame && liveGame.status === "playing" ? liveGame : null;
+}
+
+/** One agent's game to watch: the live one if it is in it, else its most recent finished game. */
+export function getAgentGame(agentId: number): LiveGame | null {
+  if (liveGame && (liveGame.whiteId === agentId || liveGame.blackId === agentId)) return liveGame;
+  return lastGameByAgent.get(agentId) ?? null;
+}
+
 // Play one ladder game: the agent with the fewest games gets a match against its nearest rating.
 export async function playOneLadderGame(): Promise<LadderGameSummary | null> {
   const season = currentChessSeason();
@@ -204,9 +249,41 @@ export async function playOneLadderGame(): Promise<LadderGameSummary | null> {
   }
 
   const aWhite = Math.random() < 0.5;
-  const white = await buildMover(aWhite ? a : b);
-  const black = await buildMover(aWhite ? b : a);
-  const result = await playRefereedGame(white, black);
+  const wa = aWhite ? a : b;
+  const ba = aWhite ? b : a;
+
+  // Open the watchable game before the first move, so a page that opens mid-game sees it live.
+  const game: LiveGame = {
+    whiteId: wa.id,
+    blackId: ba.id,
+    white: wa.name,
+    black: ba.name,
+    whiteKind: kindLabel(wa),
+    blackKind: kindLabel(ba),
+    startedAt: Date.now(),
+    moves: [],
+    status: "playing",
+    winner: null,
+    how: null,
+    fen: START_FEN,
+  };
+  liveGame = game;
+
+  const white = await buildMover(wa);
+  const black = await buildMover(ba);
+  const result = await playRefereedGame(white, black, {
+    onMove: (info) => {
+      game.moves.push({ ply: info.ply, uci: info.uci, fen: info.fen, mover: info.mover });
+      game.fen = info.fen;
+    },
+  });
+
+  game.status = "done";
+  game.fen = result.finalFen;
+  game.how = result.how;
+  game.winner = result.winner === "w" ? wa.name : result.winner === "b" ? ba.name : null;
+  lastGameByAgent.set(wa.id, game);
+  lastGameByAgent.set(ba.id, game);
 
   if (result.winner === null) {
     await recordChessDraw(a.id, b.id);

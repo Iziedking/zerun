@@ -75,6 +75,18 @@ export function useChessLadder(season?: string, uploads = false) {
   });
 }
 
+// One agent's watchable game (live or most recent). Polls only while the game is still playing, so
+// a finished replay does not keep hitting the server.
+export function useChessGame(agentId: number | null) {
+  return useQuery({
+    queryKey: ["chess-game", agentId],
+    queryFn: () => api.chessAgentGame(agentId as number),
+    enabled: agentId != null,
+    refetchInterval: (query) =>
+      (query.state.data as { game?: { status?: string } } | undefined)?.game?.status === "playing" ? 1500 : false,
+  });
+}
+
 // The connected wallet's competition entry, if it has one. Also carries whether submissions are
 // open at all, so the page can say so instead of failing at the end of a long form.
 export function useMyChessAgent(owner?: string | null) {

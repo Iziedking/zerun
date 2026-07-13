@@ -36,6 +36,7 @@ import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
 import { chessLadder, currentChessSeason, chessQualify } from "../runners/chess/ratings.js";
 import { submitChessAgent, myChessAgent, uploadsOpen, SubmitError } from "../runners/chess/submissions.js";
 import { verifyChessSubmit } from "../auth/chessSubmitSig.js";
+import { getLiveGame, getAgentGame } from "../coordinator/chessLadderRunner.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
 import { getAgentMemory, memoryEnabled, memoryLift, memoryQueueDepth } from "../runners/agentMemory.js";
 import { agentAddress } from "../runners/agentWallet.js";
@@ -860,6 +861,20 @@ app.post("/api/chess/agents", async (c) => {
     console.error("chess submit failed:", (err as Error).message);
     return c.json({ error: "the submission could not be processed, try again" }, 500);
   }
+});
+
+// The game currently being played on the ladder, move by move, or null between games. Lets the
+// board show a live game to anyone who opens the page.
+app.get("/api/chess/live", (c) => {
+  return c.json({ game: getLiveGame() });
+});
+
+// One agent's watchable game: the live one if it is playing, else its most recent finished game.
+// Powers "click an agent, watch its game."
+app.get("/api/chess/game/:agentId", (c) => {
+  const id = Number(c.req.param("agentId"));
+  if (!id) return c.json({ error: "a numeric agent id is required" }, 400);
+  return c.json({ game: getAgentGame(id) });
 });
 
 // A wallet's own entry: what it submitted, and how it is doing on the board. `open` tells the UI

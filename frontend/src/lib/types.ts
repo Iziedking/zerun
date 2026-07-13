@@ -307,6 +307,32 @@ export interface MyChessAgentResponse {
   agent: MyChessAgent | null;
 }
 
+// One move in a watchable ladder game: the position AFTER the move, so the board can be drawn
+// straight from `fen` at any point.
+export interface ChessLiveMove {
+  ply: number;
+  uci: string;
+  fen: string;
+  mover: "w" | "b";
+}
+
+// A watchable ladder game, live or finished. `status` is "playing" while in progress; when "done",
+// `winner` is the winning agent's name or null for a draw, and `how` is checkmate/adjudicated/etc.
+export interface ChessLiveGame {
+  whiteId: number;
+  blackId: number;
+  white: string;
+  black: string;
+  whiteKind: string; // 'upload' | 'showcase' | 'house'
+  blackKind: string;
+  startedAt: number;
+  moves: ChessLiveMove[];
+  status: "playing" | "done";
+  winner: string | null;
+  how: string | null;
+  fen: string;
+}
+
 // One 0G Compute model's aggregated performance, for the model studies page.
 // `accuracy` is over graded answers only (Solver/Analyst); null when a model has
 // answered but never on a graded contest.
