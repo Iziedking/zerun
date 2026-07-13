@@ -170,7 +170,9 @@ export async function chessLadder(
       qualified: isQualified(games, rating, createdAtMs),
     };
   });
-  // The prize board shows qualified players only. The full board keeps everyone, tagging who has
-  // qualified, so a climbing player can see how close they are.
-  return onlyUploads ? mapped.filter((r) => r.qualified) : mapped;
+  // Show every entrant, each tagged with whether it has qualified, so a climbing player can see how
+  // close it is and the board never looks empty while agents are still earning their place. The
+  // prize goes to the top QUALIFIED players, but that is decided at the deadline, not by hiding
+  // anyone from the live board. `onlyUploads` still filters house out via the SQL above.
+  return mapped;
 }
