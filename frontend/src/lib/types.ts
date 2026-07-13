@@ -248,6 +248,7 @@ export interface ChessLadderRow {
   owner: string | null;
   kind: string;
   tier: number | null;
+  modelDriven: boolean;
   mu: number;
   sigma: number;
   rating: number;

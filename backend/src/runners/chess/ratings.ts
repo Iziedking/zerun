@@ -86,6 +86,7 @@ export interface ChessLadderRow {
   owner: string | null;
   kind: string; // 'upload' | 'engine'
   tier: number | null;
+  modelDriven: boolean; // a house showcase agent that reasons on 0G (engine shortlist, model picks)
   mu: number;
   sigma: number;
   rating: number; // conservative mu - 3*sigma
@@ -110,6 +111,7 @@ export async function chessLadder(
     owner: string | null;
     kind: string;
     tier: number | null;
+    model_driven: boolean | null;
     mu: number;
     sigma: number;
     games: number;
@@ -117,7 +119,7 @@ export async function chessLadder(
     draws: number;
     losses: number;
   }>(
-    `select r.agent_id, a.name, a.owner, a.kind, a.tier, r.mu, r.sigma, r.games, r.wins, r.draws, r.losses
+    `select r.agent_id, a.name, a.owner, a.kind, a.tier, a.model_driven, r.mu, r.sigma, r.games, r.wins, r.draws, r.losses
        from chess_ratings r
        join chess_agents a on a.id = r.agent_id
       where r.season = $1 and r.games > 0 and a.status = 'active'
@@ -135,6 +137,7 @@ export async function chessLadder(
       owner: r.owner,
       kind: r.kind,
       tier: r.tier === null ? null : Number(r.tier),
+      modelDriven: Boolean(r.model_driven),
       mu: Number(r.mu),
       sigma: Number(r.sigma),
       rating,

@@ -181,6 +181,7 @@ function LadderRow({
             <>
               <Chip tone="neutral">house</Chip>
               <Chip tone="thinking">{tierName(row.tier)}</Chip>
+              {row.modelDriven && <Chip tone="info">thinks on 0G</Chip>}
             </>
           ) : mine ? (
             <Chip tone="won">you</Chip>

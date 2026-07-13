@@ -3,6 +3,7 @@
 import { useRecentFeed } from "@/lib/useAgents";
 import { shortId, formatLatency } from "@/lib/format";
 import { Chip, SkinnedAgent, StickerCard, agentVariant } from "@/components/zerun";
+import { ModelChip } from "@/components/ModelChip";
 
 // The "live on 0G" recent-inference strip: the most recent answers agents thought
 // on 0G, bouncing in. Makes the arena home feel alive without exposing mechanics.
@@ -38,9 +39,7 @@ export function LiveStrip({ limit = 8 }: { limit?: number }) {
               <span className="min-w-0 flex-1 truncate font-display text-[15px] text-ink">
                 {r.agent_name ?? `Agent #${r.agent_id}`}
               </span>
-              <span className="hidden font-body text-[13px] font-bold text-ink-2 sm:inline">
-                {r.model || "0G model"}
-              </span>
+              <ModelChip model={r.model} className="hidden sm:inline-flex" />
               <span className="hidden font-mono text-[11px] text-ink-3 md:inline">
                 {shortId(r.chat_id, 6, 4)}
               </span>
