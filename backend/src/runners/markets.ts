@@ -75,6 +75,13 @@ function stem(q: string): string {
 // Low-signal markets a model cannot reason about (exact weather, etc.).
 const JUNK = /temperature|°\s*[cf]|degrees|\bweather\b|rainfall|\bsnow\b/i;
 
+// A day of slack, so a market that resolved around its own deadline still counts as "the event
+// happened", while one whose deadline is clearly in the future is treated as an ongoing event that
+// resolved early.
+const FUTURE_GRACE_MS = 24 * 3600 * 1000;
+// Only forecast events that resolved within this window, so genuinely old markets fall away.
+const MAX_AGE_MS = Number(process.env.ANALYST_MARKET_MAX_AGE_DAYS ?? "60") * 24 * 3600 * 1000;
+
 // Fetch a varied set of resolved binary markets, seeded by contest id so each
 // contest draws a different reproducible slice and no question repeats within it.
 export async function fetchMarkets(contestId: number, count: number): Promise<Market[]> {
@@ -94,6 +101,7 @@ export async function fetchMarkets(contestId: number, count: number): Promise<Ma
     clearTimeout(timer);
   }
 
+  const now = Date.now();
   const seen = new Set<string>();
   const all: {
     question: string;
@@ -112,10 +120,17 @@ export async function fetchMarkets(contestId: number, count: number): Promise<Ma
     if (!yesWon && !noWon) continue;
     const question = (m.question ?? "").trim();
     if (question.length < 18 || JUNK.test(question)) continue;
+    // Only forecast events whose deadline has actually passed. A market that settled EARLY while its
+    // broader event is still ongoing has an endDate clearly in the future, and it reads as a stale
+    // prediction: "reach the semifinals" for a team already knocked out mid-tournament. Skip those.
+    const endMs = Date.parse(m.endDate ?? "");
+    if (Number.isFinite(endMs) && endMs > now + FUTURE_GRACE_MS) continue;
+    const ts = Date.parse(m.closedTime ?? m.endDate ?? "") || 0;
+    // And only recent resolutions, so genuinely old markets do not surface as fresh forecasts.
+    if (ts && ts < now - MAX_AGE_MS) continue;
     const key = stem(question);
     if (seen.has(key)) continue;
     seen.add(key);
-    const ts = Date.parse(m.closedTime ?? m.endDate ?? "") || 0;
     all.push({
       question,
       description: (m.description ?? "").slice(0, 600),
