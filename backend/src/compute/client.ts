@@ -2,6 +2,8 @@ import OpenAI from "openai";
 import { config } from "../config/index.js";
 import { computeChat, brokerConfigured } from "./zgCompute.js";
 import { modelsMatch } from "./modelMatch.js";
+import { applyEscalation } from "../runners/computeLevels.js";
+import type { EscalateContext } from "../runners/traits.js";
 
 // The single seam every agent answer passes through. In Zerun an agent does not
 // "think" anywhere except here, and here always resolves to 0G: a paid,
@@ -25,6 +27,9 @@ export interface CallParams {
   // the call stays on testnet, which is the safe default for anything not tied to an agent
   // (the memory summarizer, diagnostics).
   tier?: number;
+  // House-only, premium-tier escalation: lets this call occasionally lead with a pool model so the
+  // models page fills across every 0G model. Absent leaves `models` exactly as given.
+  escalate?: EscalateContext;
 }
 
 export interface CallResult {
@@ -104,9 +109,12 @@ async function routerModelFor(preferred?: string[]): Promise<string> {
 
 export async function callModel(params: CallParams): Promise<CallResult> {
   const mode = resolveMode();
+  // Fold in any house-only premium-tier escalation before dispatch, so both live paths route to the
+  // same chosen model list. A no-op for players, low tiers, or an unset escalate.
+  const models = applyEscalation(params.tier, params.models ?? [], params.escalate);
 
   if (mode === "0g-compute") {
-    const a = await computeChat(params);
+    const a = await computeChat({ ...params, models });
     return {
       text: a.text,
       source: "0g-compute",
@@ -121,7 +129,7 @@ export async function callModel(params: CallParams): Promise<CallResult> {
   if (mode === "0g-router") {
     const client = getRouterClient();
     // Tier-aware: route to the tier's preferred model when the router serves it.
-    const model = await routerModelFor(params.models);
+    const model = await routerModelFor(models);
     const t0 = Date.now();
     const completion = await client.chat.completions.create({
       model,

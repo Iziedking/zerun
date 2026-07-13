@@ -62,6 +62,19 @@ export interface InferencePlan {
   // badge); lower tiers stay on the base model. Falls back to the base model
   // whenever a preferred one has no healthy provider.
   models?: string[];
+  // Set by the runner per agent: lets a house agent at a premium tier occasionally reach for a
+  // model from the escalation pool, so the models page fills across every 0G model without a big
+  // bill. Absent for players and low tiers, whose model stays fixed by tier. See applyEscalation.
+  escalate?: EscalateContext;
+}
+
+// Whether, and how, a call may reach for a premium pool model. House-only so a player's result is
+// never decided by which model it happened to draw; keyed so the field spreads across the pool.
+export interface EscalateContext {
+  house: boolean;
+  key: number;
+  /** The runner flagged this a hard decision, so escalate regardless of the probability roll. */
+  hard?: boolean;
 }
 
 // Self-consistency passes allowed by the compute budget (tier). Kept small so a

@@ -81,6 +81,9 @@ export async function solvePuzzle(puzzle: Puzzle, plan: InferencePlan): Promise<
           temperature: plan.temperature,
           models: plan.models,
           tier: plan.level,
+          // A live-insight puzzle is the hard, top-tier kind, so let a house agent reach for a
+          // pool model on it; otherwise the occasional roll in applyEscalation carries it.
+          escalate: plan.escalate ? { ...plan.escalate, hard: usedLiveInsight } : undefined,
         },
         Math.max(1, plan.retries),
       );

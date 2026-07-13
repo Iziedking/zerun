@@ -248,6 +248,7 @@ export async function runPokerContest(contestId: number): Promise<RunResult> {
           levelOf.get(me.agentId) ?? 0,
           access.stats ?? null,
           memoryOf.get(me.agentId) ?? emptySession,
+          me.isHouse,
         ).catch(() => null);
       }
       if (authoredOn0g) {

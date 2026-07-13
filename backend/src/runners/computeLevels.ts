@@ -1,4 +1,46 @@
-import type { InferencePlan } from "./traits.js";
+import type { InferencePlan, EscalateContext } from "./traits.js";
+
+// The escalation pool: extra mainnet models the premium tiers (4-5) reach for occasionally, on top
+// of their tier default (qwen3-vl at 4, deepseek at 5). New models drop in here after a bakeoff,
+// no code change. Kept to the ones that actually served themselves and passed all three task
+// shapes; MiniMax-M3 is the clean add today. gpt-5.4-mini and glm-5.2 can be added once they bake
+// off cleanly (gpt-5.4-mini aborted and fell back; glm-5.2 returned empty answers and was slow).
+const ESCALATION_POOL = (process.env.COMPUTE_ESCALATION_MODELS ?? "MiniMax-M3")
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
+// How often a normal (not-flagged-hard) premium-tier house call reaches for a pool model. Small on
+// purpose: the pool models cost more, so this keeps them occasional while still populating the
+// board. A hard-flagged call escalates regardless.
+const ESCALATE_PROB = Number(process.env.COMPUTE_ESCALATE_PROB ?? "0.15");
+// The lowest tier allowed to escalate. Matches the mainnet band, so only agents already on mainnet
+// reach for the pool.
+const ESCALATE_MIN_TIER = Number(process.env.COMPUTE_ESCALATE_MIN_TIER ?? "4");
+
+export function escalationPool(): string[] {
+  return [...ESCALATION_POOL];
+}
+
+/**
+ * The model list for one call, after escalation. A HOUSE agent at a premium tier, on a hard task or
+ * a small fraction of the time, leads with a pool model (chosen by its key so different agents show
+ * different models), then falls back to the tier default. Players, low tiers, and an empty pool are
+ * returned untouched, so a competitor's result is always on its consistent tier model.
+ */
+export function applyEscalation(
+  tier: number | undefined,
+  base: string[],
+  ctx?: EscalateContext,
+  rand: () => number = Math.random,
+): string[] {
+  if (!ctx || !ctx.house) return base;
+  if ((tier ?? 0) < ESCALATE_MIN_TIER) return base;
+  if (ESCALATION_POOL.length === 0) return base;
+  const trigger = ctx.hard || rand() < ESCALATE_PROB;
+  if (!trigger) return base;
+  const chosen = ESCALATION_POOL[Math.abs(ctx.key) % ESCALATION_POOL.length]!;
+  return [chosen, ...base.filter((m) => m !== chosen)];
+}
 
 // The single skill dial: Compute, bought with 0G. Every agent starts at level 0
 // and is identical at claim. Each level adds a self-consistency pass and a bigger

@@ -232,7 +232,9 @@ export async function runContest(contestId: number): Promise<RunResult> {
     // Inject the agent's own retrieved-context memory (no-op unless AGENT_MEMORY is on and
     // the real agent has a stored self-summary), so a seasoned agent reasons with its read.
     const memoryHint = e.isHouse ? "" : await memoryHintFor(e.agentId);
-    planOf.set(e.agentId, { ...capped, memoryHint });
+    // House agents at a premium tier occasionally reach for an escalation-pool model, so the
+    // models page fills across every 0G model. Players never escalate, so their model stays fixed.
+    planOf.set(e.agentId, { ...capped, memoryHint, escalate: { house: e.isHouse, key: e.agentId } });
   }
 
   // House agents answer for the feed (activity) but are never scored, ranked, or

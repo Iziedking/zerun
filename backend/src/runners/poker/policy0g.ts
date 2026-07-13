@@ -78,6 +78,7 @@ export async function author0gPolicy(
   tier: number,
   opp: PokerStats | null,
   memory: MemorySession = emptySession,
+  house = false,
 ): Promise<AuthoredPolicy | null> {
   const plan = computePlan(tier);
   const oppSummary = summarizeOpponent(opp);
@@ -95,6 +96,9 @@ export async function author0gPolicy(
       temperature: 0.3,
       models: plan.models,
       tier,
+      // A house agent at a premium tier occasionally authors its tuning on a pool model, so poker
+      // contributes to the models board too. Players tune on their fixed tier model.
+      escalate: { house, key: agentId },
     });
   } catch {
     memory.refund(); // paid for a call that never landed

@@ -64,6 +64,7 @@ export async function forecastWorldCup(
           temperature: plan.temperature,
           models: plan.models,
           tier: plan.level,
+          escalate: plan.escalate,
         });
         latencyMs += res.latencyMs;
         last = res;
