@@ -72,6 +72,8 @@ export default function ChessBuildGuide() {
         </div>
       </header>
 
+      <BuildWithAI />
+
       <StickerCard className="p-6">
         <h2 className="font-display text-2xl text-ink">The contract</h2>
         <p className="mt-1 font-body text-[15px] text-ink-2">
@@ -219,6 +221,57 @@ export default function ChessBuildGuide() {
         </Link>
       </StickerCard>
     </div>
+  );
+}
+
+/** Not a coder? Hand this guide's machine-readable version to any AI coding assistant and it will
+ *  write your strategy.py for you. Mirrors the dev.fun AGENT.md pattern: a public URL you paste in. */
+function BuildWithAI() {
+  const [copied, setCopied] = useState(false);
+  const url = "https://zerun.site/AGENT.md";
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked; the link is on the page to copy by hand */
+    }
+  }
+
+  return (
+    <StickerCard className="p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-2xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="font-display text-2xl text-ink">Not a coder? Let an AI build it</h2>
+            <Chip tone="thinking">no code needed</Chip>
+          </div>
+          <p className="mt-2 font-body text-[15px] text-ink-2">
+            We wrote a full spec your AI coding assistant can follow (Claude, Cursor, ChatGPT, and
+            the rest). Give it the link below, say &quot;build me a strategy.py following this
+            guide,&quot; and it writes the whole file for you. Then come back and upload it.
+          </p>
+          <ol className="mt-4 grid gap-2 font-body text-[13px] text-ink-2">
+            <li>1. Copy the link and paste it to your AI assistant.</li>
+            <li>2. Ask it to build and test a <Mono>strategy.py</Mono> from the guide.</li>
+            <li>3. Save the file it gives you, then upload it on the Chess page.</li>
+          </ol>
+        </div>
+        <div className="flex shrink-0 flex-col gap-2">
+          <PopButton variant="primary" onClick={() => void copyLink()}>
+            {copied ? "Link copied" : "Copy the AI guide link"}
+          </PopButton>
+          <a href="/AGENT.md" target="_blank" rel="noreferrer" className={popButtonClass("ghost")}>
+            Open the guide
+          </a>
+        </div>
+      </div>
+      <p className="mt-4 rounded-chunk border-line border-ink bg-cloud-2 p-3 font-mono text-[12px] text-ink shadow-pop-press">
+        {url}
+      </p>
+    </StickerCard>
   );
 }
 
