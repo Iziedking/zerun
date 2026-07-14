@@ -49,23 +49,26 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-40 border-b-line border-ink bg-sky/85 backdrop-blur-md">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-8">
+      {/* The header spans the FULL width (the page content below stays capped at max-w-6xl). On a
+          wide screen the old cap left big empty gutters left and right while squeezing the nav, so
+          Profile got clipped. Full width plus edge padding gives every section room. */}
+      <div className="flex w-full items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-8 xl:px-12">
         <div className="flex min-w-0 items-center gap-2 sm:gap-4">
           {/* In the app the top bar is crowded (nav pills, balance, controls, the
               wallet pill), so on phones show just the Z tile and bring the word back
               at sm+. The marketing landing has room, so it keeps the full wordmark. */}
           <Wordmark wordClassName={isLanding ? "" : "hidden sm:inline-block"} />
-          {/* Desktop / tablet nav. It does NOT scroll: a horizontally slidable nav made the last
-              item (Profile) look like it had vanished off the edge. With the back button now out of
-              the header and the balance pill hidden below lg, all sections fit on one line. */}
+          {/* Full pill nav, single row, no scroll. Shown at lg+ where the full-width bar has room
+              for every section including Profile. Below lg (tablet and phone) the compact scroll row
+              under the wordmark takes over, so nothing ever clips. */}
           {!isLanding && isConnected && (
-            <nav className="hidden shrink-0 items-center gap-1.5 sm:flex">
+            <nav className="hidden shrink-0 items-center gap-2 lg:flex">
               {navItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={cx(
-                    "shrink-0 whitespace-nowrap rounded-pill border-line px-3 py-1.5 font-body text-sm font-extrabold transition",
+                    "shrink-0 whitespace-nowrap rounded-pill border-line px-3.5 py-1.5 font-body text-sm font-extrabold transition",
                     item.active
                       ? "border-ink bg-violet text-white shadow-pop-press"
                       : "border-transparent text-ink-2 hover:border-ink hover:bg-cloud hover:text-ink",
@@ -84,7 +87,7 @@ export function SiteHeader() {
           </div>
         ) : (
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {isConnected && !isVote && <BalancePill className="hidden lg:inline-flex" />}
+            {isConnected && !isVote && <BalancePill className="hidden xl:inline-flex" />}
             {isConnected && <NotificationBell />}
             <ThemeToggle />
             <MusicPlayer className="grid" />
@@ -93,9 +96,10 @@ export function SiteHeader() {
         )}
       </div>
 
-      {/* Compact mobile nav: a row of pill links under the wordmark, phones only */}
+      {/* Compact nav: a scrollable row of pill links under the wordmark, for phone and tablet
+          (below lg, where the full pill row would not fit on one line). */}
       {!isLanding && isConnected && (
-        <nav className="flex items-center gap-2 overflow-x-auto border-t-line border-ink/10 px-4 py-2 sm:hidden">
+        <nav className="flex items-center gap-2 overflow-x-auto border-t-line border-ink/10 px-4 py-2 lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {navItems.map((item) => (
             <Link
               key={item.href}
