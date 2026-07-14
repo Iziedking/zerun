@@ -4,6 +4,7 @@ import { Grandstander, Nunito, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { SiteHeader } from "@/components/SiteHeader";
+import { PageBack } from "@/components/PageBack";
 import { PostConnectModal } from "@/components/PostConnectModal";
 import { WinCelebration } from "@/components/WinCelebration";
 import { ComputeBadge } from "@/components/ComputeBadge";
@@ -86,7 +87,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <PostConnectModal />
             <WinCelebration />
             <SiteHeader />
-            <main className="mx-auto w-full max-w-6xl px-5 pb-24 sm:px-8">{children}</main>
+            <main className="relative mx-auto w-full max-w-6xl px-5 pb-24 sm:px-8">
+              {/* Floats at the top-left of the page content (not in the header nav). */}
+              <PageBack />
+              {children}
+            </main>
           <footer className="mx-auto w-full max-w-6xl px-5 pb-12 sm:px-8">
             <div className="flex flex-wrap items-center justify-between gap-3 border-t-line border-ink/15 pt-6 text-sm font-body text-ink-2">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
