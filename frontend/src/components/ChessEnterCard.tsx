@@ -165,6 +165,17 @@ function MyAgentCard({
             ? `${agent.games} games · ${agent.wins}W ${agent.draws}D ${agent.losses}L · rating ${agent.rating.toFixed(1)}`
             : "Waiting for its first game. The matchmaker pairs it with the nearest rating, so it starts against the mid-table and works up."}
         </p>
+        {agent.identityTokenId != null ? (
+          <a
+            href={identityUrl(agent.identityTokenId)}
+            target="_blank"
+            rel="noreferrer"
+            title="ERC-8004 identity on 0G mainnet"
+            className="mt-1 inline-block font-mono text-[11px] text-ink-3 underline decoration-ink-3/40 underline-offset-2 transition-colors hover:text-violet"
+          >
+            0G ID #{agent.identityTokenId}
+          </a>
+        ) : null}
         {identityEnabled && !agent.identityClaimed ? (
           <ClaimIdentity
             kind="chess"

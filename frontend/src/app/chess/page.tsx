@@ -230,6 +230,21 @@ function LadderRow({
         <span className="font-mono text-[11px] text-ink-3">
           {isHouse ? "Zerun benchmark" : row.owner ? shortAddr(row.owner) : "player"} · {row.games} games ·{" "}
           {row.wins}W {row.draws}D {row.losses}L ({winRate}% won)
+          {!isHouse && row.identityTokenId != null ? (
+            <>
+              {" · "}
+              <a
+                href={identityUrl(row.identityTokenId)}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title="ERC-8004 identity on 0G mainnet"
+                className="underline decoration-ink-3/40 underline-offset-2 hover:text-violet"
+              >
+                0G #{row.identityTokenId}
+              </a>
+            </>
+          ) : null}
         </span>
       </div>
       <div className="shrink-0 text-right">

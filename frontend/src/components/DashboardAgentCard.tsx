@@ -77,6 +77,17 @@ export function DashboardAgentCard({
             <Chip tone="live">verified on 0G</Chip>
           ))}
       </div>
+      {agent.identity_token_id != null ? (
+        <a
+          href={identityUrl(agent.identity_token_id)}
+          target="_blank"
+          rel="noreferrer"
+          title="ERC-8004 identity on 0G mainnet"
+          className="mt-1.5 inline-block font-mono text-[11px] text-ink-3 underline decoration-ink-3/40 underline-offset-2 transition-colors hover:text-violet"
+        >
+          0G ID #{agent.identity_token_id}
+        </a>
+      ) : null}
 
       {/* Win/loss record */}
       <div className="mt-4 flex items-center justify-center gap-3">
