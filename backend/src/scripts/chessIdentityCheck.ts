@@ -2,14 +2,14 @@ import { identityStatus } from "../identity/erc8004.js";
 
 // Read-only preflight for ERC-8004 agent identity. Spends nothing: it connects to the configured 0G
 // mainnet RPC, confirms the canonical IdentityRegistry resolves (reads totalAgents), and reports the
-// minting wallet's gas balance. Run this before turning CHESS_IDENTITY=on for a launch.
+// minting wallet's gas balance. Run this before turning AGENT_IDENTITY=on for a launch.
 //
 //   npx tsx src/scripts/chessIdentityCheck.ts
 
 async function main(): Promise<void> {
   const s = await identityStatus();
   console.log("ERC-8004 identity preflight");
-  console.log(`  feature flag (CHESS_IDENTITY): ${s.enabled ? "on" : "off"}`);
+  console.log(`  feature flag (AGENT_IDENTITY): ${s.enabled ? "on" : "off"}`);
   console.log(`  fully configured:              ${s.configured ? "yes" : "no"}`);
   console.log(`  registry:                      ${s.registry}`);
   console.log(`  configured chainId:            ${s.configuredChainId}`);
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
   if (s.balanceOg !== null && Number(s.balanceOg) <= 0) {
     warnings.push("the minting wallet holds 0 0G, so mints will fail; fund IDENTITY_PRIVATE_KEY with mainnet 0G");
   }
-  if (!s.enabled) warnings.push("CHESS_IDENTITY is off, so submissions will not mint yet; set it to 'on' to go live");
+  if (!s.enabled) warnings.push("AGENT_IDENTITY is off, so submissions will not mint yet; set it to 'on' to go live");
 
   if (warnings.length) {
     console.log("\nWARNINGS:");

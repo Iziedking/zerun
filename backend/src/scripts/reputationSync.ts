@@ -17,7 +17,7 @@ import { postArenaReputation } from "../identity/arenaAgents.js";
 //
 //   # limit scope: KIND=chess or KIND=arena (default: both)
 //
-// Requires CHESS_IDENTITY=on and the identity wallet funded (same wallet posts feedback).
+// Requires AGENT_IDENTITY=on and the identity wallet funded (same wallet posts feedback).
 
 const CONFIRM = process.env.CONFIRM === "post";
 const KIND = (process.env.KIND ?? "both").toLowerCase();
@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   console.log(`reputation sync: ${chess.length} chess + ${arena.length} arena agent(s) with an identity.`);
 
   if (!reputationConfigured()) {
-    console.log("\nReputation is NOT configured. Set CHESS_IDENTITY=on and the IDENTITY_* wallet (funded).");
+    console.log("\nReputation is NOT configured. Set AGENT_IDENTITY=on and the IDENTITY_* wallet (funded).");
     await closePool();
     process.exit(chess.length + arena.length === 0 ? 0 : 1);
   }

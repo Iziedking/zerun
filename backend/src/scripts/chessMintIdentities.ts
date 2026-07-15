@@ -14,7 +14,7 @@ import { identityConfigured, registerIdentity, chessAgentCardUri, identityExplor
 //   # 2. mint them (real 0G mainnet gas, one ERC-721 mint each):
 //   CONFIRM=mint npx tsx src/scripts/chessMintIdentities.ts
 //
-// Requires CHESS_IDENTITY=on and IDENTITY_PRIVATE_KEY / IDENTITY_RPC_URL / IDENTITY_REGISTRY_ADDRESS.
+// Requires AGENT_IDENTITY=on and IDENTITY_PRIVATE_KEY / IDENTITY_RPC_URL / IDENTITY_REGISTRY_ADDRESS.
 
 const CONFIRM = process.env.CONFIRM === "mint";
 
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
 
   if (!identityConfigured()) {
     console.log(
-      "\nIdentity minting is NOT configured. Set CHESS_IDENTITY=on and IDENTITY_PRIVATE_KEY / IDENTITY_RPC_URL " +
+      "\nIdentity minting is NOT configured. Set AGENT_IDENTITY=on and IDENTITY_PRIVATE_KEY / IDENTITY_RPC_URL " +
         "(and fund that mainnet wallet with 0G) before minting.",
     );
     await closePool();

@@ -88,7 +88,7 @@ export const config = {
   // Minting is gas-sponsored by its OWN funded mainnet key, separate from the compute mainnet wallet
   // so mint nonces never collide with ledger writes. RPC falls back to the compute mainnet RPC.
   identity: {
-    enabled: optional("CHESS_IDENTITY", "off").toLowerCase() === "on",
+    enabled: optional("AGENT_IDENTITY", "off").toLowerCase() === "on",
     rpcUrl: process.env.IDENTITY_RPC_URL ?? process.env.COMPUTE_MAINNET_RPC_URL ?? "",
     signerKey: process.env.IDENTITY_PRIVATE_KEY ?? "",
     registry: optional("IDENTITY_REGISTRY_ADDRESS", "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"),
