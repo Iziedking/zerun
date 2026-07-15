@@ -83,6 +83,24 @@ export const config = {
     // 0G Storage after each contest settles.
     enabled: optional("STORAGE_MODE", "off").toLowerCase() === "on",
   },
+  // ERC-8004 agent identity on 0G MAINNET (chain 16661). 0G deployed the canonical IdentityRegistry
+  // at the vanity address below, so we mint against a standard contract and never deploy our own.
+  // Minting is gas-sponsored by its OWN funded mainnet key, separate from the compute mainnet wallet
+  // so mint nonces never collide with ledger writes. RPC falls back to the compute mainnet RPC.
+  identity: {
+    enabled: optional("CHESS_IDENTITY", "off").toLowerCase() === "on",
+    rpcUrl: process.env.IDENTITY_RPC_URL ?? process.env.COMPUTE_MAINNET_RPC_URL ?? "",
+    signerKey: process.env.IDENTITY_PRIVATE_KEY ?? "",
+    registry: optional("IDENTITY_REGISTRY_ADDRESS", "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"),
+    // The canonical ReputationRegistry 0G deployed alongside Identity. We post each agent's standing
+    // here (keyed to its identity agentId) so reputation is composable on-chain, not just on Zerun.
+    reputationRegistry: optional("REPUTATION_REGISTRY_ADDRESS", "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"),
+    chainId: Number(optional("IDENTITY_CHAIN_ID", "16661")),
+    txTimeoutMs: Number(optional("IDENTITY_TX_TIMEOUT_MS", "90000")),
+  },
+  // Public, explorer-resolvable base URL of THIS backend. An agent's ERC-8004 agentURI points here
+  // (…/api/chess/agents/<id>/card.json), so it must be the real public API origin, not localhost.
+  publicApiUrl: optional("PUBLIC_API_URL", "https://api.zerun.site"),
   db: {
     url: optional("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/zerun"),
   },

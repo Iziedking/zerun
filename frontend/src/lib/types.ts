@@ -249,6 +249,7 @@ export interface ChessLadderRow {
   kind: string;
   tier: number | null;
   modelDriven: boolean;
+  identityTokenId: number | null; // ERC-8004 agentId on 0G mainnet; drives the "verified on 0G" badge
   xHandle: string | null;
   xAvatar: string | null;
   mu: number;
@@ -284,6 +285,7 @@ export interface ChessSubmitResult {
   name: string;
   resubmitted: boolean;
   storageRoot: string | null;
+  identityTokenId: number | null; // ERC-8004 agentId on 0G mainnet, or null if not minted (yet)
   smoke: ChessSmokeMove[];
 }
 
@@ -294,6 +296,7 @@ export interface MyChessAgent {
   status: string;
   storageRoot: string | null;
   codeSha: string | null;
+  identityTokenId: number | null; // ERC-8004 agentId on 0G mainnet, or null if not minted (yet)
   submittedAt: string;
   mu: number;
   sigma: number;

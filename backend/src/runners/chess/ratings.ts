@@ -98,6 +98,7 @@ export interface ChessLadderRow {
   kind: string; // 'upload' | 'engine'
   tier: number | null;
   modelDriven: boolean; // a house showcase agent that reasons on 0G (engine shortlist, model picks)
+  identityTokenId: number | null; // ERC-8004 agentId on 0G mainnet, for the "verified on 0G" badge
   xHandle: string | null; // the owner's connected X handle, for the avatar and byline
   xAvatar: string | null; // the owner's X profile image (400x400)
   mu: number;
@@ -125,6 +126,7 @@ export async function chessLadder(
     kind: string;
     tier: number | null;
     model_driven: boolean | null;
+    identity_token_id: string | null;
     created_at: string | null;
     x_handle: string | null;
     x_avatar: string | null;
@@ -135,8 +137,8 @@ export async function chessLadder(
     draws: number;
     losses: number;
   }>(
-    `select r.agent_id, a.name, a.owner, a.kind, a.tier, a.model_driven, a.created_at::text as created_at,
-            s.x_handle, s.x_avatar,
+    `select r.agent_id, a.name, a.owner, a.kind, a.tier, a.model_driven, a.identity_token_id,
+            a.created_at::text as created_at, s.x_handle, s.x_avatar,
             r.mu, r.sigma, r.games, r.wins, r.draws, r.losses
        from chess_ratings r
        join chess_agents a on a.id = r.agent_id
@@ -158,6 +160,7 @@ export async function chessLadder(
       kind: r.kind,
       tier: r.tier === null ? null : Number(r.tier),
       modelDriven: Boolean(r.model_driven),
+      identityTokenId: r.identity_token_id === null ? null : Number(r.identity_token_id),
       xHandle: r.x_handle,
       xAvatar: r.x_avatar,
       mu: Number(r.mu),

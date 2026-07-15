@@ -21,7 +21,43 @@ export function chessSubmitMessage(owner: string, name: string, sha: string, iss
   return `Zerun chess submit\nwallet: ${owner.toLowerCase()}\nagent: ${name}\ncode: ${sha}\nissued: ${issuedAt}`;
 }
 
+// The message a wallet signs to CLAIM its chess agent's ERC-8004 identity (transfer the NFT to itself).
+// No file hash here: a claim acts on an existing entry, and ownership is checked against the stored owner.
+export function chessClaimMessage(owner: string, agentId: number, issuedAt: number): string {
+  return `Zerun chess claim\nwallet: ${owner.toLowerCase()}\nagent: ${agentId}\nissued: ${issuedAt}`;
+}
+
 export type SubmitAuth = { ok: true; owner: string } | { ok: false; error: string; status: 400 | 401 };
+
+// Verify a chess-claim signature. Proves the caller controls `owner`; the handler still checks that
+// `owner` matches the agent's stored owner before transferring anything.
+export async function verifyChessClaim(
+  auth: { owner?: unknown; issuedAt?: unknown; signature?: unknown } | undefined,
+  agentId: number,
+): Promise<SubmitAuth> {
+  const owner = String(auth?.owner ?? "").toLowerCase();
+  const issuedAt = Number(auth?.issuedAt ?? 0);
+  const signature = String(auth?.signature ?? "");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(owner) || !issuedAt || !signature) {
+    return { ok: false, error: "a wallet signature is required", status: 401 };
+  }
+  const now = Date.now();
+  if (issuedAt > now + FUTURE_SKEW_MS || now - issuedAt > MAX_AGE_MS) {
+    return { ok: false, error: "signature expired, sign again", status: 401 };
+  }
+  let valid = false;
+  try {
+    valid = await publicClient.verifyMessage({
+      address: owner as `0x${string}`,
+      message: chessClaimMessage(owner, agentId, issuedAt),
+      signature: signature as `0x${string}`,
+    });
+  } catch {
+    valid = false;
+  }
+  if (!valid) return { ok: false, error: "invalid signature", status: 401 };
+  return { ok: true, owner };
+}
 
 export async function verifyChessSubmit(
   auth: { owner?: unknown; issuedAt?: unknown; signature?: unknown } | undefined,

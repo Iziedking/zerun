@@ -53,6 +53,12 @@ export function formatUsdcWhole(raw: string | bigint | number | null | undefined
   return `${neg ? "-" : ""}${whole.toLocaleString("en-US")}`;
 }
 
+// ERC-8004 agent identities are minted on 0G mainnet's canonical IdentityRegistry (chain 16661).
+// The explorer link lets anyone confirm an agent is a real, portable on-chain 0G agent.
+export const IDENTITY_REGISTRY = "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432";
+export const identityUrl = (tokenId: number) =>
+  `https://chainscan.0g.ai/token/${IDENTITY_REGISTRY}/instance/${tokenId}`;
+
 export function shortAddr(addr: string | null | undefined, head = 6, tail = 4): string {
   if (!addr) return "";
   if (addr.length <= head + tail + 2) return addr;

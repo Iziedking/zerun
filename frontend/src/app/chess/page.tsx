@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 import { useChessLadder } from "@/lib/useAgents";
-import { shortAddr } from "@/lib/format";
+import { shortAddr, identityUrl } from "@/lib/format";
 import type { ChessLadderRow } from "@/lib/types";
 import { ChessEnterCard } from "@/components/ChessEnterCard";
 import { LadderGameView } from "@/components/LadderGameView";
@@ -25,6 +25,23 @@ const PRIZE_LINE = "100 USDC each to the top 5 players";
 // Engine benchmark costumes, matching the arena's compute-tier names.
 const TIER = ["Base", "Spark", "Sharp", "Deep", "Elite", "Apex"];
 const tierName = (l: number | null) => (l === null ? "" : TIER[Math.max(0, Math.min(5, l))] ?? "Base");
+
+/** The "verified on 0G" badge: a chip that links to the agent's ERC-8004 identity on 0G mainnet.
+ *  `stop` prevents the click from bubbling to a surrounding clickable row (e.g. the ladder's watch). */
+function IdentityBadge({ tokenId, stop = false }: { tokenId: number; stop?: boolean }) {
+  return (
+    <a
+      href={identityUrl(tokenId)}
+      target="_blank"
+      rel="noreferrer"
+      onClick={stop ? (e) => e.stopPropagation() : undefined}
+      title={`ERC-8004 identity #${tokenId} on 0G mainnet`}
+      className="inline-flex"
+    >
+      <Chip tone="info">verified on 0G</Chip>
+    </a>
+  );
+}
 
 export default function ChessCompetitionPage() {
   const { address } = useAccount();
@@ -208,6 +225,7 @@ function LadderRow({
             ) : (
               <Chip tone="neutral">{gamesLeft} to qualify</Chip>
             ))}
+          {!isHouse && row.identityTokenId != null && <IdentityBadge tokenId={row.identityTokenId} stop />}
         </div>
         <span className="font-mono text-[11px] text-ink-3">
           {isHouse ? "Zerun benchmark" : row.owner ? shortAddr(row.owner) : "player"} · {row.games} games ·{" "}

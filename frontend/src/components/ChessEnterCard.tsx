@@ -10,6 +10,7 @@ import { useMyChessAgent } from "@/lib/useAgents";
 import { useChessSubmitAuth } from "@/lib/chessAuth";
 import { STARTER_AGENT } from "@/lib/chessStarter";
 import type { ChessSubmitResult } from "@/lib/types";
+import { identityUrl } from "@/lib/format";
 import { Agent, Chip, PopButton, StickerCard, cx } from "@/components/zerun";
 import { popButtonClass } from "@/components/zerun/PopButton";
 import { ConnectX } from "@/components/ConnectX";
@@ -142,6 +143,17 @@ function MyAgentCard({
             on the ladder
           </Chip>
           {agent.storageRoot ? <Chip tone="info">anchored on 0G</Chip> : null}
+          {agent.identityTokenId != null ? (
+            <a
+              href={identityUrl(agent.identityTokenId)}
+              target="_blank"
+              rel="noreferrer"
+              title={`ERC-8004 identity #${agent.identityTokenId} on 0G mainnet`}
+              className="inline-flex"
+            >
+              <Chip tone="won">verified on 0G</Chip>
+            </a>
+          ) : null}
         </div>
         <p className="mt-1 font-body text-[14px] text-ink-2">
           {played
@@ -249,6 +261,14 @@ function SubmitForm({
         </ul>
         {result.storageRoot ? (
           <p className="mt-3 font-mono text-[11px] text-ink-3">0G Storage anchor · {result.storageRoot}</p>
+        ) : null}
+        {result.identityTokenId != null ? (
+          <p className="mt-1 font-mono text-[11px] text-ink-3">
+            ERC-8004 identity ·{" "}
+            <a href={identityUrl(result.identityTokenId)} target="_blank" rel="noreferrer" className="text-violet underline">
+              #{result.identityTokenId} on 0G mainnet
+            </a>
+          </p>
         ) : null}
       </StickerCard>
     );

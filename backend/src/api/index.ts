@@ -34,8 +34,10 @@ import { cancelContest, resettleFromStored } from "../coordinator/finalize.js";
 import { standingsFor } from "../coordinator/standings.js";
 import { pokerLadder, currentPokerSeason } from "../runners/poker/ratings.js";
 import { chessLadder, currentChessSeason, chessQualify } from "../runners/chess/ratings.js";
-import { submitChessAgent, myChessAgent, uploadsOpen, SubmitError } from "../runners/chess/submissions.js";
-import { verifyChessSubmit } from "../auth/chessSubmitSig.js";
+import { submitChessAgent, myChessAgent, uploadsOpen, SubmitError, claimChessIdentity } from "../runners/chess/submissions.js";
+import { chessAgentCard } from "../runners/chess/agentCard.js";
+import { arenaAgentCard, mintArenaIdentity, claimArenaIdentity } from "../identity/arenaAgents.js";
+import { verifyChessSubmit, verifyChessClaim } from "../auth/chessSubmitSig.js";
 import { getLiveGame, getAgentGame } from "../coordinator/chessLadderRunner.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
 import { getAgentMemory, memoryEnabled, memoryLift, memoryQueueDepth } from "../runners/agentMemory.js";
@@ -863,6 +865,35 @@ app.post("/api/chess/agents", async (c) => {
   }
 });
 
+// An agent's ERC-8004 card: the registration JSON its on-chain agentURI resolves to. Any ERC-8004
+// explorer, marketplace, or other agent reads this to discover a Zerun agent, and it carries the 0G
+// provenance (the exact code's 0G Storage root) that proves it competed on Zerun, thinking on 0G.
+// Served live from the DB so the URI stays stable while the provenance tracks the latest upload.
+app.get("/api/chess/agents/:agentId/card.json", async (c) => {
+  const id = Number(c.req.param("agentId"));
+  if (!id) return c.json({ error: "a numeric agent id is required" }, 400);
+  const card = await chessAgentCard(id);
+  if (!card) return c.json({ error: "no such agent" }, 404);
+  return c.json(card);
+});
+
+// Claim a chess agent's identity: prove the wallet owns the entry, then we mint (if needed) and
+// transfer the ERC-8004 NFT to the owner. Never touches the agent's rating or entry time.
+app.post("/api/chess/agents/:id/claim", async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = (await c.req.json().catch(() => ({}))) as { owner?: string; issuedAt?: number; signature?: string };
+  if (!id) return c.json({ error: "a numeric agent id is required" }, 400);
+  const auth = await verifyChessClaim(body, id);
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  try {
+    return c.json(await claimChessIdentity(id, auth.owner));
+  } catch (err) {
+    if (err instanceof SubmitError) return c.json({ error: err.message }, err.status);
+    console.error("chess identity claim failed:", (err as Error).message);
+    return c.json({ error: "the claim could not be completed, try again" }, 500);
+  }
+});
+
 // The game currently being played on the ladder, move by move, or null between games. Lets the
 // board show a live game to anyone who opens the page.
 app.get("/api/chess/live", (c) => {
@@ -1196,7 +1227,49 @@ app.post("/api/agents", async (c) => {
        on conflict (agent_id) do update set name = excluded.name`,
     [agentId, auth.owner, name],
   );
+  // Give the agent an ERC-8004 identity on first registration. Sponsored and best effort (it skips
+  // house agents and anything already minted, and can never fail the naming), so the identity is
+  // ready to claim without the owner doing anything yet. Fire-and-forget: naming stays snappy.
+  void mintArenaIdentity(agentId);
   return c.json({ ok: true });
+});
+
+// The agent's ERC-8004 card: the registration JSON its on-chain agentURI resolves to. Public, served
+// live from agents_meta so its 0G provenance (compute level, traits, skin) tracks the agent's state.
+app.get("/api/agents/:id/card.json", async (c) => {
+  const agentId = Number(c.req.param("id"));
+  if (!agentId) return c.json({ error: "a numeric agent id is required" }, 400);
+  const card = await arenaAgentCard(agentId);
+  if (!card) return c.json({ error: "no such agent" }, 404);
+  return c.json(card);
+});
+
+// Claim an agent's identity: prove the wallet owns the agent, then we mint (if needed) and transfer
+// the ERC-8004 NFT to the owner so they own it on-chain. Reconciles the paid compute level so no tier
+// bought with 0G is ever lost. Idempotent, and never resets the agent's history.
+app.post("/api/agents/:id/claim", async (c) => {
+  const agentId = Number(c.req.param("id"));
+  const body = await c.req.json().catch(() => ({}));
+  const owner = String(body.owner ?? "").toLowerCase();
+  if (!agentId || !owner) return c.json({ error: "agentId and owner required" }, 400);
+  const auth = await verifyAgentOwner("claim identity", agentId, {
+    owner,
+    issuedAt: Number(body.issuedAt),
+    signature: body.signature,
+  });
+  if (!auth.ok) return c.json({ error: auth.error }, auth.status);
+  // The agent may be on-chain but never named; make sure a mirror row exists before we attach identity.
+  await query(
+    `insert into agents_meta (agent_id, owner, name) values ($1,$2,$3) on conflict (agent_id) do nothing`,
+    [agentId, auth.owner, `Agent #${agentId}`],
+  );
+  try {
+    const result = await claimArenaIdentity(agentId, auth.owner);
+    return c.json(result);
+  } catch (err) {
+    console.error("agent identity claim failed:", (err as Error).message);
+    return c.json({ error: "the claim could not be completed, try again" }, 500);
+  }
 });
 
 // Upload a custom skin for an agent. Stored for fast serving and also put on 0G
@@ -1321,6 +1394,7 @@ app.get("/api/agents", async (c) => {
   const { rows } = await query(
     `select m.agent_id, m.owner, m.name, m.created_at, m.compute_level,
             (m.skin_b64 is not null) as has_skin, m.skin_root,
+            m.identity_token_id, (m.identity_owner is not null) as identity_claimed,
             (exists (select 1 from contest_entries ce
                join contests_meta cm on cm.contest_id = ce.contest_id
               where ce.agent_id = m.agent_id
@@ -1333,7 +1407,7 @@ app.get("/api/agents", async (c) => {
        left join contest_entries e on e.agent_id = m.agent_id
        left join payouts p on p.contest_id = e.contest_id and lower(p.operator) = lower(e.operator)
       where lower(m.owner) = $1
-      group by m.agent_id, m.owner, m.name, m.created_at
+      group by m.agent_id, m.owner, m.name, m.created_at, m.identity_token_id, m.identity_owner
       order by m.agent_id asc`,
     [owner],
   );

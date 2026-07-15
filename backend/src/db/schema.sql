@@ -33,6 +33,15 @@ alter table agents_meta add column if not exists compute_level int not null defa
 -- always ranked below real operators and can be hidden once real players scale.
 alter table agents_meta add column if not exists is_house boolean not null default false;
 
+-- ERC-8004 agent identity on 0G mainnet's canonical IdentityRegistry. The identity is minted
+-- platform-sponsored (`identity_token_id` = the on-chain agentId) and, when the owner CLAIMS it, the
+-- NFT is transferred to their wallet (`identity_owner`, `claimed_at`) so they truly own it on-chain.
+-- Attaching identity never touches the agent's history: traits, compute_level, and stats are kept.
+alter table agents_meta add column if not exists identity_token_id bigint;
+alter table agents_meta add column if not exists identity_tx text;
+alter table agents_meta add column if not exists identity_owner text; -- wallet the NFT was transferred to on claim
+alter table agents_meta add column if not exists claimed_at timestamptz;
+
 -- 0G training payments already credited, so a transaction can never be reused.
 create table if not exists compute_trainings (
   tx_hash    text primary key,
@@ -164,6 +173,15 @@ alter table chess_agents add column if not exists code_sha text;
 -- pure negamax it lets 0G Compute choose among the engine's top candidates, escalating across the
 -- model pool, so different 0G models visibly play chess on the ladder. Gated by CHESS_SHOWCASE.
 alter table chess_agents add column if not exists model_driven boolean not null default false;
+-- ERC-8004 agent identity, minted once on 0G mainnet's canonical IdentityRegistry. `identity_token_id`
+-- is the on-chain agentId (the ERC-721 tokenId); its agentURI resolves to this agent's card endpoint,
+-- which carries the same 0G provenance (code_sha, storage_root) we already store. Best effort: a mint
+-- failure leaves these null and the agent still enters — a backfill script mints them later.
+alter table chess_agents add column if not exists identity_token_id bigint;
+alter table chess_agents add column if not exists identity_tx text;
+-- Set when the owner claims the identity and the NFT is transferred to their wallet (see the claim flow).
+alter table chess_agents add column if not exists identity_owner text;
+alter table chess_agents add column if not exists claimed_at timestamptz;
 -- One entry per wallet, so the owner lookup on submit is a point read.
 create index if not exists chess_agents_owner_idx on chess_agents (owner) where kind = 'upload';
 

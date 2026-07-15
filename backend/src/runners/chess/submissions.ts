@@ -6,6 +6,14 @@ import { codeSha } from "../../auth/chessSubmitSig.js";
 import { xIdentityFor } from "../../auth/xConnect.js";
 import { parseFEN, legalMoves, moveToUci, START_FEN } from "./engine.js";
 import { storageConfigured, uploadBytes } from "../../storage/zgStorage.js";
+import {
+  identityConfigured,
+  registerIdentity,
+  transferIdentity,
+  identityOwnerOf,
+  chessAgentCardUri,
+} from "../../identity/erc8004.js";
+import { postFeedback } from "../../identity/reputation.js";
 import { currentChessSeason } from "./ratings.js";
 
 // Public submissions for the community chess competition: a player uploads one Python file, we
@@ -110,6 +118,7 @@ export interface SubmitResult {
   name: string;
   resubmitted: boolean;
   storageRoot: string | null;
+  identityTokenId: number | null; // ERC-8004 agentId on 0G mainnet, or null if not minted (yet)
   smoke: SmokeReport["moves"];
 }
 
@@ -130,6 +139,26 @@ async function anchor(code: string): Promise<string | null> {
     return rootHash;
   } catch (err) {
     console.warn("chess submit: 0G Storage anchor failed:", (err as Error).message);
+    return null;
+  }
+}
+
+// Mint the agent's ERC-8004 identity on 0G mainnet and record it on the row. Best effort, exactly like
+// the storage anchor: a mint failure (unfunded wallet, RPC hiccup, feature off) leaves the identity
+// null and the agent still competes — the backfill script mints it later. The card URI is keyed by our
+// internal id, which is stable across re-uploads, so we mint at most once per agent.
+async function mintIdentity(agentDbId: number): Promise<number | null> {
+  if (!identityConfigured()) return null;
+  try {
+    const { tokenId, txHash } = await registerIdentity(chessAgentCardUri(agentDbId));
+    await query("update chess_agents set identity_token_id = $2, identity_tx = $3 where id = $1", [
+      agentDbId,
+      tokenId,
+      txHash,
+    ]);
+    return tokenId;
+  } catch (err) {
+    console.warn("chess submit: ERC-8004 identity mint failed:", (err as Error).message);
     return null;
   }
 }
@@ -165,8 +194,8 @@ export async function submitChessAgent(owner: string, rawName: string, code: str
   );
   if (taken.length) throw new SubmitError(`The name "${name}" is taken. Pick another.`, 409);
 
-  const { rows: existing } = await query<{ id: string; updated_at: string }>(
-    "select id, updated_at from chess_agents where kind = 'upload' and owner = $1 order by id asc limit 1",
+  const { rows: existing } = await query<{ id: string; updated_at: string; identity_token_id: string | null }>(
+    "select id, updated_at, identity_token_id from chess_agents where kind = 'upload' and owner = $1 order by id asc limit 1",
     [owner],
   );
   const prev = existing[0];
@@ -197,7 +226,11 @@ export async function submitChessAgent(owner: string, rawName: string, code: str
     // agent has to earn its place again from scratch. Deleting the row drops it off the board (the
     // ladder only shows agents with games) until its fresh code has played.
     await query("delete from chess_ratings where season = $1 and agent_id = $2", [currentChessSeason(), agentId]);
-    return { agentId, name, resubmitted: true, storageRoot, smoke: report.moves };
+    // Identity is stable across re-uploads: keep the one already minted. Only mint here if a prior
+    // attempt had failed (the agent has none yet), so a resubmit is also a chance to backfill it.
+    const identityTokenId =
+      prev.identity_token_id !== null ? Number(prev.identity_token_id) : await mintIdentity(agentId);
+    return { agentId, name, resubmitted: true, storageRoot, identityTokenId, smoke: report.moves };
   }
 
   const { rows } = await query<{ id: string }>(
@@ -209,7 +242,8 @@ export async function submitChessAgent(owner: string, rawName: string, code: str
   const agentId = Number(rows[0]!.id);
   const path = await writeAgentFile(agentId, code);
   await query("update chess_agents set code_root = $2 where id = $1", [agentId, path]);
-  return { agentId, name, resubmitted: false, storageRoot, smoke: report.moves };
+  const identityTokenId = await mintIdentity(agentId);
+  return { agentId, name, resubmitted: false, storageRoot, identityTokenId, smoke: report.moves };
 }
 
 export interface MyChessAgent {
@@ -218,6 +252,8 @@ export interface MyChessAgent {
   status: string;
   storageRoot: string | null;
   codeSha: string | null;
+  identityTokenId: number | null; // ERC-8004 agentId on 0G mainnet, or null if not minted (yet)
+  identityClaimed: boolean; // the identity NFT has been transferred to the owner's wallet
   submittedAt: string;
   mu: number;
   sigma: number;
@@ -236,6 +272,8 @@ export async function myChessAgent(owner: string, season = currentChessSeason())
     status: string;
     storage_root: string | null;
     code_sha: string | null;
+    identity_token_id: string | null;
+    identity_owner: string | null;
     updated_at: string;
     mu: number;
     sigma: number;
@@ -244,7 +282,7 @@ export async function myChessAgent(owner: string, season = currentChessSeason())
     draws: number;
     losses: number;
   }>(
-    `select a.id, a.name, a.status, a.storage_root, a.code_sha, a.updated_at,
+    `select a.id, a.name, a.status, a.storage_root, a.code_sha, a.identity_token_id, a.identity_owner, a.updated_at,
             coalesce(r.mu, 25.0) as mu, coalesce(r.sigma, 8.3333333) as sigma,
             coalesce(r.games, 0) as games, coalesce(r.wins, 0) as wins,
             coalesce(r.draws, 0) as draws, coalesce(r.losses, 0) as losses
@@ -263,6 +301,8 @@ export async function myChessAgent(owner: string, season = currentChessSeason())
     status: r.status,
     storageRoot: r.storage_root,
     codeSha: r.code_sha,
+    identityTokenId: r.identity_token_id === null ? null : Number(r.identity_token_id),
+    identityClaimed: r.identity_owner !== null,
     submittedAt: new Date(r.updated_at).toISOString(),
     mu: Number(r.mu),
     sigma: Number(r.sigma),
@@ -276,4 +316,89 @@ export async function myChessAgent(owner: string, season = currentChessSeason())
 
 export function uploadsOpen(): boolean {
   return UPLOADS_ON && SANDBOXED;
+}
+
+// Post a chess agent's current standing to the ERC-8004 ReputationRegistry, keyed to its identity.
+// The headline value is the conservative TrueSkill rating (mu - 3*sigma); the detail carries the full
+// record. Best effort: a failure is logged and ignored. `tokenId` is the identity agentId.
+export async function postChessReputation(agentDbId: number, tokenId: number): Promise<void> {
+  const season = currentChessSeason();
+  const { rows } = await query<{ mu: number; sigma: number; games: number; wins: number; draws: number; losses: number }>(
+    `select coalesce(r.mu, 25.0) as mu, coalesce(r.sigma, 8.3333333) as sigma,
+            coalesce(r.games, 0) as games, coalesce(r.wins, 0) as wins,
+            coalesce(r.draws, 0) as draws, coalesce(r.losses, 0) as losses
+       from chess_agents a
+       left join chess_ratings r on r.agent_id = a.id and r.season = $2
+      where a.id = $1
+      limit 1`,
+    [agentDbId, season],
+  );
+  const s = rows[0];
+  if (!s) return;
+  const rating = Number(s.mu) - 3 * Number(s.sigma);
+  try {
+    await postFeedback(tokenId, {
+      value: rating,
+      decimals: 2,
+      tag1: "chess",
+      tag2: season,
+      endpoint: chessAgentCardUri(agentDbId),
+      detail: {
+        rating: Number(rating.toFixed(2)),
+        mu: Number(s.mu),
+        sigma: Number(s.sigma),
+        games: Number(s.games),
+        wins: Number(s.wins),
+        draws: Number(s.draws),
+        losses: Number(s.losses),
+      },
+    });
+  } catch (err) {
+    console.warn(`chess reputation post failed for agent ${agentDbId}:`, (err as Error).message);
+  }
+}
+
+export interface ChessClaimResult {
+  agentId: number;
+  identityTokenId: number | null;
+  claimed: boolean; // the NFT is now in the owner's wallet
+  txHash: string | null;
+}
+
+// Claim a chess agent's identity for its owner: ensure it is minted, then transfer the ERC-8004 NFT to
+// the owner's wallet so they own it on-chain. Idempotent (a token already in the owner's wallet just
+// records the claim). The caller MUST have verified `owner` controls the agent (verifyChessClaim), and
+// `owner` must match the agent's stored owner. Never touches the agent's rating or entry time.
+export async function claimChessIdentity(agentDbId: number, owner: string): Promise<ChessClaimResult> {
+  const lower = owner.toLowerCase();
+  const { rows } = await query<{ owner: string | null; identity_token_id: string | null }>(
+    "select owner, identity_token_id from chess_agents where id = $1 and kind = 'upload' limit 1",
+    [agentDbId],
+  );
+  const row = rows[0];
+  if (!row) throw new SubmitError("No such agent.", 400);
+  if ((row.owner ?? "").toLowerCase() !== lower) throw new SubmitError("Not your agent.", 403);
+
+  // Lazy mint if a prior best-effort mint had not run.
+  let tokenId = row.identity_token_id === null ? await mintIdentity(agentDbId) : Number(row.identity_token_id);
+  if (tokenId === null) return { agentId: agentDbId, identityTokenId: null, claimed: false, txHash: null };
+
+  const holder = await identityOwnerOf(tokenId);
+  if (holder === lower) {
+    await query(
+      "update chess_agents set identity_owner = $2, claimed_at = coalesce(claimed_at, now()) where id = $1",
+      [agentDbId, lower],
+    );
+    await postChessReputation(agentDbId, tokenId);
+    return { agentId: agentDbId, identityTokenId: tokenId, claimed: true, txHash: null };
+  }
+  try {
+    const txHash = await transferIdentity(tokenId, lower);
+    await query("update chess_agents set identity_owner = $2, claimed_at = now() where id = $1", [agentDbId, lower]);
+    await postChessReputation(agentDbId, tokenId);
+    return { agentId: agentDbId, identityTokenId: tokenId, claimed: true, txHash };
+  } catch (err) {
+    console.warn(`chess identity transfer failed for agent ${agentDbId}:`, (err as Error).message);
+    return { agentId: agentDbId, identityTokenId: tokenId, claimed: false, txHash: null };
+  }
 }
