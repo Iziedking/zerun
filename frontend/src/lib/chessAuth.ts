@@ -39,3 +39,25 @@ export function useChessSubmitAuth() {
     [address, signMessageAsync],
   );
 }
+
+// The message a wallet signs to CLAIM its chess agent's identity. Must match backend
+// src/auth/chessSubmitSig.ts chessClaimMessage exactly.
+export function chessClaimMessage(owner: string, agentId: number, issuedAt: number): string {
+  return `Zerun chess claim\nwallet: ${owner.toLowerCase()}\nagent: ${agentId}\nissued: ${issuedAt}`;
+}
+
+/** Prompts the wallet to sign a claim for a chess agent and returns the fields to send. */
+export function useChessClaimAuth() {
+  const { address } = useAccount();
+  const { signMessageAsync } = useSignMessage();
+  return useCallback(
+    async (agentId: number): Promise<ChessSubmitAuth> => {
+      if (!address) throw new Error("Connect your wallet first.");
+      const owner = address.toLowerCase();
+      const issuedAt = Date.now();
+      const signature = await signMessageAsync({ message: chessClaimMessage(owner, agentId, issuedAt) });
+      return { owner, issuedAt, signature };
+    },
+    [address, signMessageAsync],
+  );
+}

@@ -11,6 +11,8 @@ import { useChessSubmitAuth } from "@/lib/chessAuth";
 import { STARTER_AGENT } from "@/lib/chessStarter";
 import type { ChessSubmitResult } from "@/lib/types";
 import { identityUrl } from "@/lib/format";
+import { useDeployment } from "@/lib/useDeployment";
+import { ClaimIdentity } from "@/components/ClaimIdentity";
 import { Agent, Chip, PopButton, StickerCard, cx } from "@/components/zerun";
 import { popButtonClass } from "@/components/zerun/PopButton";
 import { ConnectX } from "@/components/ConnectX";
@@ -131,6 +133,9 @@ function MyAgentCard({
   onReplace: () => void;
   replacing: boolean;
 }) {
+  const { data: deployment } = useDeployment();
+  const queryClient = useQueryClient();
+  const identityEnabled = Boolean(deployment?.identityEnabled);
   if (!agent) return null;
   const played = agent.games > 0;
   return (
@@ -143,7 +148,7 @@ function MyAgentCard({
             on the ladder
           </Chip>
           {agent.storageRoot ? <Chip tone="info">anchored on 0G</Chip> : null}
-          {agent.identityTokenId != null ? (
+          {agent.identityClaimed && agent.identityTokenId != null ? (
             <a
               href={identityUrl(agent.identityTokenId)}
               target="_blank"
@@ -160,6 +165,17 @@ function MyAgentCard({
             ? `${agent.games} games · ${agent.wins}W ${agent.draws}D ${agent.losses}L · rating ${agent.rating.toFixed(1)}`
             : "Waiting for its first game. The matchmaker pairs it with the nearest rating, so it starts against the mid-table and works up."}
         </p>
+        {identityEnabled && !agent.identityClaimed ? (
+          <ClaimIdentity
+            kind="chess"
+            agentId={agent.agentId}
+            identityTokenId={agent.identityTokenId}
+            claimed={false}
+            compact
+            className="mt-3"
+            onClaimed={() => queryClient.invalidateQueries({ queryKey: ["chess-mine"] })}
+          />
+        ) : null}
       </div>
       <PopButton variant="ghost" onClick={onReplace} className="shrink-0">
         {replacing ? "Keep my agent" : "Replace my code"}

@@ -37,6 +37,7 @@ import { chessLadder, currentChessSeason, chessQualify } from "../runners/chess/
 import { submitChessAgent, myChessAgent, uploadsOpen, SubmitError, claimChessIdentity } from "../runners/chess/submissions.js";
 import { chessAgentCard } from "../runners/chess/agentCard.js";
 import { arenaAgentCard, mintArenaIdentity, claimArenaIdentity } from "../identity/arenaAgents.js";
+import { identityConfigured } from "../identity/erc8004.js";
 import { verifyChessSubmit, verifyChessClaim } from "../auth/chessSubmitSig.js";
 import { getLiveGame, getAgentGame } from "../coordinator/chessLadderRunner.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
@@ -775,6 +776,9 @@ app.get("/api/deployment", (c) => {
     chainId: config.chain.chainId,
     rpcUrl: config.chain.rpcUrl,
     explorer: config.chain.explorer,
+    // Whether ERC-8004 agent identity is live. Drives the "Claim identity" UI: off means no agent has
+    // an identity yet, so the frontend hides the claim action entirely.
+    identityEnabled: identityConfigured(),
     contracts: {
       testUSDC: dep.testUSDC,
       prizeEscrow: dep.prizeEscrow,

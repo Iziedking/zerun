@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { AgentRecord } from "@/lib/types";
 import { useContests } from "@/lib/useAgents";
+import { useDeployment } from "@/lib/useDeployment";
+import { identityUrl } from "@/lib/format";
 import { SkinUpload } from "./SkinUpload";
 import { TrainAgent } from "./TrainAgent";
+import { ClaimIdentity } from "./ClaimIdentity";
 import { agentVariant, Chip, PopButton, SkinnedAgent, StickerCard } from "./zerun";
 
 // Compute level names, the single 0G-funded skill dial. Every agent starts at Base.
@@ -23,6 +27,10 @@ export function DashboardAgentCard({
   const level = agent.compute_level ?? 0;
   const isOwner = Boolean(owner && agent.owner?.toLowerCase() === owner.toLowerCase());
   const { data } = useContests();
+  const { data: deployment } = useDeployment();
+  const identityEnabled = Boolean(deployment?.identityEnabled);
+  const claimed = Boolean(agent.identity_claimed);
+  const queryClient = useQueryClient();
 
   const wins = agent.wins ?? 0;
   const matches = agent.matches ?? 0;
@@ -49,11 +57,25 @@ export function DashboardAgentCard({
         />
       </div>
       <div className="mt-3 font-display text-xl text-ink">{agent.name}</div>
-      <div className="mt-1 flex items-center justify-center gap-2">
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
         <Chip tone="won">
           L{level} {COMPUTE_NAME[Math.min(level, COMPUTE_NAME.length - 1)]}
         </Chip>
         <span className="font-mono text-[11px] text-ink-3">#{agent.agent_id}</span>
+        {claimed &&
+          (agent.identity_token_id != null ? (
+            <a
+              href={identityUrl(agent.identity_token_id)}
+              target="_blank"
+              rel="noreferrer"
+              title={`ERC-8004 identity #${agent.identity_token_id} on 0G mainnet`}
+              className="inline-flex"
+            >
+              <Chip tone="live">verified on 0G</Chip>
+            </a>
+          ) : (
+            <Chip tone="live">verified on 0G</Chip>
+          ))}
       </div>
 
       {/* Win/loss record */}
@@ -75,6 +97,15 @@ export function DashboardAgentCard({
             <SkinUpload agentId={agent.agent_id} owner={owner} compact />
           </div>
           <TrainAgent agentId={agent.agent_id} level={level} owner={owner} />
+          {identityEnabled && !claimed && (
+            <ClaimIdentity
+              kind="arena"
+              agentId={agent.agent_id}
+              identityTokenId={agent.identity_token_id ?? null}
+              claimed={false}
+              onClaimed={() => queryClient.invalidateQueries({ queryKey: ["agents", owner.toLowerCase()] })}
+            />
+          )}
         </div>
       )}
 

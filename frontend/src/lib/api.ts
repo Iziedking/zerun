@@ -18,6 +18,7 @@ import type {
   ChessQualify,
   ChessSubmitResult,
   MyChessAgentResponse,
+  AgentClaimResult,
   AgentMemoryResponse,
   AgentWallet,
   MemoryKind,
@@ -116,6 +117,11 @@ export const api = {
   myChessAgent: (owner: string) =>
     req<MyChessAgentResponse>(`/api/chess/agents/mine?owner=${owner}`),
 
+  // Claim a chess agent's ERC-8004 identity: the backend mints (if needed) and transfers the NFT to
+  // the owner's wallet. Signed by the owner (see chessClaimMessage).
+  claimChessAgent: (id: number, body: { owner: string; issuedAt: number; signature: string }) =>
+    req<AgentClaimResult>(`/api/chess/agents/${id}/claim`, { method: "POST", body: JSON.stringify(body) }),
+
   // The game currently on the ladder, or one agent's live-or-most-recent game to watch.
   chessLiveGame: () => req<{ game: ChessLiveGame | null }>("/api/chess/live"),
   chessAgentGame: (agentId: number) => req<{ game: ChessLiveGame | null }>(`/api/chess/game/${agentId}`),
@@ -160,6 +166,11 @@ export const api = {
     issuedAt: number;
     signature: string;
   }) => req<unknown>("/api/agents", { method: "POST", body: JSON.stringify(body) }),
+
+  // Claim an arena agent's ERC-8004 identity: mint (if needed), transfer the NFT to the owner, and
+  // reconcile the paid compute level. Signed by the owner (agentAuthMessage "claim identity").
+  claimAgent: (id: number, body: { owner: string; issuedAt: number; signature: string }) =>
+    req<AgentClaimResult>(`/api/agents/${id}/claim`, { method: "POST", body: JSON.stringify(body) }),
 
   // An operator hosted a contest from their own wallet; mirror it in the arena.
   hostContest: (body: {

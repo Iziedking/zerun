@@ -5,6 +5,8 @@ export interface Deployment {
   chainId: number;
   rpcUrl: string;
   explorer: string;
+  // True when ERC-8004 agent identity is live; drives whether the "Claim identity" UI shows.
+  identityEnabled?: boolean;
   contracts: {
     testUSDC: Address;
     prizeEscrow: Address;
@@ -128,6 +130,10 @@ export interface AgentRecord {
   og_calls?: number;
   compute_level?: number;
   has_skin?: boolean;
+  // ERC-8004 identity: the on-chain agentId (null/absent until minted), and whether the owner has
+  // claimed it (transferred the NFT to their wallet).
+  identity_token_id?: number | null;
+  identity_claimed?: boolean;
   // True when the agent is already in an open or running contest; it cannot enter
   // another until that one settles.
   in_contest?: boolean;
@@ -297,6 +303,7 @@ export interface MyChessAgent {
   storageRoot: string | null;
   codeSha: string | null;
   identityTokenId: number | null; // ERC-8004 agentId on 0G mainnet, or null if not minted (yet)
+  identityClaimed: boolean; // the identity NFT has been transferred to the owner's wallet
   submittedAt: string;
   mu: number;
   sigma: number;
@@ -311,6 +318,16 @@ export interface MyChessAgent {
 export interface MyChessAgentResponse {
   open: boolean;
   agent: MyChessAgent | null;
+}
+
+// The result of claiming an agent's ERC-8004 identity: the on-chain agentId, whether the NFT is now in
+// the owner's wallet, and (arena only) the reconciled compute level. `txHash` is the transfer tx.
+export interface AgentClaimResult {
+  agentId: number;
+  identityTokenId: number | null;
+  claimed: boolean;
+  computeLevel?: number;
+  txHash: string | null;
 }
 
 // One move in a watchable ladder game: the position AFTER the move, so the board can be drawn
