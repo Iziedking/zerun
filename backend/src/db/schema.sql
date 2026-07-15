@@ -256,6 +256,26 @@ create table if not exists solve_runs (
 );
 create index if not exists solve_runs_contest_idx on solve_runs (contest_id, id);
 
+-- Verifiable inference receipts. Each 0G-compute answer in solve_runs is a receipt leaf; a batch of an
+-- agent's leaves is Merkle-rooted, the full batch detail is anchored on 0G Storage, and the root is
+-- recorded on the ERC-8004 ValidationRegistry keyed to the agent's identity. `receipt_root` marks which
+-- batch a run was anchored in (null = not yet anchored), so a run is never double-counted.
+alter table solve_runs add column if not exists receipt_root text;
+create index if not exists solve_runs_unanchored_idx on solve_runs (agent_id) where receipt_root is null and source is not null;
+create table if not exists inference_batches (
+  merkle_root        text primary key,   -- keccak Merkle root of the batch's leaves (= the on-chain requestHash)
+  agent_id           bigint not null,    -- Zerun arena agent id
+  identity_token_id  bigint not null,    -- ERC-8004 agentId this batch is keyed to
+  kind               text not null default 'arena',
+  leaf_count         int not null,
+  storage_root       text,               -- 0G Storage root of the full batch detail (the rebuild data)
+  storage_tx         text,
+  validation_tx      text,               -- ValidationRegistry request tx (null if owner-gated / not anchored)
+  response_tx        text,               -- ValidationRegistry response tx (the "verified" attestation)
+  created_at         timestamptz not null default now()
+);
+create index if not exists inference_batches_agent_idx on inference_batches (agent_id, created_at desc);
+
 -- The live "winning metric" per agent per contest: the number the standings rank on
 -- and that decides the winner, which differs by kind (poker = chip stack, world cup =
 -- prediction P&L, the rest = correct answers). Runners upsert this as play advances so

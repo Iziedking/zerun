@@ -38,6 +38,7 @@ import { submitChessAgent, myChessAgent, uploadsOpen, SubmitError, claimChessIde
 import { chessAgentCard } from "../runners/chess/agentCard.js";
 import { arenaAgentCard, mintArenaIdentity, claimArenaIdentity } from "../identity/arenaAgents.js";
 import { identityConfigured, identityRequiredNow } from "../identity/erc8004.js";
+import { receiptBatch, agentReceiptBatches } from "../identity/receipts.js";
 import { verifyChessSubmit, verifyChessClaim } from "../auth/chessSubmitSig.js";
 import { getLiveGame, getAgentGame } from "../coordinator/chessLadderRunner.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
@@ -1255,6 +1256,24 @@ app.post("/api/agents", async (c) => {
   // ready to claim without the owner doing anything yet. Fire-and-forget: naming stays snappy.
   void mintArenaIdentity(agentId);
   return c.json({ ok: true });
+});
+
+// An agent's verifiable inference-receipt batches: each is a Merkle root over its 0G-compute answers,
+// anchored on 0G Storage and (best effort) the ERC-8004 ValidationRegistry. Public, so anyone can audit.
+app.get("/api/agents/:id/receipts", async (c) => {
+  const agentId = Number(c.req.param("id"));
+  if (!agentId) return c.json({ error: "a numeric agent id is required" }, 400);
+  return c.json({ agentId, batches: await agentReceiptBatches(agentId) });
+});
+
+// One receipt batch's rebuild data, by its Merkle root: the exact ordered receipt preimages and the
+// hashing algorithm, so anyone can recompute every leaf and the root and check it against the anchor.
+app.get("/api/receipts/:root", async (c) => {
+  const root = String(c.req.param("root"));
+  if (!/^0x[0-9a-fA-F]{64}$/.test(root)) return c.json({ error: "a 0x-prefixed 32-byte merkle root is required" }, 400);
+  const batch = await receiptBatch(root);
+  if (!batch) return c.json({ error: "no such batch" }, 404);
+  return c.json(batch);
 });
 
 // The agent's ERC-8004 card: the registration JSON its on-chain agentURI resolves to. Public, served

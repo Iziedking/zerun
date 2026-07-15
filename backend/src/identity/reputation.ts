@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { config } from "../config/index.js";
-import { identityConfigured } from "./erc8004.js";
+import { identityConfigured, getIdentityWallet, identityWalletWrite } from "./erc8004.js";
 
 // ERC-8004 REPUTATION on 0G mainnet.
 //
@@ -27,25 +27,12 @@ export function reputationConfigured(): boolean {
 
 let _contract: ethers.Contract | null = null;
 function getContract(): ethers.Contract {
-  if (_contract) return _contract;
-  const i = config.identity;
-  if (!i.rpcUrl || !i.signerKey) throw new Error("ERC-8004 reputation needs IDENTITY_RPC_URL and IDENTITY_PRIVATE_KEY");
-  const provider = new ethers.JsonRpcProvider(i.rpcUrl);
-  const wallet = new ethers.Wallet(i.signerKey, provider);
-  _contract = new ethers.Contract(i.reputationRegistry, ABI, wallet);
+  if (!_contract) _contract = new ethers.Contract(config.identity.reputationRegistry, ABI, getIdentityWallet());
   return _contract;
 }
 
-// One post at a time, on the same wallet as identity mints/transfers, so nothing collides on nonce.
-let chain: Promise<unknown> = Promise.resolve();
-function serialize<T>(fn: () => Promise<T>): Promise<T> {
-  const run = chain.then(fn, fn);
-  chain = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
-}
+// Reuse the shared identity-wallet queue so feedback posts serialize against mints/transfers too.
+const serialize = identityWalletWrite;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

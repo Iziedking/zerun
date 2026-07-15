@@ -46,21 +46,29 @@ export function identityRequiredNow(): boolean {
   return identityConfigured() && t > 0 && Date.now() >= t;
 }
 
-let _contract: ethers.Contract | null = null;
-function getContract(): ethers.Contract {
-  if (_contract) return _contract;
+// The one funded mainnet wallet that signs every ERC-8004 write (identity mints/transfers, reputation
+// feedback, and validation anchors). Shared so all three modules build transactions on ONE wallet and
+// ONE nonce sequence. Exported so reputation.ts and receipts.ts reuse it instead of making their own.
+let _wallet: ethers.Wallet | null = null;
+export function getIdentityWallet(): ethers.Wallet {
+  if (_wallet) return _wallet;
   const i = config.identity;
   if (!i.rpcUrl || !i.signerKey) throw new Error("ERC-8004 identity needs IDENTITY_RPC_URL and IDENTITY_PRIVATE_KEY");
-  const provider = new ethers.JsonRpcProvider(i.rpcUrl);
-  const wallet = new ethers.Wallet(i.signerKey, provider);
-  _contract = new ethers.Contract(i.registry, ABI, wallet);
+  _wallet = new ethers.Wallet(i.signerKey, new ethers.JsonRpcProvider(i.rpcUrl));
+  return _wallet;
+}
+
+let _contract: ethers.Contract | null = null;
+function getContract(): ethers.Contract {
+  if (!_contract) _contract = new ethers.Contract(config.identity.registry, ABI, getIdentityWallet());
   return _contract;
 }
 
-// One mint at a time. Two concurrent uploads would otherwise build two transactions on the same
-// wallet nonce and one would revert, losing that agent's identity for no reason. Serialize them.
+// One write at a time across ALL identity-wallet modules. Two concurrent transactions would otherwise
+// build on the same nonce and all but one would revert. This queue is shared (exported) so reputation
+// and validation writes serialize against identity mints/transfers too, not just among themselves.
 let chain: Promise<unknown> = Promise.resolve();
-function serialize<T>(fn: () => Promise<T>): Promise<T> {
+export function identityWalletWrite<T>(fn: () => Promise<T>): Promise<T> {
   const run = chain.then(fn, fn);
   chain = run.then(
     () => undefined,
@@ -68,6 +76,7 @@ function serialize<T>(fn: () => Promise<T>): Promise<T> {
   );
   return run;
 }
+const serialize = identityWalletWrite;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

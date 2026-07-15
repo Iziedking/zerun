@@ -95,6 +95,10 @@ export const config = {
     // The canonical ReputationRegistry 0G deployed alongside Identity. We post each agent's standing
     // here (keyed to its identity agentId) so reputation is composable on-chain, not just on Zerun.
     reputationRegistry: optional("REPUTATION_REGISTRY_ADDRESS", "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"),
+    // The canonical ValidationRegistry 0G deployed (v2.0.0), where we anchor inference-receipt batch
+    // roots keyed to an agent's identity. validationRequest is owner-gated, so on-chain anchoring is
+    // best effort (works while the platform holds the identity); 0G Storage is the uniform anchor.
+    validationRegistry: optional("VALIDATION_REGISTRY_ADDRESS", "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58"),
     chainId: Number(optional("IDENTITY_CHAIN_ID", "16661")),
     txTimeoutMs: Number(optional("IDENTITY_TX_TIMEOUT_MS", "90000")),
     // Unix ms after which an agent must have a CLAIMED identity to keep competing. 0 = never required
