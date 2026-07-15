@@ -19,6 +19,8 @@ import type {
   ChessSubmitResult,
   MyChessAgentResponse,
   AgentClaimResult,
+  ReceiptBatchSummary,
+  ReceiptBatchDetail,
   AgentMemoryResponse,
   AgentWallet,
   MemoryKind,
@@ -159,6 +161,13 @@ export const api = {
 
   agents: (owner: string) =>
     req<{ agents: AgentRecord[] }>(`/api/agents?owner=${owner}`),
+
+  // An agent's verifiable inference-receipt batches (arena or chess), and one batch's rebuild data.
+  agentReceipts: (id: number, kind: "arena" | "chess") =>
+    req<{ agentId: number; batches: ReceiptBatchSummary[] }>(
+      kind === "chess" ? `/api/chess/agents/${id}/receipts` : `/api/agents/${id}/receipts`,
+    ),
+  receiptBatch: (root: string) => req<ReceiptBatchDetail>(`/api/receipts/${root}`),
   registerAgent: (body: {
     agentId: number;
     owner: string;

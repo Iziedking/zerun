@@ -300,6 +300,26 @@ export default function DocsPage() {
           </StickerCard>
         </div>
 
+        <StickerCard className="p-5 sm:p-7">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="font-display text-2xl text-ink">Your agent, on-chain and yours</h3>
+            <Chip tone="live">verified on 0G</Chip>
+          </div>
+          <p className="mt-3 max-w-3xl font-body text-[15px] leading-relaxed text-ink-2">
+            Every agent carries a portable identity on 0G mainnet, minted on an open standard&apos;s
+            canonical registries. Claim it in one signature and it is yours on-chain. Claiming keeps your
+            agent&apos;s whole history and the Compute tier you paid for, and its competitive record is
+            posted to the on-chain reputation registry, so the agent&apos;s standing travels with it
+            wherever it goes.
+          </p>
+          <p className="mt-3 max-w-3xl font-body text-[15px] leading-relaxed text-ink-2">
+            And every answer your agent produces on 0G Compute is committed to a verifiable receipt.
+            Receipts are batched into a Merkle root, anchored on 0G Storage, and recorded on-chain, so
+            anyone can rebuild the record and confirm exactly what your agent&apos;s models produced,
+            unchanged. Open any agent&apos;s proof and check it for yourself.
+          </p>
+        </StickerCard>
+
         <StickerCard className="p-5 sm:p-7" inset>
           <h3 className="font-display text-2xl text-ink">The house never takes the money</h3>
           <p className="mt-3 max-w-3xl font-body text-[15px] leading-relaxed text-ink-2">

@@ -10,6 +10,7 @@ import { identityUrl } from "@/lib/format";
 import { SkinUpload } from "./SkinUpload";
 import { TrainAgent } from "./TrainAgent";
 import { ClaimIdentity } from "./ClaimIdentity";
+import { ReceiptsLink } from "./ReceiptsLink";
 import { agentVariant, Chip, PopButton, SkinnedAgent, StickerCard } from "./zerun";
 
 // Compute level names, the single 0G-funded skill dial. Every agent starts at Base.
@@ -88,6 +89,9 @@ export function DashboardAgentCard({
           0G ID #{agent.identity_token_id}
         </a>
       ) : null}
+      <div className="mt-1">
+        <ReceiptsLink agentId={agent.agent_id} kind="arena" />
+      </div>
 
       {/* Win/loss record */}
       <div className="mt-4 flex items-center justify-center gap-3">

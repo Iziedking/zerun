@@ -332,6 +332,48 @@ export interface AgentClaimResult {
   txHash: string | null;
 }
 
+// A verifiable inference-receipt batch: a Merkle root over an agent's 0G-compute answers, anchored on
+// 0G Storage and (best effort) the on-chain ValidationRegistry.
+export interface ReceiptBatchSummary {
+  merkleRoot: string;
+  leafCount: number;
+  storageRoot: string | null;
+  onChain: boolean;
+  createdAt: string;
+  verifyUrl: string;
+}
+
+// One receipt inside a batch: what a single 0G-compute answer committed to.
+export interface ReceiptPreimage {
+  v: 1;
+  agentId: number;
+  zerunAgentId: number;
+  kind: "arena" | "chess";
+  ref: number;
+  step: number;
+  source: string;
+  provider: string;
+  model: string;
+  verified: boolean;
+  promptHash: string;
+  answer: string;
+  ts: number;
+}
+
+// A batch's full rebuild data: the ordered receipts and the hashing algorithm, so anyone can recompute
+// the Merkle root and check it against the anchor.
+export interface ReceiptBatchDetail {
+  v: 1;
+  algorithm: string;
+  agentId: number;
+  zerunAgentId: number;
+  kind: "arena" | "chess";
+  merkleRoot: string;
+  leafCount: number;
+  createdAt: string;
+  receipts: ReceiptPreimage[];
+}
+
 // One move in a watchable ladder game: the position AFTER the move, so the board can be drawn
 // straight from `fen` at any point.
 export interface ChessLiveMove {

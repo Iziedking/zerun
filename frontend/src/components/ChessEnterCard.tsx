@@ -13,6 +13,7 @@ import type { ChessSubmitResult } from "@/lib/types";
 import { identityUrl } from "@/lib/format";
 import { useDeployment } from "@/lib/useDeployment";
 import { ClaimIdentity } from "@/components/ClaimIdentity";
+import { ReceiptsLink } from "@/components/ReceiptsLink";
 import { Agent, Chip, PopButton, StickerCard, cx } from "@/components/zerun";
 import { popButtonClass } from "@/components/zerun/PopButton";
 import { ConnectX } from "@/components/ConnectX";
@@ -176,6 +177,9 @@ function MyAgentCard({
             0G ID #{agent.identityTokenId}
           </a>
         ) : null}
+        <div className="mt-1">
+          <ReceiptsLink agentId={agent.agentId} kind="chess" />
+        </div>
         {identityEnabled && !agent.identityClaimed ? (
           <ClaimIdentity
             kind="chess"
