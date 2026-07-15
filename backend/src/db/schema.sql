@@ -274,7 +274,26 @@ create table if not exists inference_batches (
   response_tx        text,               -- ValidationRegistry response tx (the "verified" attestation)
   created_at         timestamptz not null default now()
 );
-create index if not exists inference_batches_agent_idx on inference_batches (agent_id, created_at desc);
+create index if not exists inference_batches_agent_idx on inference_batches (kind, agent_id, created_at desc);
+
+-- Chess receipts source: one row per 0G model call an uploaded chess agent made through the call_model
+-- bridge (sandbox.ts serveCall). Fed into the same verifiable-receipt engine as arena solve_runs, so
+-- chess inferences get the same Merkle-batched, 0G-anchored receipts. Best effort: logging never blocks
+-- or fails a move. `receipt_root` marks the batch a call was anchored in (null = not yet).
+create table if not exists chess_inferences (
+  id           bigserial primary key,
+  agent_id     bigint not null,   -- chess_agents.id
+  prompt       text not null,
+  answer       text,
+  source       text,
+  provider     text,
+  model        text,
+  verified     boolean,
+  latency_ms   int,
+  receipt_root text,
+  created_at   timestamptz not null default now()
+);
+create index if not exists chess_inferences_unanchored_idx on chess_inferences (agent_id) where receipt_root is null;
 
 -- The live "winning metric" per agent per contest: the number the standings rank on
 -- and that decides the winner, which differs by kind (poker = chip stack, world cup =

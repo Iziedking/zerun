@@ -1,5 +1,5 @@
 import { query, closePool } from "../db/pool.js";
-import { receiptsConfigured, anchorAgentReceipts } from "../identity/receipts.js";
+import { receiptsConfigured, anchorAgentReceipts, anchorChessAgentReceipts } from "../identity/receipts.js";
 
 // Anchor verifiable inference receipts for every agent with un-anchored 0G-compute answers.
 //
@@ -20,24 +20,38 @@ import { receiptsConfigured, anchorAgentReceipts } from "../identity/receipts.js
 const CONFIRM = process.env.CONFIRM === "anchor";
 
 async function main(): Promise<void> {
-  // Agents that have an identity and at least one un-anchored 0G-compute inference.
-  const { rows } = await query<{ agent_id: string; n: string }>(
-    `select m.agent_id, count(*)::text as n
-       from solve_runs s
-       join agents_meta m on m.agent_id = s.agent_id
-      where s.source in ('0g-compute','0g-router') and s.receipt_root is null
-        and m.identity_token_id is not null
-      group by m.agent_id
-      order by m.agent_id asc`,
-  );
+  const kind = (process.env.KIND ?? "both").toLowerCase();
+  const doArena = kind === "both" || kind === "arena";
+  const doChess = kind === "both" || kind === "chess";
 
-  console.log(`receipt anchoring: ${rows.length} agent(s) with un-anchored inferences.`);
-  for (const r of rows) console.log(`  agent #${r.agent_id}: ${r.n} inference(s)`);
+  // Arena agents with an identity and at least one un-anchored 0G inference (solve_runs).
+  const arena = doArena
+    ? (await query<{ agent_id: string; n: string }>(
+        `select m.agent_id, count(*)::text as n
+           from solve_runs s join agents_meta m on m.agent_id = s.agent_id
+          where s.source in ('0g-compute','0g-compute-router','0g-router') and s.receipt_root is null
+            and m.identity_token_id is not null
+          group by m.agent_id order by m.agent_id asc`,
+      )).rows
+    : [];
+  // Chess agents with an identity and un-anchored call_model calls (chess_inferences).
+  const chess = doChess
+    ? (await query<{ agent_id: string; n: string }>(
+        `select a.id as agent_id, count(*)::text as n
+           from chess_inferences ci join chess_agents a on a.id = ci.agent_id
+          where ci.receipt_root is null and a.identity_token_id is not null
+          group by a.id order by a.id asc`,
+      )).rows
+    : [];
+
+  console.log(`receipt anchoring: ${arena.length} arena + ${chess.length} chess agent(s) with un-anchored inferences.`);
+  for (const r of arena) console.log(`  arena #${r.agent_id}: ${r.n} inference(s)`);
+  for (const r of chess) console.log(`  chess #${r.agent_id}: ${r.n} inference(s)`);
 
   if (!receiptsConfigured()) {
     console.log("\nReceipts are NOT configured. Set AGENT_IDENTITY=on and the IDENTITY_* wallet (funded).");
     await closePool();
-    process.exit(rows.length === 0 ? 0 : 1);
+    process.exit(arena.length + chess.length === 0 ? 0 : 1);
   }
   if (!CONFIRM) {
     console.log("\nDRY RUN: nothing was anchored. Re-run with CONFIRM=anchor to apply.");
@@ -46,23 +60,32 @@ async function main(): Promise<void> {
   }
 
   let anchored = 0;
-  for (const r of rows) {
+  for (const r of arena) {
     const id = Number(r.agent_id);
     try {
       const res = await anchorAgentReceipts(id);
       if (res) {
         anchored++;
-        console.log(
-          `  agent #${id}: ${res.leafCount} receipts -> root ${res.merkleRoot}` +
-            ` | storage ${res.storageRoot ?? "none"} | on-chain ${res.onChain ? "yes" : "no (owner-gated or failed)"}`,
-        );
+        console.log(`  arena #${id}: ${res.leafCount} receipts -> ${res.merkleRoot} | storage ${res.storageRoot ?? "none"} | on-chain ${res.onChain ? "yes" : "no"}`);
       }
     } catch (err) {
-      console.error(`  FAILED agent #${id}: ${(err as Error).message}`);
+      console.error(`  FAILED arena #${id}: ${(err as Error).message}`);
+    }
+  }
+  for (const r of chess) {
+    const id = Number(r.agent_id);
+    try {
+      const res = await anchorChessAgentReceipts(id);
+      if (res) {
+        anchored++;
+        console.log(`  chess #${id}: ${res.leafCount} receipts -> ${res.merkleRoot} | storage ${res.storageRoot ?? "none"} | on-chain ${res.onChain ? "yes" : "no"}`);
+      }
+    } catch (err) {
+      console.error(`  FAILED chess #${id}: ${(err as Error).message}`);
     }
   }
 
-  console.log(`\nDone. Anchored ${anchored}/${rows.length} agent batch(es).`);
+  console.log(`\nDone. Anchored ${anchored}/${arena.length + chess.length} agent batch(es).`);
   await closePool();
   process.exit(0);
 }

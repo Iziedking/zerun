@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { callModel } from "../../compute/client.js";
+import { logChessInference } from "../../identity/receipts.js";
 import { legalMoves, toFEN, moveToUci, type Position } from "./engine.js";
 import type { Mover } from "./movers.js";
 
@@ -64,14 +65,28 @@ async function serveCall(
 ): Promise<{ ok: true; text: string } | { ok: false; msg: string }> {
   if (!withinBudget(agentId)) return { ok: false, msg: "daily model budget reached" };
   noteCall(agentId);
+  const userPrompt = String(prompt).slice(0, 4000);
   try {
     const r = await callModel({
       systemPrompt: AGENT_SYSTEM,
-      userPrompt: String(prompt).slice(0, 4000),
+      userPrompt,
       maxTokens: MAX_TOKENS,
       temperature: 0.7,
       tier,
     });
+    // Log the call as a verifiable-receipt source row. Fire-and-forget: a logging failure must never
+    // affect the move. Only real 0G calls (not the offline-dev stub) are worth a receipt.
+    if (r.source && r.source !== "offline-dev") {
+      void logChessInference(agentId, {
+        prompt: userPrompt,
+        answer: r.text ?? "",
+        source: r.source,
+        provider: r.provider,
+        model: r.model,
+        verified: r.verified,
+        latencyMs: r.latencyMs,
+      });
+    }
     return { ok: true, text: r.text ?? "" };
   } catch (err) {
     return { ok: false, msg: (err as Error).message };

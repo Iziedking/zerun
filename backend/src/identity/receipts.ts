@@ -6,16 +6,15 @@ import { identityConfigured, getIdentityWallet, identityWalletWrite } from "./er
 
 // Verifiable inference receipts.
 //
-// Every answer an agent produced on 0G Compute (a row in solve_runs) becomes a cryptographic RECEIPT:
-// a keccak256 leaf committing to the model, provider, TEE-verified flag, the prompt hash, and the
-// answer. A batch of an agent's leaves is Merkle-rooted. The full batch (every leaf preimage, in order)
-// is anchored on 0G Storage so anyone can fetch it by root, rebuild the tree, and confirm the root. The
-// root is then recorded on the canonical ERC-8004 ValidationRegistry, keyed to the agent's identity, so
-// "this agent's inferences ran on 0G, unchanged" is provable on-chain by anyone, off Zerun.
+// Every answer an agent produced on 0G Compute becomes a cryptographic RECEIPT: a keccak256 leaf
+// committing to the model, provider, TEE-verified flag, the prompt hash, and the answer. A batch of an
+// agent's leaves is Merkle-rooted. The full batch (every leaf preimage, in order) is anchored on 0G
+// Storage so anyone can fetch it by root, rebuild the tree, and confirm the root. The root is then
+// recorded on the canonical ERC-8004 ValidationRegistry, keyed to the agent's identity, so "this
+// agent's inferences ran on 0G, unchanged" is provable on-chain by anyone, off Zerun.
 //
-// This is the same idea AskZero shipped (per-inference receipts, Merkle-batched, root anchored on
-// chain) but built on 0G-native primitives: 0G Storage for the immutable batch and the canonical
-// ValidationRegistry for the on-chain, identity-keyed anchor. No proprietary contract.
+// Two sources feed one engine: ARENA inferences (solve_runs) and CHESS call_model calls
+// (chess_inferences). Both map to the same receipt shape and the same anchor path.
 //
 // Best effort like the rest of the identity stack. validationRequest is owner-gated, so the on-chain
 // anchor only lands while the platform holds the agent's identity (all agents, until they are claimed);
@@ -27,20 +26,22 @@ const VALIDATION_ABI = [
   "function getAgentValidations(uint256 agentId) view returns (bytes32[])",
 ];
 
+export type ReceiptKind = "arena" | "chess";
+
 // The receipt leaf preimage: the exact object hashed into a Merkle leaf. Field ORDER is part of the
-// spec (JSON.stringify preserves it), and it is echoed verbatim in the batch detail so a third party
+// spec (JSON.stringify preserves it) and is echoed verbatim in the batch detail so a third party
 // rebuilds identical bytes. Never reorder or rename without versioning `v`.
 export interface ReceiptPreimage {
   v: 1;
   agentId: number; // ERC-8004 identity agentId (what the batch is keyed to)
-  zerunAgentId: number; // the internal Zerun arena agent id
-  contestId: number;
-  step: number; // puzzle index within the contest
-  source: string; // 0g-compute | 0g-router
+  zerunAgentId: number; // the internal Zerun agent id (agents_meta.agent_id or chess_agents.id)
+  kind: ReceiptKind;
+  ref: number; // arena: contest id; chess: 0 (no game id at the call site)
+  step: number; // arena: puzzle index; chess: 0
+  source: string; // 0g-compute | 0g-compute-router | ...
   provider: string;
   model: string;
   verified: boolean; // TEE-verified flag from the provider
-  verdict: string; // correct | wrong | error
   promptHash: string; // keccak256(prompt)
   answer: string; // the model's answer, verbatim
   ts: number; // unix seconds
@@ -73,7 +74,7 @@ export interface BatchDetail {
   algorithm: string;
   agentId: number;
   zerunAgentId: number;
-  kind: string;
+  kind: ReceiptKind;
   merkleRoot: string;
   leafCount: number;
   createdAt: string;
@@ -95,8 +96,6 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 export function receiptsConfigured(): boolean {
-  // Needs an identity (to key the anchor) and, ideally, 0G Storage. Storage is best-effort so we only
-  // hard-require identity; a batch with no storage still records its root and marks its runs.
   return identityConfigured() && Boolean(config.identity.validationRegistry);
 }
 
@@ -111,10 +110,9 @@ function validationContract(): ethers.Contract {
   return _validation;
 }
 
-// Record a batch root on the ValidationRegistry, keyed to the agent's identity. Two writes: a request
-// (the agent's work, keyed by the Merkle root) and a validator response (the "verified on 0G"
-// attestation). Owner-gated, so this throws for agents the platform no longer holds; callers treat it
-// as best effort. Returns the two tx hashes.
+// Record a batch root on the ValidationRegistry, keyed to the agent's identity: a request (the work,
+// keyed by the Merkle root) then a validator response (the "verified on 0G" attestation). Owner-gated,
+// so it throws for agents the platform no longer holds; callers treat it as best effort.
 async function anchorOnChain(
   identityTokenId: number,
   root: string,
@@ -131,7 +129,6 @@ async function anchorOnChain(
       "ValidationRegistry request",
     )) as ethers.ContractTransactionResponse;
     await withTimeout(reqTx.wait(), t, "ValidationRegistry request confirm");
-    // response = 100 means fully verified; tag groups these as inference receipts.
     const resTx = (await withTimeout(
       c.validationResponse!(root, 100, uri, responseHash, "0g-inference") as Promise<ethers.ContractTransactionResponse>,
       t,
@@ -143,84 +140,40 @@ async function anchorOnChain(
 }
 
 export interface AnchorResult {
+  kind: ReceiptKind;
   agentId: number;
   identityTokenId: number;
   merkleRoot: string;
   leafCount: number;
   storageRoot: string | null;
-  onChain: boolean; // whether the ValidationRegistry anchor landed
+  onChain: boolean;
 }
 
-interface RunRow {
-  id: string;
-  contest_id: string;
-  puzzle_idx: number;
-  prompt: string;
-  answer: string | null;
-  verdict: string;
-  source: string | null;
-  provider: string | null;
-  model: string | null;
-  verified: boolean | null;
-  ts: string;
-}
-
-// Build and anchor one batch of an arena agent's un-anchored 0G-compute inferences. Returns null when
-// there is nothing to anchor or the agent has no identity. Best effort: a storage or on-chain failure
-// still records the batch and marks its runs, so nothing is anchored twice.
-export async function anchorAgentReceipts(agentId: number): Promise<AnchorResult | null> {
-  if (!receiptsConfigured()) return null;
-
-  const idRes = await query<{ identity_token_id: string | null }>(
-    "select identity_token_id from agents_meta where agent_id = $1",
-    [agentId],
-  );
-  const tokenIdRaw = idRes.rows[0]?.identity_token_id ?? null;
-  if (tokenIdRaw === null) return null; // no identity to key the anchor to yet
-  const identityTokenId = Number(tokenIdRaw);
-
-  const { rows } = await query<RunRow>(
-    `select id, contest_id, puzzle_idx, prompt, answer, verdict, source, provider, model, verified,
-            extract(epoch from created_at)::bigint::text as ts
-       from solve_runs
-      where agent_id = $1 and source in ('0g-compute','0g-router') and receipt_root is null
-      order by id asc`,
-    [agentId],
-  );
-  if (rows.length === 0) return null;
-
-  const receipts: ReceiptPreimage[] = rows.map((r) => ({
-    v: 1,
-    agentId: identityTokenId,
-    zerunAgentId: agentId,
-    contestId: Number(r.contest_id),
-    step: Number(r.puzzle_idx),
-    source: r.source ?? "",
-    provider: r.provider ?? "",
-    model: r.model ?? "",
-    verified: Boolean(r.verified),
-    verdict: r.verdict,
-    promptHash: ethers.keccak256(ethers.toUtf8Bytes(r.prompt ?? "")),
-    answer: r.answer ?? "",
-    ts: Number(r.ts),
-  }));
-
+// Shared anchor path: given the ordered receipts for one agent, Merkle-root them, anchor on 0G Storage,
+// record the root on-chain (best effort), write the batch, and mark the source rows so they are never
+// re-anchored. `markTable` is the table whose `receipt_root` column gets stamped, `rowIds` its ids.
+async function anchorBatch(
+  kind: ReceiptKind,
+  agentId: number,
+  identityTokenId: number,
+  receipts: ReceiptPreimage[],
+  markTable: "solve_runs" | "chess_inferences",
+  rowIds: number[],
+): Promise<AnchorResult> {
   const leaves = receipts.map(leafHash);
   const root = merkleRoot(leaves);
-
   const detail: BatchDetail = {
     v: 1,
     algorithm: ALGORITHM,
     agentId: identityTokenId,
     zerunAgentId: agentId,
-    kind: "arena",
+    kind,
     merkleRoot: root,
     leafCount: receipts.length,
     createdAt: new Date().toISOString(),
     receipts,
   };
 
-  // 1. Anchor the full batch on 0G Storage (the uniform, ownership-independent proof).
   let storageRoot: string | null = null;
   let storageTx: string | null = null;
   if (storageConfigured()) {
@@ -229,100 +182,162 @@ export async function anchorAgentReceipts(agentId: number): Promise<AnchorResult
       storageRoot = r.rootHash || null;
       storageTx = r.txHash;
     } catch (err) {
-      console.warn(`receipts: 0G Storage anchor failed for agent ${agentId}:`, (err as Error).message);
+      console.warn(`receipts: 0G Storage anchor failed for ${kind} agent ${agentId}:`, (err as Error).message);
     }
   }
 
-  // 2. Record the root on-chain via the ValidationRegistry (best effort; owner-gated).
   let validationTx: string | null = null;
   let responseTx: string | null = null;
   try {
-    // responseHash carries the storage root when we have one (so the on-chain record points at the
-    // immutable copy), else the Merkle root itself.
-    const responseHash =
-      storageRoot && /^0x[0-9a-fA-F]{64}$/.test(storageRoot) ? storageRoot : root;
+    const responseHash = storageRoot && /^0x[0-9a-fA-F]{64}$/.test(storageRoot) ? storageRoot : root;
     const r = await anchorOnChain(identityTokenId, root, responseHash);
     validationTx = r.validationTx;
     responseTx = r.responseTx;
   } catch (err) {
-    console.warn(`receipts: ValidationRegistry anchor skipped for agent ${agentId}:`, (err as Error).message);
+    console.warn(`receipts: ValidationRegistry anchor skipped for ${kind} agent ${agentId}:`, (err as Error).message);
   }
 
-  // 3. Record the batch and mark its runs, so they are never anchored again. Do this last: if the
-  // process died earlier, the runs stay un-anchored and a later run re-batches them cleanly.
   await query(
     `insert into inference_batches
         (merkle_root, agent_id, identity_token_id, kind, leaf_count, storage_root, storage_tx, validation_tx, response_tx)
-      values ($1,$2,$3,'arena',$4,$5,$6,$7,$8)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       on conflict (merkle_root) do nothing`,
-    [root, agentId, identityTokenId, receipts.length, storageRoot, storageTx, validationTx, responseTx],
+    [root, agentId, identityTokenId, kind, receipts.length, storageRoot, storageTx, validationTx, responseTx],
   );
-  const ids = rows.map((r) => Number(r.id));
-  await query("update solve_runs set receipt_root = $2 where id = any($1::bigint[])", [ids, root]);
+  await query(`update ${markTable} set receipt_root = $2 where id = any($1::bigint[])`, [rowIds, root]);
 
-  return {
-    agentId,
-    identityTokenId,
-    merkleRoot: root,
-    leafCount: receipts.length,
-    storageRoot,
-    onChain: Boolean(validationTx),
-  };
+  return { kind, agentId, identityTokenId, merkleRoot: root, leafCount: receipts.length, storageRoot, onChain: Boolean(validationTx) };
+}
+
+interface ArenaRow {
+  id: string; contest_id: string; puzzle_idx: number; prompt: string; answer: string | null;
+  source: string | null; provider: string | null; model: string | null; verified: boolean | null; ts: string;
+}
+
+// Anchor one batch of an ARENA agent's un-anchored 0G-compute inferences (from solve_runs).
+export async function anchorAgentReceipts(agentId: number): Promise<AnchorResult | null> {
+  if (!receiptsConfigured()) return null;
+  const idRes = await query<{ identity_token_id: string | null }>(
+    "select identity_token_id from agents_meta where agent_id = $1",
+    [agentId],
+  );
+  const tok = idRes.rows[0]?.identity_token_id ?? null;
+  if (tok === null) return null;
+  const identityTokenId = Number(tok);
+
+  const { rows } = await query<ArenaRow>(
+    `select id, contest_id, puzzle_idx, prompt, answer, source, provider, model, verified,
+            extract(epoch from created_at)::bigint::text as ts
+       from solve_runs
+      where agent_id = $1 and source in ('0g-compute','0g-compute-router','0g-router') and receipt_root is null
+      order by id asc`,
+    [agentId],
+  );
+  if (rows.length === 0) return null;
+
+  const receipts: ReceiptPreimage[] = rows.map((r) => ({
+    v: 1, agentId: identityTokenId, zerunAgentId: agentId, kind: "arena",
+    ref: Number(r.contest_id), step: Number(r.puzzle_idx),
+    source: r.source ?? "", provider: r.provider ?? "", model: r.model ?? "", verified: Boolean(r.verified),
+    promptHash: ethers.keccak256(ethers.toUtf8Bytes(r.prompt ?? "")), answer: r.answer ?? "", ts: Number(r.ts),
+  }));
+  return anchorBatch("arena", agentId, identityTokenId, receipts, "solve_runs", rows.map((r) => Number(r.id)));
+}
+
+interface ChessRow {
+  id: string; prompt: string; answer: string | null;
+  source: string | null; provider: string | null; model: string | null; verified: boolean | null; ts: string;
+}
+
+// Anchor one batch of a CHESS agent's un-anchored call_model inferences (from chess_inferences).
+export async function anchorChessAgentReceipts(chessAgentId: number): Promise<AnchorResult | null> {
+  if (!receiptsConfigured()) return null;
+  const idRes = await query<{ identity_token_id: string | null }>(
+    "select identity_token_id from chess_agents where id = $1",
+    [chessAgentId],
+  );
+  const tok = idRes.rows[0]?.identity_token_id ?? null;
+  if (tok === null) return null;
+  const identityTokenId = Number(tok);
+
+  const { rows } = await query<ChessRow>(
+    `select id, prompt, answer, source, provider, model, verified,
+            extract(epoch from created_at)::bigint::text as ts
+       from chess_inferences
+      where agent_id = $1 and receipt_root is null
+      order by id asc`,
+    [chessAgentId],
+  );
+  if (rows.length === 0) return null;
+
+  const receipts: ReceiptPreimage[] = rows.map((r) => ({
+    v: 1, agentId: identityTokenId, zerunAgentId: chessAgentId, kind: "chess",
+    ref: 0, step: 0,
+    source: r.source ?? "", provider: r.provider ?? "", model: r.model ?? "", verified: Boolean(r.verified),
+    promptHash: ethers.keccak256(ethers.toUtf8Bytes(r.prompt ?? "")), answer: r.answer ?? "", ts: Number(r.ts),
+  }));
+  return anchorBatch("chess", chessAgentId, identityTokenId, receipts, "chess_inferences", rows.map((r) => Number(r.id)));
+}
+
+// Log one chess call_model result as a receipt source row. Best effort and fire-and-forget at the call
+// site: it must never block or fail a move.
+export async function logChessInference(
+  chessAgentId: number,
+  data: { prompt: string; answer: string; source: string; provider: string; model: string; verified: boolean | null; latencyMs: number },
+): Promise<void> {
+  try {
+    await query(
+      `insert into chess_inferences (agent_id, prompt, answer, source, provider, model, verified, latency_ms)
+       values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [chessAgentId, data.prompt.slice(0, 8000), data.answer.slice(0, 8000), data.source, data.provider, data.model, data.verified, data.latencyMs],
+    );
+  } catch (err) {
+    console.warn(`chess inference log failed for agent ${chessAgentId}:`, (err as Error).message);
+  }
 }
 
 // Serve a batch's rebuild data by its Merkle root: the exact ordered receipt preimages plus the
-// algorithm, so anyone can recompute every leaf and the root and check it against the anchor. Prefers
-// the 0G Storage copy; falls back to rebuilding from the database.
+// algorithm, so anyone can recompute every leaf and the root and check it against the anchor. Rebuilt
+// from the authoritative source rows (always available), regardless of kind.
 export async function receiptBatch(root: string): Promise<BatchDetail | null> {
-  const { rows } = await query<{
-    agent_id: string;
-    identity_token_id: string;
-    kind: string;
-    leaf_count: number;
-    storage_root: string | null;
-    created_at: string;
-  }>(
-    "select agent_id, identity_token_id, kind, leaf_count, storage_root, created_at::text from inference_batches where merkle_root = $1",
+  const { rows } = await query<{ agent_id: string; identity_token_id: string; kind: ReceiptKind; created_at: string }>(
+    "select agent_id, identity_token_id, kind, created_at::text from inference_batches where merkle_root = $1",
     [root],
   );
   const b = rows[0];
   if (!b) return null;
-
-  // Rebuild from the marked runs (authoritative and always available).
-  const runs = await query<RunRow>(
-    `select id, contest_id, puzzle_idx, prompt, answer, verdict, source, provider, model, verified,
-            extract(epoch from created_at)::bigint::text as ts
-       from solve_runs
-      where agent_id = $1 and receipt_root = $2
-      order by id asc`,
-    [Number(b.agent_id), root],
-  );
+  const agentId = Number(b.agent_id);
   const identityTokenId = Number(b.identity_token_id);
-  const receipts: ReceiptPreimage[] = runs.rows.map((r) => ({
-    v: 1,
-    agentId: identityTokenId,
-    zerunAgentId: Number(b.agent_id),
-    contestId: Number(r.contest_id),
-    step: Number(r.puzzle_idx),
-    source: r.source ?? "",
-    provider: r.provider ?? "",
-    model: r.model ?? "",
-    verified: Boolean(r.verified),
-    verdict: r.verdict,
-    promptHash: ethers.keccak256(ethers.toUtf8Bytes(r.prompt ?? "")),
-    answer: r.answer ?? "",
-    ts: Number(r.ts),
-  }));
+
+  let receipts: ReceiptPreimage[];
+  if (b.kind === "chess") {
+    const runs = await query<ChessRow>(
+      `select id, prompt, answer, source, provider, model, verified, extract(epoch from created_at)::bigint::text as ts
+         from chess_inferences where agent_id = $1 and receipt_root = $2 order by id asc`,
+      [agentId, root],
+    );
+    receipts = runs.rows.map((r) => ({
+      v: 1, agentId: identityTokenId, zerunAgentId: agentId, kind: "chess", ref: 0, step: 0,
+      source: r.source ?? "", provider: r.provider ?? "", model: r.model ?? "", verified: Boolean(r.verified),
+      promptHash: ethers.keccak256(ethers.toUtf8Bytes(r.prompt ?? "")), answer: r.answer ?? "", ts: Number(r.ts),
+    }));
+  } else {
+    const runs = await query<ArenaRow>(
+      `select id, contest_id, puzzle_idx, prompt, answer, source, provider, model, verified, extract(epoch from created_at)::bigint::text as ts
+         from solve_runs where agent_id = $1 and receipt_root = $2 order by id asc`,
+      [agentId, root],
+    );
+    receipts = runs.rows.map((r) => ({
+      v: 1, agentId: identityTokenId, zerunAgentId: agentId, kind: "arena",
+      ref: Number(r.contest_id), step: Number(r.puzzle_idx),
+      source: r.source ?? "", provider: r.provider ?? "", model: r.model ?? "", verified: Boolean(r.verified),
+      promptHash: ethers.keccak256(ethers.toUtf8Bytes(r.prompt ?? "")), answer: r.answer ?? "", ts: Number(r.ts),
+    }));
+  }
+
   return {
-    v: 1,
-    algorithm: ALGORITHM,
-    agentId: identityTokenId,
-    zerunAgentId: Number(b.agent_id),
-    kind: b.kind,
-    merkleRoot: root,
-    leafCount: receipts.length,
-    createdAt: new Date(b.created_at).toISOString(),
-    receipts,
+    v: 1, algorithm: ALGORITHM, agentId: identityTokenId, zerunAgentId: agentId, kind: b.kind,
+    merkleRoot: root, leafCount: receipts.length, createdAt: new Date(b.created_at).toISOString(), receipts,
   };
 }
 
@@ -335,18 +350,14 @@ export interface BatchSummary {
   verifyUrl: string;
 }
 
-// An agent's anchored batches, newest first, for the verification UI/API.
-export async function agentReceiptBatches(agentId: number, limit = 50): Promise<BatchSummary[]> {
+// An agent's anchored batches for a kind, newest first, for the verification UI/API.
+export async function agentReceiptBatches(agentId: number, kind: ReceiptKind, limit = 50): Promise<BatchSummary[]> {
   const { rows } = await query<{
-    merkle_root: string;
-    leaf_count: number;
-    storage_root: string | null;
-    validation_tx: string | null;
-    created_at: string;
+    merkle_root: string; leaf_count: number; storage_root: string | null; validation_tx: string | null; created_at: string;
   }>(
     `select merkle_root, leaf_count, storage_root, validation_tx, created_at::text
-       from inference_batches where agent_id = $1 order by created_at desc limit $2`,
-    [agentId, limit],
+       from inference_batches where agent_id = $1 and kind = $2 order by created_at desc limit $3`,
+    [agentId, kind, limit],
   );
   return rows.map((r) => ({
     merkleRoot: r.merkle_root,

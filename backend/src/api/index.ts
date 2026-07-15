@@ -1263,7 +1263,14 @@ app.post("/api/agents", async (c) => {
 app.get("/api/agents/:id/receipts", async (c) => {
   const agentId = Number(c.req.param("id"));
   if (!agentId) return c.json({ error: "a numeric agent id is required" }, 400);
-  return c.json({ agentId, batches: await agentReceiptBatches(agentId) });
+  return c.json({ agentId, batches: await agentReceiptBatches(agentId, "arena") });
+});
+
+// A chess agent's verifiable inference-receipt batches (its call_model calls on 0G).
+app.get("/api/chess/agents/:id/receipts", async (c) => {
+  const agentId = Number(c.req.param("id"));
+  if (!agentId) return c.json({ error: "a numeric agent id is required" }, 400);
+  return c.json({ agentId, batches: await agentReceiptBatches(agentId, "chess") });
 });
 
 // One receipt batch's rebuild data, by its Merkle root: the exact ordered receipt preimages and the
