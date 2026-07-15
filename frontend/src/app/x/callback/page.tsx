@@ -37,8 +37,18 @@ function XCallbackInner() {
       .xCallback({ code, state })
       .then((r) => {
         setOk(true);
-        setMsg(`Linked @${r.handle}. Taking you to your profile…`);
-        setTimeout(() => router.push(`/profile/${r.wallet}`), 1400);
+        // Return to where the connect started (e.g. the chess page); fall back to the profile. Only
+        // honor an internal path, never an absolute URL, so this can't be used to bounce off-site.
+        let dest = `/profile/${r.wallet}`;
+        try {
+          const rt = localStorage.getItem("zerun:xReturnTo");
+          localStorage.removeItem("zerun:xReturnTo");
+          if (rt && rt.startsWith("/") && !rt.startsWith("//")) dest = rt;
+        } catch {
+          /* ignore storage errors; keep the profile fallback */
+        }
+        setMsg(dest.startsWith("/profile") ? `Linked @${r.handle}. Taking you to your profile…` : `Linked @${r.handle}. Taking you back…`);
+        setTimeout(() => router.push(dest), 1400);
       })
       .catch((e) => {
         setOk(false);

@@ -73,6 +73,13 @@ export function ConnectX({ address, isMe }: { address: string; isMe: boolean }) 
       const issuedAt = Date.now();
       const signature = await signMessageAsync({ message: xConnectMessage(owner, issuedAt) });
       const { url } = await api.xStart({ owner, issuedAt, signature });
+      // Remember where the connect started (e.g. the chess page) so the callback returns here instead
+      // of always dropping the user on their profile. Survives the round trip to X in the same tab.
+      try {
+        localStorage.setItem("zerun:xReturnTo", window.location.pathname + window.location.search);
+      } catch {
+        /* storage may be unavailable; the callback just falls back to the profile */
+      }
       window.location.href = url; // hand off to X for authorization
     } catch (e) {
       setError(friendlyError(e, "Could not start the X connection. Try again."));

@@ -389,13 +389,14 @@ export async function claimChessIdentity(agentDbId: number, owner: string): Prom
       "update chess_agents set identity_owner = $2, claimed_at = coalesce(claimed_at, now()) where id = $1",
       [agentDbId, lower],
     );
-    await postChessReputation(agentDbId, tokenId);
+    // Reputation is a separate mainnet tx; don't hold the user's claim response on it (it self-logs).
+    void postChessReputation(agentDbId, tokenId);
     return { agentId: agentDbId, identityTokenId: tokenId, claimed: true, txHash: null };
   }
   try {
     const txHash = await transferIdentity(tokenId, lower);
     await query("update chess_agents set identity_owner = $2, claimed_at = now() where id = $1", [agentDbId, lower]);
-    await postChessReputation(agentDbId, tokenId);
+    void postChessReputation(agentDbId, tokenId);
     return { agentId: agentDbId, identityTokenId: tokenId, claimed: true, txHash };
   } catch (err) {
     console.warn(`chess identity transfer failed for agent ${agentDbId}:`, (err as Error).message);

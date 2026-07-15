@@ -173,6 +173,7 @@ function MyAgentCard({
             claimed={false}
             compact
             className="mt-3"
+            requiredAfter={deployment?.identityRequiredAfter ?? null}
             onClaimed={() => queryClient.invalidateQueries({ queryKey: ["chess-mine"] })}
           />
         ) : null}

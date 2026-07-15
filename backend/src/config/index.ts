@@ -97,6 +97,10 @@ export const config = {
     reputationRegistry: optional("REPUTATION_REGISTRY_ADDRESS", "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"),
     chainId: Number(optional("IDENTITY_CHAIN_ID", "16661")),
     txTimeoutMs: Number(optional("IDENTITY_TX_TIMEOUT_MS", "90000")),
+    // Unix ms after which an agent must have a CLAIMED identity to keep competing. 0 = never required
+    // (the optional phase). Set this to the announced cutoff to switch the campaign from opt-in to
+    // required. Only enforced when identity is configured.
+    requiredAfter: Number(optional("IDENTITY_REQUIRED_AFTER", "0")),
   },
   // Public, explorer-resolvable base URL of THIS backend. An agent's ERC-8004 agentURI points here
   // (…/api/chess/agents/<id>/card.json), so it must be the real public API origin, not localhost.

@@ -37,7 +37,7 @@ import { chessLadder, currentChessSeason, chessQualify } from "../runners/chess/
 import { submitChessAgent, myChessAgent, uploadsOpen, SubmitError, claimChessIdentity } from "../runners/chess/submissions.js";
 import { chessAgentCard } from "../runners/chess/agentCard.js";
 import { arenaAgentCard, mintArenaIdentity, claimArenaIdentity } from "../identity/arenaAgents.js";
-import { identityConfigured } from "../identity/erc8004.js";
+import { identityConfigured, identityRequiredNow } from "../identity/erc8004.js";
 import { verifyChessSubmit, verifyChessClaim } from "../auth/chessSubmitSig.js";
 import { getLiveGame, getAgentGame } from "../coordinator/chessLadderRunner.js";
 import { settlePokerSeason } from "../coordinator/pokerSeason.js";
@@ -779,6 +779,9 @@ app.get("/api/deployment", (c) => {
     // Whether ERC-8004 agent identity is live. Drives the "Claim identity" UI: off means no agent has
     // an identity yet, so the frontend hides the claim action entirely.
     identityEnabled: identityConfigured(),
+    // Unix ms after which a claimed identity is required to compete (null when never/unset), so the UI
+    // can show a countdown and nudge owners to claim before it.
+    identityRequiredAfter: config.identity.requiredAfter > 0 ? config.identity.requiredAfter : null,
     contracts: {
       testUSDC: dep.testUSDC,
       prizeEscrow: dep.prizeEscrow,
@@ -1137,6 +1140,22 @@ app.post("/api/contests/:id/enter", async (c) => {
   const agentId = Number(body.agentId);
   const operator = String(body.operator ?? "").toLowerCase();
   if (!agentId || !operator) return c.json({ error: "agentId and operator required" }, 400);
+
+  // After the identity cutoff, an agent must have claimed its on-chain identity to keep competing.
+  // Before the cutoff (the optional phase) this is a no-op. House agents are exempt.
+  if (identityRequiredNow()) {
+    const claim = await query<{ identity_owner: string | null; is_house: boolean | null }>(
+      "select identity_owner, is_house from agents_meta where agent_id = $1",
+      [agentId],
+    );
+    const row = claim.rows[0];
+    if (row && !row.is_house && !row.identity_owner) {
+      return c.json(
+        { error: "Claim your agent's on-chain identity to keep competing. Open your agent and tap Claim on-chain identity." },
+        403,
+      );
+    }
+  }
 
   // Only the join window accepts entries, and only up to the host's cap.
   const meta = await query<{ status: string; max_operators: number | null; cnt: number }>(

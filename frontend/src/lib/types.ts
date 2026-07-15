@@ -7,6 +7,8 @@ export interface Deployment {
   explorer: string;
   // True when ERC-8004 agent identity is live; drives whether the "Claim identity" UI shows.
   identityEnabled?: boolean;
+  // Unix ms after which a claimed identity is required to keep competing (null when not set).
+  identityRequiredAfter?: number | null;
   contracts: {
     testUSDC: Address;
     prizeEscrow: Address;

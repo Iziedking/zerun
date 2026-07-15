@@ -103,6 +103,7 @@ export function DashboardAgentCard({
               agentId={agent.agent_id}
               identityTokenId={agent.identity_token_id ?? null}
               claimed={false}
+              requiredAfter={deployment?.identityRequiredAfter ?? null}
               onClaimed={() => queryClient.invalidateQueries({ queryKey: ["agents", owner.toLowerCase()] })}
             />
           )}

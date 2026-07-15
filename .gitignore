@@ -57,3 +57,4 @@ sample/
 
 # Local-only announcement drafts (kept out of the public repo)
 docs/zeroCupChess.md
+docs/agentIdentity.md

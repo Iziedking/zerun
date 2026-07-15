@@ -204,13 +204,14 @@ export async function claimArenaIdentity(agentId: number, ownerWallet: string): 
       "update agents_meta set identity_owner = $2, claimed_at = coalesce(claimed_at, now()) where agent_id = $1",
       [agentId, owner],
     );
-    await postArenaReputation(agentId, tokenId);
+    // Reputation is a separate mainnet tx; don't hold the user's claim response on it (it self-logs).
+    void postArenaReputation(agentId, tokenId);
     return { agentId, identityTokenId: tokenId, claimed: true, computeLevel: reconciled, txHash: null };
   }
   try {
     const txHash = await transferIdentity(tokenId, owner);
     await query("update agents_meta set identity_owner = $2, claimed_at = now() where agent_id = $1", [agentId, owner]);
-    await postArenaReputation(agentId, tokenId);
+    void postArenaReputation(agentId, tokenId);
     return { agentId, identityTokenId: tokenId, claimed: true, computeLevel: reconciled, txHash };
   } catch (err) {
     console.warn(`arena identity transfer failed for agent ${agentId}:`, (err as Error).message);

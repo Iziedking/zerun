@@ -39,6 +39,13 @@ export function identityConfigured(): boolean {
   return i.enabled && Boolean(i.rpcUrl) && Boolean(i.signerKey) && Boolean(i.registry);
 }
 
+// Whether the cutoff has passed, so a claimed identity is now REQUIRED to compete. Only meaningful
+// when identity is configured; before the cutoff (or with it unset) claiming stays optional.
+export function identityRequiredNow(): boolean {
+  const t = config.identity.requiredAfter;
+  return identityConfigured() && t > 0 && Date.now() >= t;
+}
+
 let _contract: ethers.Contract | null = null;
 function getContract(): ethers.Contract {
   if (_contract) return _contract;

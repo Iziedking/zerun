@@ -23,6 +23,7 @@ export function ClaimIdentity({
   claimed,
   className = "",
   compact = false,
+  requiredAfter = null,
   onClaimed,
 }: {
   kind: "arena" | "chess";
@@ -32,6 +33,8 @@ export function ClaimIdentity({
   className?: string;
   /** Drop the full-width button (for inline placement next to other buttons). */
   compact?: boolean;
+  /** Unix ms the claim becomes required to compete; shows a deadline nudge under the button. */
+  requiredAfter?: number | null;
   onClaimed?: (r: AgentClaimResult) => void;
 }) {
   const { address } = useAccount();
@@ -95,12 +98,21 @@ export function ClaimIdentity({
     }
   }
 
+  const deadline =
+    requiredAfter && requiredAfter > Date.now()
+      ? new Date(requiredAfter).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+      : null;
+
   return (
     <div className={className}>
       <PopButton type="button" onClick={claim} disabled={phase === "working"} className={compact ? "" : "w-full"}>
         {phase === "working" ? "Claiming on 0G…" : "Claim on-chain identity"}
       </PopButton>
-      {error ? <p className="mt-1.5 font-body text-[12px] font-bold text-coral">{error}</p> : null}
+      {error ? (
+        <p className="mt-1.5 font-body text-[12px] font-bold text-coral">{error}</p>
+      ) : deadline ? (
+        <p className="mt-1.5 font-body text-[12px] font-bold text-ink-3">Required to keep competing by {deadline}</p>
+      ) : null}
     </div>
   );
 }
