@@ -194,7 +194,15 @@ async function anchorBatch(
     validationTx = r.validationTx;
     responseTx = r.responseTx;
   } catch (err) {
-    console.warn(`receipts: ValidationRegistry anchor skipped for ${kind} agent ${agentId}:`, (err as Error).message);
+    const msg = (err as Error).message ?? "";
+    // "Not authorized" is expected, not a failure: the agent has been claimed, so its identity is owned
+    // by its player and the platform can no longer write the on-chain record. The 0G Storage anchor
+    // above still makes the batch fully verifiable. Log it quietly; surface anything else as a warning.
+    if (/not authorized/i.test(msg)) {
+      console.log(`receipts: on-chain anchor skipped for ${kind} agent ${agentId} (claimed, owned by its player); 0G Storage receipt anchored.`);
+    } else {
+      console.warn(`receipts: ValidationRegistry anchor failed for ${kind} agent ${agentId}: ${msg.split(" (")[0]}`);
+    }
   }
 
   await query(

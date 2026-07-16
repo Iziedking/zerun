@@ -785,7 +785,13 @@ let mainnetSkipUntil = 0;
 // tier to mainnet (only mainnet models then show), or 6 to keep everyone on testnet. Testnet's
 // one healthy provider caps at 10 req/min at ~3.8s; mainnet takes ~48 req/min at ~1.3s, so the
 // premium tiers also get the faster network, which matters when one 0G call is one chess ply.
-const MAINNET_MIN_TIER = Number(process.env.COMPUTE_MAINNET_MIN_TIER ?? "4");
+// Default 1 so every paid tier (1-5) reasons on 0G MAINNET, where the varied model catalog lives, and
+// only the free tier 0 stays on testnet. This is what surfaces MiniMax, qwen3-vl, and deepseek in the
+// receipts alongside qwen, instead of everyone showing the one testnet model. Requires mainnet compute
+// to be configured (COMPUTE_MAINNET_RPC_URL + a funded COMPUTE_MAINNET wallet); without it, all tiers
+// fall back to testnet regardless. Set 4 to restrict mainnet to the premium tiers, or 6 to keep
+// everyone on testnet.
+const MAINNET_MIN_TIER = Number(process.env.COMPUTE_MAINNET_MIN_TIER ?? "1");
 
 /** Does a call at this Compute level get to use mainnet at all? */
 export function tierUsesMainnet(tier: number | undefined): boolean {

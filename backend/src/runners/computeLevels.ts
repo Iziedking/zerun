@@ -140,27 +140,32 @@ const MODEL_GPT_OSS = "openai/gpt-oss-20b"; // level 5 (TEE)
 // It is verbose — 374 characters to say "252" — which costs latency on the prose tasks (~8s
 // solver, ~7s forecast) but not on chess, where the prompt constrains it to a UCI move and a
 // short reason and it answers in ~1.6s.
-const MODEL_BASE_MAINNET = "qwen/qwen3-vl-30b-a3b-instruct"; // level 4, mainnet
-const MODEL_PRO_MAINNET = "deepseek-v4-flash"; // level 5, mainnet (a DIFFERENT brain from level 4)
+const MODEL_BASE_MAINNET = "qwen/qwen3-vl-30b-a3b-instruct"; // levels 2 and 4, mainnet
+const MODEL_PRO_MAINNET = "deepseek-v4-flash"; // levels 3 and 5, mainnet (a terse, reliable brain)
+const MODEL_MINIMAX = "MiniMax-M3"; // level 1, mainnet (the third proven mainnet brain, ex-escalation pool)
 
-// Two bands, on purpose, so the different 0G models are visibly in play at the same time:
-//   levels 0-3 reason on TESTNET (qwen2.5-omni). Free, the house field and casual competitors.
-//   level 4 leads with a MAINNET model (qwen3-vl) and level 5 with a DIFFERENT mainnet model
-//     (deepseek), so the two premium tiers run different brains you can watch side by side.
-//   each mainnet tier trails a testnet model as the automatic fallback if mainnet hiccups.
-// This split needs COMPUTE_MAINNET_MIN_TIER=4 (the default), so only levels 4-5 route to
-// mainnet and the lower tiers stay on testnet, where their model actually shows too. Set it to 0
-// to send every tier to mainnet again (then only mainnet models appear, which is what we moved
-// away from). The other measured-but-unused mainnet candidates (openai/gpt-5.4-mini, MiniMax-M3,
-// glm-5.2) can slot in as new tiers or a fresh premium once baked off with `models:bakeoff`.
-const BASE_TESTNET = [MODEL_BASE]; // levels 0-3, testnet only
+// A DISTINCT model per band, on purpose, so several 0G models are visibly in play across the ladder
+// (judges asked to see more than qwen at work). Each mainnet tier trails the testnet model as an
+// automatic fallback if mainnet hiccups.
+//   level 0  -> qwen2.5-omni on TESTNET. Free, the house field and casual entrants.
+//   level 1  -> MiniMax-M3 (mainnet)
+//   level 2  -> qwen3-vl-30b (mainnet)
+//   level 3  -> deepseek-v4-flash (mainnet)
+//   level 4  -> qwen3-vl-30b (mainnet, premium: more passes, live insight)
+//   level 5  -> deepseek-v4-flash (mainnet, premium)
+// So a run shows one of four distinct brains depending on the agent's tier. This needs
+// COMPUTE_MAINNET_MIN_TIER=1 so levels 1+ actually reach mainnet where those models serve; level 0
+// stays free on testnet. With the default of 4 the mid tiers fall back to testnet qwen and only 4-5
+// show variety. Only measured-healthy mainnet models are on the ladder (qwen3-vl, deepseek-v4-flash,
+// MiniMax-M3); vet new ones with `models:bakeoff` before adding.
+const BASE_TESTNET = [MODEL_BASE]; // the testnet model, used at level 0 and as every tier's fallback
 
 // `level` is filled in by computePlan, which is the only way a plan is ever handed out.
 const LEVELS: Omit<InferencePlan, "level">[] = [
   { maxTokens: 280, temperature: 0.7, samples: 1, retries: 1, hint: "", intel: 0, models: BASE_TESTNET },
-  { maxTokens: 440, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step.", intel: 0, models: BASE_TESTNET },
-  { maxTokens: 620, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer.", intel: 0, models: BASE_TESTNET },
-  { maxTokens: 760, temperature: 0.6, samples: 5, retries: 1, hint: " Think step by step, then check your answer.", intel: 2, models: BASE_TESTNET },
+  { maxTokens: 512, temperature: 0.65, samples: 3, retries: 1, hint: " Think step by step.", intel: 0, models: [MODEL_MINIMAX, ...BASE_TESTNET] },
+  { maxTokens: 640, temperature: 0.62, samples: 4, retries: 1, hint: " Think step by step, then check your answer.", intel: 0, models: [MODEL_BASE_MAINNET, ...BASE_TESTNET] },
+  { maxTokens: 760, temperature: 0.6, samples: 5, retries: 1, hint: " Think step by step, then check your answer.", intel: 2, models: [MODEL_PRO_MAINNET, ...BASE_TESTNET] },
   { maxTokens: 900, temperature: 0.58, samples: 6, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 5, liveInsight: true, models: [MODEL_BASE_MAINNET, MODEL_GEMMA, ...BASE_TESTNET] },
   { maxTokens: 1024, temperature: 0.58, samples: 7, retries: 1, hint: " Reason step by step, then verify your answer before committing.", intel: 8, liveInsight: true, models: [MODEL_PRO_MAINNET, MODEL_GPT_OSS, MODEL_BASE_MAINNET, ...BASE_TESTNET] },
 ];

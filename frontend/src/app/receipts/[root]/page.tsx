@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { identityUrl } from "@/lib/format";
-import { Agent, Chip, StickerCard } from "@/components/zerun";
+import { Agent, Chip, Pager, StickerCard, usePaged } from "@/components/zerun";
+
+const PER_PAGE = 25;
 
 // A shareable proof page for one inference-receipt batch. It shows what each 0G-compute answer
 // committed to, the Merkle root, and how to check that root against the on-chain anchor. Anyone with
@@ -18,11 +21,15 @@ function short(s: string, head = 10, tail = 8): string {
 export default function ReceiptBatchPage() {
   const params = useParams<{ root: string }>();
   const root = String(params.root ?? "");
+  const [page, setPage] = useState(0);
   const { data, isLoading, isError } = useQuery({
     queryKey: ["receipt-batch", root],
     queryFn: () => api.receiptBatch(root),
     staleTime: 300_000,
   });
+  const receipts = data?.receipts ?? [];
+  const { totalPages, sliceFor } = usePaged(receipts, PER_PAGE);
+  const shown = sliceFor(Math.min(page, totalPages - 1));
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 pt-8 pb-16">
@@ -91,23 +98,34 @@ export default function ReceiptBatchPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.receipts.map((r, i) => (
-                    <tr key={i} className={i % 2 ? "bg-cloud-2" : "bg-cloud"}>
-                      <td className="border-t-2 border-ink/10 px-4 py-2.5 font-mono text-[12px] text-ink-3">{i + 1}</td>
-                      <td className="border-t-2 border-ink/10 px-4 py-2.5 font-body text-[13px] font-bold text-ink">{r.model || "—"}</td>
-                      <td className="border-t-2 border-ink/10 px-4 py-2.5 font-mono text-[12px] text-ink-2" title={r.provider}>
-                        {r.provider ? short(r.provider, 6, 4) : "—"}
-                      </td>
-                      <td className="border-t-2 border-ink/10 px-4 py-2.5">
-                        {r.verified ? <Chip tone="live">verified</Chip> : <span className="font-body text-[12px] text-ink-3">—</span>}
-                      </td>
-                      <td className="border-t-2 border-ink/10 px-4 py-2.5 font-mono text-[12px] text-ink-2">{short(r.answer, 40, 12)}</td>
-                    </tr>
-                  ))}
+                  {shown.map((r, i) => {
+                    const n = page * PER_PAGE + i;
+                    return (
+                      <tr key={n} className={n % 2 ? "bg-cloud-2" : "bg-cloud"}>
+                        <td className="border-t-2 border-ink/10 px-4 py-2.5 font-mono text-[12px] text-ink-3">{n + 1}</td>
+                        <td className="border-t-2 border-ink/10 px-4 py-2.5 font-body text-[13px] font-bold text-ink">{r.model || "—"}</td>
+                        <td className="border-t-2 border-ink/10 px-4 py-2.5 font-mono text-[12px] text-ink-2" title={r.provider}>
+                          {r.provider ? short(r.provider, 6, 4) : "—"}
+                        </td>
+                        <td className="border-t-2 border-ink/10 px-4 py-2.5">
+                          {r.verified ? <Chip tone="live">verified</Chip> : <span className="font-body text-[12px] text-ink-3">—</span>}
+                        </td>
+                        <td className="border-t-2 border-ink/10 px-4 py-2.5 font-mono text-[12px] text-ink-2">{short(r.answer, 40, 12)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </StickerCard>
           </div>
+
+          <Pager
+            page={Math.min(page, totalPages - 1)}
+            total={totalPages}
+            onGo={(d) => setPage((p) => Math.max(0, Math.min(totalPages - 1, p + d)))}
+            count={data.leafCount}
+            noun="receipt"
+          />
 
           <StickerCard className="p-5 sm:p-7" inset>
             <h2 className="font-display text-xl text-ink">How to verify this yourself</h2>

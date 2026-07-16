@@ -172,9 +172,11 @@ export function arenaAgentCardUri(agentId: number): string {
   return `${config.publicApiUrl.replace(/\/+$/, "")}/api/agents/${agentId}/card.json`;
 }
 
-// The 0G mainnet explorer link for a minted identity (Blockscout NFT-instance page).
-export function identityExplorerUrl(tokenId: number): string {
-  return `https://chainscan.0g.ai/token/${config.identity.registry}/instance/${tokenId}`;
+// The 0G mainnet explorer link for the identity registry contract. chainscan.0g.ai has no working
+// per-token page for a large-supply ERC-721, so we link the contract address (a verified route); the
+// token id is reported separately by callers.
+export function identityExplorerUrl(_tokenId: number): string {
+  return `https://chainscan.0g.ai/address/${config.identity.registry}`;
 }
 
 export interface IdentityStatus {
